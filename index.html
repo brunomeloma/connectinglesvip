@@ -185,6 +185,15 @@ tr:hover td{background:#fdf9f0}
 .boleto-pago{background:#d4f0e0;color:#1a6b3a}
 .fin-filter-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px}
 .fin-filter-bar .form-col{min-width:130px;flex:1}
+
+/* BANNER VENCIDOS */
+.banner-vencidos{display:flex;align-items:center;gap:14px;background:#fff;border:1.5px solid #f5c6cb;border-left:5px solid var(--danger);border-radius:8px;padding:14px 18px;margin-bottom:16px;box-shadow:0 2px 8px rgba(192,57,43,.1)}
+.banner-vencidos-icon{font-size:22px;color:var(--danger);flex-shrink:0}
+.banner-vencidos-text{flex:1}
+.banner-vencidos-text strong{font-size:14px;color:#721c24;display:block;margin-bottom:2px}
+.banner-vencidos-text span{font-size:12px;color:#9b4a4a}
+.banner-vencidos-actions{display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap}
+.btn-success{background:linear-gradient(135deg,#1e7e47,#2e9e5b);color:#fff;box-shadow:0 2px 8px rgba(46,158,91,.3)}
 </style>
 </head>
 <body>
@@ -966,7 +975,25 @@ async function finAluno(studentId){
       <div class="fin-card c-orange"><i class="fa fa-clock fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalAberto)}</div><div class="fin-card-label">Em Aberto</div></div></div>
       <div class="fin-card c-dark"><i class="fa fa-file-invoice fin-card-icon"></i><div><div class="fin-card-num">${boletos.length}</div><div class="fin-card-label">Boletos lançados</div></div></div>
     </div>
-    ${(()=>{const vencidos=boletos.filter(b=>b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date());return vencidos.length?`<div style="background:#fff5f5;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px;color:#721c24"><i class="fa fa-exclamation-triangle" style="color:var(--danger);font-size:16px"></i><strong>\${vencidos.length} boleto\${vencidos.length>1?'s':''} vencido\${vencidos.length>1?'s':''}</strong> — verifique os meses destacados em vermelho abaixo.</div>`:''})()}
+    ${(()=>{
+      const vencidos=boletos.filter(b=>b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date());
+      if(!vencidos.length) return '';
+      const n=vencidos.length;
+      const ids=vencidos.map(b=>b.id);
+      const plural=n>1;
+      return `<div class="banner-vencidos">
+        <i class="fa fa-exclamation-circle banner-vencidos-icon"></i>
+        <div class="banner-vencidos-text">
+          <strong>⚠️ ${n} boleto${plural?'s':''} vencido${plural?'s':''} sem pagamento</strong>
+          <span>Verifique os meses destacados em vermelho na tabela abaixo.</span>
+        </div>
+        <div class="banner-vencidos-actions">
+          <button class="btn btn-success btn-sm" onclick="marcarVencidosComoPago('${student.id}',${JSON.stringify(ids)})">
+            <i class="fa fa-check-circle"></i> Marcar ${plural?'todos':'como'} pago${plural?'s':''}
+          </button>
+        </div>
+      </div>`;
+    })()}
     <div class="panel">
       <div class="panel-head"><span class="panel-title">Boletos ${fAno}</span><button class="btn btn-primary btn-sm" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar / Reeditar boletos</button></div>
       <div class="table-wrap">
@@ -1099,6 +1126,25 @@ async function toggleBoletoStatus(boletoId,statusAtual,studentId){
   }
   const row=document.getElementById(`row-${boletoId}`);
   if(row){const cells=row.querySelectorAll('td');if(cells[4]) cells[4].textContent=novoStatus==='pago'?fdate(payload.data_pagamento):'—';}
+}
+
+async function marcarVencidosComoPago(studentId, ids){
+  if(!ids||!ids.length) return;
+  const plural=ids.length>1;
+  showConfirm(async()=>{
+    const hoje=new Date().toISOString().split('T')[0];
+    const{error}=await sb.from('boletos').update({status:'pago',data_pagamento:hoje}).in('id',ids);
+    if(error){alert('Erro ao atualizar: '+error.message);return;}
+    nav('financeiro',{view:'aluno',studentId});
+  });
+  // customiza o texto do confirm
+  const box=document.querySelector('.confirm-box');
+  if(box){
+    box.querySelector('h4').textContent='Confirmar pagamento';
+    box.querySelector('p').textContent=`Marcar ${ids.length} boleto${plural?'s':''} vencido${plural?'s':''} como pago${plural?'s':''}? A data de pagamento será definida como hoje.`;
+    box.querySelector('#confirm-yes').textContent=`✓ Confirmar`;
+    box.querySelector('#confirm-yes').className='btn btn-success';
+  }
 }
 
 // ============================
