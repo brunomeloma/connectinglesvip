@@ -186,6 +186,29 @@ tr:hover td{background:#fdf9f0}
 .fin-filter-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px}
 .fin-filter-bar .form-col{min-width:130px;flex:1}
 
+/* MODAL PAGAMENTO */
+.pgto-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:1000;display:flex;align-items:center;justify-content:center}
+.pgto-box{background:#fff;border-radius:10px;width:440px;max-width:95vw;box-shadow:0 16px 48px rgba(0,0,0,.25);overflow:hidden}
+.pgto-header{padding:16px 20px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between;background:var(--gray-50)}
+.pgto-header h4{font-size:15px;font-weight:600;color:var(--gray-900);display:flex;align-items:center;gap:8px}
+.pgto-close{background:none;border:none;font-size:18px;color:var(--gray-500);cursor:pointer;padding:2px 6px;border-radius:4px;line-height:1}
+.pgto-close:hover{background:var(--gray-200)}
+.pgto-body{padding:20px}
+.pgto-field{margin-bottom:14px}
+.pgto-field label{display:block;font-size:12px;font-weight:500;color:var(--gray-700);margin-bottom:5px}
+.pgto-field input,.pgto-field textarea{width:100%;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;color:var(--gray-900);font-family:'Inter',sans-serif}
+.pgto-field input:focus,.pgto-field textarea:focus{outline:none;border-color:var(--brand)}
+.pgto-comprovante-preview{margin-top:8px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--gray-700)}
+.pgto-comprovante-preview img{max-height:60px;border-radius:4px;border:1px solid var(--gray-200)}
+.pgto-footer{padding:14px 20px;border-top:1px solid var(--gray-200);display:flex;gap:8px;justify-content:flex-end;background:var(--gray-50)}
+.pgto-upload-area{border:2px dashed var(--gray-300);border-radius:6px;padding:14px;text-align:center;cursor:pointer;transition:border-color .15s;position:relative}
+.pgto-upload-area:hover{border-color:var(--brand)}
+.pgto-upload-area input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.pgto-upload-area i{font-size:20px;color:var(--gray-500);margin-bottom:4px;display:block}
+.pgto-upload-area span{font-size:12px;color:var(--gray-500)}
+.comprovante-icon{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--success);font-weight:600;cursor:pointer;text-decoration:none}
+.comprovante-icon:hover{text-decoration:underline}
+
 /* BANNER VENCIDOS */
 .banner-vencidos{display:flex;align-items:center;gap:14px;background:#fff;border:1.5px solid #f5c6cb;border-left:5px solid var(--danger);border-radius:8px;padding:14px 18px;margin-bottom:16px;box-shadow:0 2px 8px rgba(192,57,43,.1)}
 .banner-vencidos-icon{font-size:22px;color:var(--danger);flex-shrink:0}
@@ -276,6 +299,43 @@ let currentUser = null;
     <div class="confirm-actions">
       <button class="btn btn-default" onclick="closeConfirm()">Cancelar</button>
       <button class="btn btn-danger" id="confirm-yes">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PAGAMENTO -->
+<div class="pgto-overlay" id="pgto-overlay" style="display:none" onclick="if(event.target===this)closePgtoModal()">
+  <div class="pgto-box">
+    <div class="pgto-header">
+      <h4><i class="fa fa-check-circle" style="color:var(--success)"></i> <span id="pgto-titulo">Confirmar pagamento</span></h4>
+      <button class="pgto-close" onclick="closePgtoModal()">&#x2715;</button>
+    </div>
+    <div class="pgto-body">
+      <div class="pgto-field">
+        <label><i class="fa fa-calendar-check"></i> Data do pagamento</label>
+        <input type="date" id="pgto-data">
+      </div>
+      <div class="pgto-field">
+        <label><i class="fa fa-paperclip"></i> Comprovante <span style="color:var(--gray-500);font-weight:400">(opcional)</span></label>
+        <div class="pgto-upload-area" id="pgto-upload-area">
+          <input type="file" id="pgto-arquivo" accept="image/*,.pdf" onchange="pgtoArquivoSelecionado(this)">
+          <i class="fa fa-cloud-upload-alt"></i>
+          <span id="pgto-upload-label">Clique ou arraste uma imagem / PDF</span>
+        </div>
+        <div class="pgto-comprovante-preview" id="pgto-preview" style="display:none"></div>
+      </div>
+      <div class="pgto-field">
+        <label><i class="fa fa-link"></i> Ou cole um link do comprovante <span style="color:var(--gray-500);font-weight:400">(opcional)</span></label>
+        <input type="url" id="pgto-link" placeholder="https://...">
+      </div>
+      <div class="pgto-field" id="pgto-obs-wrap">
+        <label><i class="fa fa-comment"></i> Observação <span style="color:var(--gray-500);font-weight:400">(opcional)</span></label>
+        <input type="text" id="pgto-obs" placeholder="Ex: PIX, dinheiro, cartão…">
+      </div>
+    </div>
+    <div class="pgto-footer">
+      <button class="btn btn-default" onclick="closePgtoModal()">Cancelar</button>
+      <button class="btn btn-success" id="pgto-confirmar" onclick="confirmarPagamentoModal()"><i class="fa fa-check"></i> Confirmar pagamento</button>
     </div>
   </div>
 </div>
@@ -1000,17 +1060,18 @@ async function finAluno(studentId){
         <table>
           <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pgto.</th><th>Observação</th><th>Boleto</th><th></th></tr></thead>
           <tbody>${boletos.length?boletos.map(b=>`
-            <tr id="row-${b.id}" style="${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'background:#fff5f5;border-left:3px solid var(--danger)':''}">
+            <tr id="row-${b.id}" data-vencimento="${b.data_vencimento||''}" style="${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'background:#fff5f5;border-left:3px solid var(--danger)':''}">
               <td><strong>${meses[(b.mes_referencia-1)]} / ${b.ano_referencia}</strong>${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'<span class="badge badge-danger" style="margin-left:6px">Vencido</span>':''}</td>
               <td style="${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'color:var(--danger);font-weight:600':''}">${fdate(b.data_vencimento)}</td>
               <td>${fmtBRL(b.valor)}</td>
-              <td><button class="boleto-status-toggle ${b.status==='pago'?'boleto-pago':'boleto-aberto'}" onclick="toggleBoletoStatus('${b.id}','${b.status}','${student.id}')"><i class="fa ${b.status==='pago'?'fa-check-circle':'fa-clock'}"></i> ${b.status==='pago'?'Pago':'Em aberto'}</button></td>
+              <td><button class="boleto-status-toggle ${b.status==='pago'?'boleto-pago':'boleto-aberto'}" onclick="abrirPgtoModal('${b.id}','${b.status}','${student.id}','${meses[(b.mes_referencia-1)]} / ${b.ano_referencia}')"><i class="fa ${b.status==='pago'?'fa-check-circle':'fa-clock'}"></i> ${b.status==='pago'?'Pago':'Em aberto'}</button></td>
               <td>${b.data_pagamento?fdate(b.data_pagamento):'—'}</td>
               <td style="font-size:12px;color:var(--gray-500)">${b.observacao||'—'}</td>
               <td style="white-space:nowrap">
+                ${b.comprovante_url?`<a href="${b.comprovante_url}" target="_blank" class="comprovante-icon" style="margin-right:6px"><i class="fa fa-image"></i> Comprovante</a>`:''}
                 ${b.url_boleto?`<a href="${b.url_boleto}" target="_blank" class="btn btn-primary btn-sm" style="margin-right:4px"><i class="fa fa-external-link-alt"></i> Abrir</a>`:''}
                 ${b.codigo_boleto?`<button class="btn btn-default btn-sm" onclick="copiarCodigo('${b.id}','${b.codigo_boleto}')" title="Copiar código"><i class="fa fa-copy"></i> <span id="copy-label-${b.id}">Copiar código</span></button>`:''}
-                ${!b.url_boleto&&!b.codigo_boleto?'<span style="color:var(--gray-500);font-size:12px">—</span>':''}
+                ${!b.comprovante_url&&!b.url_boleto&&!b.codigo_boleto?'<span style="color:var(--gray-500);font-size:12px">—</span>':''}
               </td>
               <td><button class="btn btn-icon" title="Excluir boleto" onclick="deletarBoleto('${b.id}','${student.id}')"><i class="fa fa-trash" style="color:var(--danger)"></i></button></td>
             </tr>`).join(''):`<tr><td colspan="8"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto lançado para ${fAno}.<br><br><button class="btn btn-primary" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar boletos agora</button></div></td></tr>`}
@@ -1113,19 +1174,203 @@ async function deletarBoleto(boletoId, studentId){
     nav('financeiro',{view:'aluno',studentId});
   });
 }
-async function toggleBoletoStatus(boletoId,statusAtual,studentId){
-  const novoStatus=statusAtual==='pago'?'aberto':'pago';
-  const payload={status:novoStatus,data_pagamento:novoStatus==='pago'?new Date().toISOString().split('T')[0]:null};
-  const{error}=await sb.from('boletos').update(payload).eq('id',boletoId);
-  if(error){alert('Erro ao atualizar: '+error.message);return;}
-  const btn=document.querySelector(`#row-${boletoId} .boleto-status-toggle`);
-  if(btn){
-    btn.className=`boleto-status-toggle ${novoStatus==='pago'?'boleto-pago':'boleto-aberto'}`;
-    btn.innerHTML=`<i class="fa ${novoStatus==='pago'?'fa-check-circle':'fa-clock'}"></i> ${novoStatus==='pago'?'Pago':'Em aberto'}`;
-    btn.setAttribute('onclick',`toggleBoletoStatus('${boletoId}','${novoStatus}','${studentId}')`);
+// Estado do modal de pagamento
+let _pgtoCtx={};
+
+function abrirPgtoModal(boletoId, statusAtual, studentId, mesTxt){
+  // Se já está pago, apenas desfaz sem modal
+  if(statusAtual==='pago'){
+    _pgtoCtx={boletoId,novoStatus:'aberto',studentId};
+    confirmarPagamentoModal();
+    return;
   }
-  const row=document.getElementById(`row-${boletoId}`);
-  if(row){const cells=row.querySelectorAll('td');if(cells[4]) cells[4].textContent=novoStatus==='pago'?fdate(payload.data_pagamento):'—';}
+  _pgtoCtx={boletoId,novoStatus:'pago',studentId};
+  $('pgto-titulo').textContent='Confirmar pagamento — '+mesTxt;
+  $('pgto-data').value=new Date().toISOString().split('T')[0];
+  $('pgto-link').value='';
+  $('pgto-obs').value='';
+  $('pgto-arquivo').value='';
+  $('pgto-upload-label').textContent='Clique ou arraste uma imagem / PDF';
+  $('pgto-preview').style.display='none';
+  $('pgto-preview').innerHTML='';
+  $('pgto-overlay').style.display='flex';
+  setTimeout(()=>$('pgto-data').focus(),100);
+}
+
+function closePgtoModal(){
+  $('pgto-overlay').style.display='none';
+  _pgtoCtx={};
+}
+
+function pgtoArquivoSelecionado(input){
+  const file=input.files[0];
+  if(!file) return;
+  $('pgto-upload-label').textContent=file.name;
+  const preview=$('pgto-preview');
+  preview.innerHTML='';
+  if(file.type.startsWith('image/')){
+    const reader=new FileReader();
+    reader.onload=e=>{
+      preview.innerHTML='<img src="'+e.target.result+'" alt="comprovante"><span style="color:var(--success)"><i class="fa fa-check-circle"></i> Imagem selecionada</span>';
+      preview.style.display='flex';
+    };
+    reader.readAsDataURL(file);
+  } else {
+    preview.innerHTML='<i class="fa fa-file-pdf" style="color:var(--danger);font-size:20px"></i><span>'+file.name+'</span>';
+    preview.style.display='flex';
+  }
+}
+
+async function confirmarPagamentoModal(){
+  const{boletoId,novoStatus,studentId}=_pgtoCtx;
+  if(!boletoId) return;
+
+  const btn=$('pgto-confirmar');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Salvando...';}
+
+  const payload={status:novoStatus};
+
+  if(novoStatus==='pago'){
+    payload.data_pagamento=$('pgto-data')?.value||new Date().toISOString().split('T')[0];
+    payload.observacao=$('pgto-obs')?.value?.trim()||null;
+
+    // Comprovante: arquivo tem prioridade sobre link
+    const arquivo=$('pgto-arquivo')?.files[0];
+    const link=$('pgto-link')?.value?.trim();
+    if(arquivo){
+      // Faz upload para Supabase Storage
+      const ext=arquivo.name.split('.').pop();
+      const path='comprovantes/'+boletoId+'-'+Date.now()+'.'+ext;
+      const{data:upData,error:upErr}=await sb.storage.from('comprovantes').upload(path,arquivo,{upsert:true});
+      if(upErr){
+        alert('Erro ao enviar comprovante: '+upErr.message);
+        if(btn){btn.disabled=false;btn.innerHTML='<i class="fa fa-check"></i> Confirmar pagamento';}
+        return;
+      }
+      const{data:urlData}=sb.storage.from('comprovantes').getPublicUrl(path);
+      payload.comprovante_url=urlData?.publicUrl||null;
+    } else if(link){
+      payload.comprovante_url=link;
+    } else {
+      payload.comprovante_url=null;
+    }
+  } else {
+    // Desfazendo pagamento
+    payload.data_pagamento=null;
+    payload.observacao=null;
+    payload.comprovante_url=null;
+  }
+
+  const{error}=await sb.from('boletos').update(payload).eq('id',boletoId);
+
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="fa fa-check"></i> Confirmar pagamento';}
+
+  if(error){alert('Erro ao salvar: '+error.message);return;}
+
+  closePgtoModal();
+
+  // Atualiza DOM da linha instantaneamente
+  const rowEl=document.getElementById('row-'+boletoId);
+  if(rowEl){
+    const cells=rowEl.querySelectorAll('td');
+    // botão status (coluna 3)
+    const toggleBtn=rowEl.querySelector('.boleto-status-toggle');
+    if(toggleBtn){
+      toggleBtn.className='boleto-status-toggle '+(novoStatus==='pago'?'boleto-pago':'boleto-aberto');
+      const mesTxt=cells[0]?cells[0].querySelector('strong')?.textContent||'':'';
+      toggleBtn.innerHTML='<i class="fa '+(novoStatus==='pago'?'fa-check-circle':'fa-clock')+'"></i> '+(novoStatus==='pago'?'Pago':'Em aberto');
+      toggleBtn.setAttribute('onclick',"abrirPgtoModal('"+boletoId+"','"+novoStatus+"','"+studentId+"','"+mesTxt+"')");
+    }
+    // data pagamento (coluna 4)
+    if(cells[4]) cells[4].textContent=novoStatus==='pago'&&payload.data_pagamento?fdate(payload.data_pagamento):'—';
+    // observação (coluna 5)
+    if(cells[5]){cells[5].textContent=payload.observacao||'—';cells[5].style.color=payload.observacao?'var(--gray-900)':'var(--gray-500)';}
+    // comprovante (coluna 6) — insere link se houver
+    if(cells[6]&&novoStatus==='pago'&&payload.comprovante_url){
+      const jaTemLink=cells[6].querySelector('.comprovante-icon');
+      if(!jaTemLink){
+        const linkEl=document.createElement('a');
+        linkEl.href=payload.comprovante_url;
+        linkEl.target='_blank';
+        linkEl.className='comprovante-icon';
+        linkEl.innerHTML='<i class="fa fa-image"></i> Comprovante';
+        cells[6].prepend(linkEl);
+      }
+    }
+    if(cells[6]&&novoStatus==='aberto'){
+      const jaTemLink=cells[6].querySelector('.comprovante-icon');
+      if(jaTemLink) jaTemLink.remove();
+    }
+    // cor da linha
+    const dataVenc=rowEl.dataset.vencimento;
+    const estaVencido=novoStatus!=='pago'&&dataVenc&&new Date(dataVenc)<new Date();
+    rowEl.style.background=estaVencido?'#fff5f5':'';
+    rowEl.style.borderLeft=estaVencido?'3px solid var(--danger)':'';
+    const badgeVencido=cells[0]?cells[0].querySelector('.badge-danger'):null;
+    if(novoStatus==='pago'&&badgeVencido) badgeVencido.remove();
+    if(cells[1]){cells[1].style.color=estaVencido?'var(--danger)':'';cells[1].style.fontWeight=estaVencido?'600':'';}
+  }
+
+  _atualizarResumoAluno(studentId);
+}
+
+async function toggleBoletoStatus(boletoId,statusAtual,studentId){
+  // legado — redireciona para modal
+  const row=document.getElementById('row-'+boletoId);
+  const mesTxt=row?row.querySelector('strong')?.textContent||'':'';
+  abrirPgtoModal(boletoId,statusAtual,studentId,mesTxt);
+}
+
+function _atualizarResumoAluno(studentId){
+  // Recalcula totais lendo o DOM atual
+  let totalPago=0, totalAberto=0, vencidosIds=[];
+  document.querySelectorAll('tr[id^="row-"]').forEach(row=>{
+    const btn=row.querySelector('.boleto-status-toggle');
+    if(!btn) return;
+    const pago=btn.classList.contains('boleto-pago');
+    // pega valor da coluna 2
+    const cells=row.querySelectorAll('td');
+    const valTxt=cells[2]?cells[2].textContent.replace('R$','').replace(/\./g,'').replace(',','.').trim():'0';
+    const val=parseFloat(valTxt)||0;
+    if(pago) totalPago+=val; else totalAberto+=val;
+    // detecta vencido
+    const dataVenc=row.dataset.vencimento;
+    if(!pago&&dataVenc&&new Date(dataVenc)<new Date()){
+      const id=row.id.replace('row-','');
+      vencidosIds.push(id);
+    }
+  });
+
+  // Atualiza cards
+  document.querySelectorAll('.fin-card').forEach(card=>{
+    const label=card.querySelector('.fin-card-label');
+    const num=card.querySelector('.fin-card-num');
+    if(!label||!num) return;
+    if(label.textContent.trim()==='Total Pago') num.textContent=fmtBRL(totalPago);
+    if(label.textContent.trim()==='Em Aberto') num.textContent=fmtBRL(totalAberto);
+  });
+
+  // Atualiza banner de vencidos
+  const bannerExistente=document.querySelector('.banner-vencidos');
+  const insertRef=document.querySelector('.fin-summary-grid');
+  if(!vencidosIds.length){
+    if(bannerExistente) bannerExistente.remove();
+    return;
+  }
+  const n=vencidosIds.length, plural=n>1;
+  const idsJson=JSON.stringify(vencidosIds);
+  const html='<div class="banner-vencidos">'
+    +'<i class="fa fa-exclamation-circle banner-vencidos-icon"></i>'
+    +'<div class="banner-vencidos-text">'
+    +'<strong>&#9888;&#65039; '+n+' boleto'+(plural?'s':'')+' vencido'+(plural?'s':'')+' sem pagamento</strong>'
+    +'<span>Verifique os meses destacados em vermelho na tabela abaixo.</span>'
+    +'</div>'
+    +'<div class="banner-vencidos-actions">'
+    +'<button class="btn btn-success btn-sm" onclick="marcarVencidosComoPago(\''+studentId+'\','+idsJson+')">'
+    +'<i class="fa fa-check-circle"></i> Marcar '+(plural?'todos':'como')+' pago'+(plural?'s':'')
+    +'</button></div></div>';
+  if(bannerExistente) bannerExistente.outerHTML=html;
+  else if(insertRef) insertRef.insertAdjacentHTML('afterend',html);
 }
 
 async function marcarVencidosComoPago(studentId, ids){
