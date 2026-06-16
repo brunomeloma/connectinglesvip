@@ -971,7 +971,7 @@ async function finAluno(studentId){
       <div class="panel-head"><span class="panel-title">Boletos ${fAno}</span><button class="btn btn-primary btn-sm" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar / Reeditar boletos</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pgto.</th><th>Observação</th><th>Boleto</th></tr></thead>
+          <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pgto.</th><th>Observação</th><th>Boleto</th><th></th></tr></thead>
           <tbody>${boletos.length?boletos.map(b=>`
             <tr id="row-${b.id}" style="${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'background:#fff5f5;border-left:3px solid var(--danger)':''}">
               <td><strong>${meses[(b.mes_referencia-1)]} / ${b.ano_referencia}</strong>${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'<span class="badge badge-danger" style="margin-left:6px">Vencido</span>':''}</td>
@@ -985,7 +985,8 @@ async function finAluno(studentId){
                 ${b.codigo_boleto?`<button class="btn btn-default btn-sm" onclick="copiarCodigo('${b.id}','${b.codigo_boleto}')" title="Copiar código"><i class="fa fa-copy"></i> <span id="copy-label-${b.id}">Copiar código</span></button>`:''}
                 ${!b.url_boleto&&!b.codigo_boleto?'<span style="color:var(--gray-500);font-size:12px">—</span>':''}
               </td>
-            </tr>`).join(''):`<tr><td colspan="7"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto lançado para ${fAno}.<br><br><button class="btn btn-primary" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar boletos agora</button></div></td></tr>`}
+              <td><button class="btn btn-icon" title="Excluir boleto" onclick="deletarBoleto('${b.id}','${student.id}')"><i class="fa fa-trash" style="color:var(--danger)"></i></button></td>
+            </tr>`).join(''):`<tr><td colspan="8"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto lançado para ${fAno}.<br><br><button class="btn btn-primary" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar boletos agora</button></div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -1073,6 +1074,16 @@ async function salvarBoletos(studentId){
   nav('financeiro',{view:'aluno',studentId});
 }
 
+async function deletarBoleto(boletoId, studentId){
+  showConfirm(async()=>{
+    const{error}=await sb.from('boletos').delete().eq('id',boletoId);
+    if(error){alert('Erro ao excluir: '+error.message);return;}
+    const row=document.getElementById('row-'+boletoId);
+    if(row) row.remove();
+    // refresh page to update banner
+    nav('financeiro',{view:'aluno',studentId});
+  });
+}
 async function toggleBoletoStatus(boletoId,statusAtual,studentId){
   const novoStatus=statusAtual==='pago'?'aberto':'pago';
   const payload={status:novoStatus,data_pagamento:novoStatus==='pago'?new Date().toISOString().split('T')[0]:null};
