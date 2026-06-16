@@ -1,86 +1,1091 @@
--- ============================================================
---  MÓDULO FINANCEIRO — Connect VIP
---  Execute este SQL no editor do Supabase (SQL Editor)
--- ============================================================
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connect VIP — Gestão Escolar</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --brand:#e34724;
+  --brand-dark:#c03a1c;
+  --sidebar-bg:#1e2a38;
+  --sidebar-text:#a8c0d0;
+  --sidebar-active:#e34724;
+  --white:#ffffff;
+  --gray-50:#f8f9fa;
+  --gray-100:#f1f3f5;
+  --gray-200:#e9ecef;
+  --gray-300:#dee2e6;
+  --gray-500:#adb5bd;
+  --gray-700:#495057;
+  --gray-900:#212529;
+  --success:#28a745;
+  --warning:#ffc107;
+  --danger:#dc3545;
+  --info:#17a2b8;
+  --radius:6px;
+  --shadow:0 1px 4px rgba(0,0,0,.08);
+}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--gray-100);color:var(--gray-900);font-size:14px}
 
--- ----------------------------------------------------------------
--- TABELA: boletos
--- Armazena cada parcela/boleto de um aluno.
--- ----------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS boletos (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  student_id    UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-  mes_referencia INT NOT NULL CHECK (mes_referencia BETWEEN 1 AND 12),
-  ano_referencia INT NOT NULL DEFAULT EXTRACT(YEAR FROM NOW()),
-  data_vencimento DATE NOT NULL,
-  valor         NUMERIC(10,2) NOT NULL CHECK (valor > 0),
-  status        TEXT NOT NULL DEFAULT 'aberto' CHECK (status IN ('aberto','pago')),
-  data_pagamento DATE,           -- preenchida ao dar baixa
-  observacao    TEXT,
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ DEFAULT NOW()
-);
+/* LOGIN */
+#login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#2c3e50}
+.login-box{background:var(--white);border-radius:10px;width:360px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.login-header{background:var(--brand);padding:24px;text-align:center;font-size:22px;font-weight:700;color:#fff;letter-spacing:.5px}
+.login-body{padding:28px}
+.login-title{font-size:16px;color:var(--gray-700);margin-bottom:20px}
+.login-title strong{color:var(--gray-900)}
+.login-footer{padding:12px 28px;font-size:11px;color:var(--gray-500);border-top:1px solid var(--gray-200);background:var(--gray-50)}
+.login-err{background:#fff3cd;border:1px solid #ffc107;color:#856404;padding:8px 12px;border-radius:var(--radius);font-size:12px;margin-bottom:12px;display:none}
 
--- Índices úteis para consultas frequentes
-CREATE INDEX IF NOT EXISTS idx_boletos_student  ON boletos(student_id);
-CREATE INDEX IF NOT EXISTS idx_boletos_status   ON boletos(status);
-CREATE INDEX IF NOT EXISTS idx_boletos_venc     ON boletos(data_vencimento);
-CREATE INDEX IF NOT EXISTS idx_boletos_ano      ON boletos(ano_referencia);
+/* APP LAYOUT */
+#app{display:none;height:100vh;overflow:hidden}
+.app-wrap{display:flex;height:100vh}
 
--- ----------------------------------------------------------------
--- FUNÇÃO: atualiza updated_at automaticamente
--- ----------------------------------------------------------------
-CREATE OR REPLACE FUNCTION set_updated_at()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$;
+/* SIDEBAR */
+.sidebar{width:220px;background:var(--sidebar-bg);flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto}
+.sb-brand{background:var(--brand);padding:15px 16px;text-align:center;font-size:18px;font-weight:700;color:#fff;letter-spacing:.5px;cursor:pointer}
+.sb-profile{padding:14px;border-bottom:1px solid #2e3d4e;display:flex;align-items:center;gap:10px}
+.sb-avatar{width:38px;height:38px;border-radius:50%;background:var(--brand);display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:600;flex-shrink:0}
+.sb-name{color:#fff;font-size:12px;font-weight:600}
+.sb-role{color:#7a9ab5;font-size:11px;margin-top:1px}
+.sb-section{padding:12px 16px 4px;font-size:10px;color:#4a6070;text-transform:uppercase;letter-spacing:1px}
+.sb-item{display:flex;align-items:center;gap:10px;padding:10px 16px;color:var(--sidebar-text);font-size:13px;cursor:pointer;transition:background .15s;border-left:3px solid transparent}
+.sb-item:hover{background:#253343;color:#fff}
+.sb-item.active{background:rgba(227,71,36,.15);color:#e87d60;border-left-color:var(--brand)}
+.sb-item i{width:16px;text-align:center;font-size:14px}
+.sb-logout{margin-top:auto;border-top:1px solid #2e3d4e}
 
-CREATE TRIGGER boletos_updated_at
-  BEFORE UPDATE ON boletos
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+/* MAIN */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:48px;background:var(--white);border-bottom:1px solid var(--gray-200);display:flex;align-items:center;padding:0 20px;justify-content:space-between;flex-shrink:0;box-shadow:var(--shadow)}
+.topbar-left{font-size:13px;color:var(--gray-700);display:flex;align-items:center;gap:8px}
+.topbar-right{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gray-700)}
+.content{flex:1;overflow-y:auto;padding:20px}
 
--- ----------------------------------------------------------------
--- VIEW: resumo_financeiro_aluno
--- Facilita a leitura do painel de inadimplência e faturamento.
--- ----------------------------------------------------------------
-CREATE OR REPLACE VIEW resumo_financeiro_aluno AS
-SELECT
-  s.id                                        AS student_id,
-  s.first_name || ' ' || s.last_name         AS nome_aluno,
-  s.status                                    AS aluno_ativo,
-  COUNT(b.id)                                 AS total_boletos,
-  COUNT(b.id) FILTER (WHERE b.status = 'pago')   AS total_pagos,
-  COUNT(b.id) FILTER (WHERE b.status = 'aberto') AS total_abertos,
-  COALESCE(SUM(b.valor) FILTER (WHERE b.status = 'pago'),   0) AS valor_pago,
-  COALESCE(SUM(b.valor) FILTER (WHERE b.status = 'aberto'), 0) AS valor_aberto,
-  COALESCE(SUM(b.valor), 0)                   AS valor_total
-FROM students s
-LEFT JOIN boletos b ON b.student_id = s.id
-GROUP BY s.id, s.first_name, s.last_name, s.status;
+/* PAGE */
+.breadcrumb{display:flex;gap:6px;font-size:12px;color:var(--gray-500);margin-bottom:10px}
+.breadcrumb a{color:var(--brand);text-decoration:none;cursor:pointer}
+.page-title{font-size:20px;font-weight:600;color:var(--gray-900);margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.page-title i{color:var(--brand)}
 
--- ----------------------------------------------------------------
--- EXEMPLOS DE CONSULTAS ÚTEIS
--- ----------------------------------------------------------------
+/* STATS */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.stat-card{border-radius:var(--radius);padding:16px;color:#fff;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow)}
+.stat-card.c-blue{background:#2d7dd2}
+.stat-card.c-green{background:#27a065}
+.stat-card.c-amber{background:#d98b0a}
+.stat-card.c-red{background:var(--brand)}
+.stat-icon{font-size:30px;opacity:.8}
+.stat-num{font-size:26px;font-weight:700}
+.stat-label{font-size:12px;opacity:.85}
 
--- 1. Lançar 12 boletos de uma vez para um aluno (substitua o UUID e o valor)
-/*
-INSERT INTO boletos (student_id, mes_referencia, ano_referencia, data_vencimento, valor)
-SELECT
-  'UUID-DO-ALUNO-AQUI',
-  generate_series(1, 12),
-  2026,
-  DATE '2026-01-10' + (INTERVAL '1 month' * (generate_series(1,12) - 1)),
-  350.00;
-*/
+/* PANELS */
+.panel{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:18px;box-shadow:var(--shadow)}
+.panel-head{padding:12px 16px;border-bottom:1px solid var(--gray-200);background:var(--gray-50);border-radius:var(--radius) var(--radius) 0 0;display:flex;align-items:center;justify-content:space-between}
+.panel-title{font-size:14px;font-weight:600;color:var(--gray-900)}
+.panel-body{padding:16px}
+.panel-footer{padding:12px 16px;border-top:1px solid var(--gray-200);display:flex;justify-content:flex-end;gap:8px;background:var(--gray-50);border-radius:0 0 var(--radius) var(--radius)}
 
--- 2. Ver todos os boletos em aberto
--- SELECT * FROM boletos WHERE status = 'aberto' ORDER BY data_vencimento;
+/* TABLE */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{padding:10px 12px;text-align:left;border-bottom:2px solid var(--gray-200);font-size:12px;font-weight:600;color:var(--gray-700);background:var(--gray-50);white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid var(--gray-200);vertical-align:middle;color:var(--gray-900)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--gray-50)}
+.t-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:#fff;background:var(--brand);flex-shrink:0}
 
--- 3. Dar baixa (marcar como pago)
--- UPDATE boletos SET status = 'pago', data_pagamento = CURRENT_DATE WHERE id = 'UUID-DO-BOLETO';
+/* BADGES */
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-success{background:#d4edda;color:#155724}
+.badge-warning{background:#fff3cd;color:#856404}
+.badge-danger{background:#f8d7da;color:#721c24}
+.badge-info{background:#d1ecf1;color:#0c5460}
+.badge-primary{background:#cce5ff;color:#004085}
+.badge-secondary{background:#e2e3e5;color:#383d41}
+.badge-purple{background:#e9d8fd;color:#553c9a}
+.badge-basico{background:#d1ecf1;color:#0c5460}
+.badge-intermediario{background:#fff3cd;color:#856404}
+.badge-avancado{background:#e9d8fd;color:#553c9a}
 
--- 4. Resumo geral de faturamento
--- SELECT SUM(valor_pago) AS total_arrecadado, SUM(valor_aberto) AS total_a_receber FROM resumo_financeiro_aluno;
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:var(--radius);font-size:13px;cursor:pointer;border:none;font-weight:500;transition:opacity .15s}
+.btn:hover{opacity:.88}
+.btn-primary{background:var(--brand);color:#fff}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-default{background:var(--white);color:var(--gray-700);border:1px solid var(--gray-300)}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-icon{padding:5px 8px;border:1px solid var(--gray-300);background:var(--white);border-radius:var(--radius);cursor:pointer;color:var(--gray-700)}
+.btn-icon:hover{background:var(--gray-100)}
+
+/* FORMS */
+.form-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px}
+.form-col{flex:1;min-width:140px}
+.form-col label,.field label{display:block;font-size:12px;font-weight:500;color:var(--gray-700);margin-bottom:4px}
+.form-col input,.form-col select,
+.field input,.field select,.field textarea{width:100%;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;color:var(--gray-900);background:var(--white);transition:border-color .15s}
+.field textarea{height:80px;resize:vertical}
+.form-col input:focus,.form-col select:focus,
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--brand)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.field{margin-bottom:14px}
+.field-error{color:var(--danger);font-size:11px;margin-top:3px}
+.required{color:var(--danger)}
+.help-text{font-size:11px;color:var(--gray-500);margin-top:3px}
+
+/* MISC */
+.empty-state{text-align:center;padding:40px;color:var(--gray-500)}
+.empty-state i{font-size:36px;margin-bottom:12px;display:block;opacity:.4}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.alert{padding:10px 14px;border-radius:var(--radius);font-size:13px;margin-bottom:14px;display:none}
+.alert-success{background:#d4edda;color:#155724;border:1px solid #c3e6cb}
+.alert-danger{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}
+.loading{text-align:center;padding:30px;color:var(--gray-500)}
+.loading i{animation:spin 1s linear infinite;font-size:20px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.confirm-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:999;display:flex;align-items:center;justify-content:center}
+.confirm-box{background:#fff;border-radius:var(--radius);padding:24px;max-width:360px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,.2)}
+.confirm-box h4{margin-bottom:10px;font-size:15px}
+.confirm-box p{color:var(--gray-700);font-size:13px;margin-bottom:18px}
+.confirm-actions{display:flex;gap:8px;justify-content:flex-end}
+
+/* FINANCEIRO */
+.fin-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+.fin-card{border-radius:var(--radius);padding:18px 20px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow);color:#fff}
+.fin-card.c-green{background:#27a065}
+.fin-card.c-amber{background:#d98b0a}
+.fin-card.c-blue{background:#2d7dd2}
+.fin-card-icon{font-size:28px;opacity:.85}
+.fin-card-num{font-size:22px;font-weight:700}
+.fin-card-label{font-size:12px;opacity:.85;margin-top:2px}
+.boleto-status-toggle{display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;border:none;transition:opacity .15s}
+.boleto-status-toggle:hover{opacity:.8}
+.boleto-aberto{background:#fff3cd;color:#856404}
+.boleto-pago{background:#d4edda;color:#155724}
+.fin-filter-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px}
+.fin-filter-bar .form-col{min-width:130px;flex:1}
+</style>
+</head>
+<body>
+
+<!-- CONFIG SUPABASE: troque pelas suas chaves -->
+<script>
+// ===========================================================
+// CONFIG SUPABASE — troque pelas suas chaves reais do projeto
+// Pegue em: Supabase > Project Settings > API
+// ===========================================================
+const SUPABASE_URL = 'https://jrkbwzpyzgekycqtmvco.supabase.co';
+const SUPABASE_KEY = 'COLE_SUA_ANON_KEY_AQUI'; // <-- troque pela "anon public key"
+
+let sb;
+try {
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+} catch (e) {
+  console.error('Erro ao conectar Supabase:', e);
+}
+
+let currentUser = null;
+</script>
+
+<!-- ===== LOGIN ===== -->
+<div id="login-page">
+  <div class="login-box">
+    <div class="login-header">Connect Vip</div>
+    <div class="login-body">
+      <div class="login-title"><strong>Entre</strong> na sua conta</div>
+      <div class="login-err" id="login-err"></div>
+      <input type="email" id="login-email" class="field" placeholder="E-mail" style="width:100%;padding:8px 10px;border:1px solid #dee2e6;border-radius:6px;font-size:13px;margin-bottom:12px">
+      <input type="password" id="login-pass" class="field" placeholder="Senha" style="width:100%;padding:8px 10px;border:1px solid #dee2e6;border-radius:6px;font-size:13px;margin-bottom:16px">
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn btn-primary" onclick="doLogin()" style="width:100%">Conecte-se</button>
+      </div>
+    </div>
+    <div class="login-footer">© 2025 Connect VIP</div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="app">
+<div class="app-wrap">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sb-brand" onclick="nav('dashboard')">Connect Vip</div>
+    <div class="sb-profile">
+      <div class="sb-avatar" id="sb-avatar">A</div>
+      <div>
+        <div class="sb-name" id="sb-name">—</div>
+        <div class="sb-role" id="sb-role">—</div>
+      </div>
+    </div>
+    <div class="sb-section">Navegação</div>
+    <div class="sb-item active" data-page="dashboard" onclick="nav('dashboard')"><i class="fa fa-desktop"></i> Painel</div>
+    <div class="sb-item" data-page="schools" onclick="nav('schools')"><i class="fa fa-building"></i> Escola</div>
+    <div class="sb-item admin-only" data-page="admins" onclick="nav('admins')"><i class="fa fa-user-tie"></i> Administrador</div>
+    <div class="sb-item" data-page="teachers" onclick="nav('teachers')"><i class="fa fa-chalkboard-teacher"></i> Professor</div>
+    <div class="sb-item" data-page="students" onclick="nav('students')"><i class="fa fa-user-graduate"></i> Aluno</div>
+    <div class="sb-item" data-page="classes" onclick="nav('classes')"><i class="fa fa-layer-group"></i> Turmas</div>
+    <div class="sb-item" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
+    <div class="sb-logout">
+      <div class="sb-item" onclick="doLogout()"><i class="fa fa-sign-out-alt"></i> Sair</div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-left"><i class="fa fa-bars"></i> Connect VIP — Sistema de Gestão Escolar</div>
+      <div class="topbar-right" id="topbar-user"></div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+
+</div>
+</div>
+
+<!-- CONFIRM DIALOG -->
+<div class="confirm-overlay" id="confirm-overlay" style="display:none">
+  <div class="confirm-box">
+    <h4>Confirmar exclusão</h4>
+    <p>Tem certeza que deseja excluir este registro? Esta ação não pode ser desfeita.</p>
+    <div class="confirm-actions">
+      <button class="btn btn-default" onclick="closeConfirm()">Cancelar</button>
+      <button class="btn btn-danger" id="confirm-yes">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================
+// UTILS
+// ============================
+function $(id){return document.getElementById(id)}
+function role_badge(role){
+  const map={super_admin:'badge-purple',admin:'badge-secondary',escola:'badge-warning',escola_admin:'badge-info',professor:'badge-primary'};
+  const label={super_admin:'Super Admin',admin:'Admin',escola:'Escola',escola_admin:'Escola Admin',professor:'Professor'};
+  return `<span class="badge ${map[role]||'badge-secondary'}">${label[role]||role}</span>`;
+}
+function status_badge(s){return s?'<span class="badge badge-success">Ativo</span>':'<span class="badge badge-warning">Inativo</span>';}
+function level_badge(l){if(!l)return '—';const m={Básico:'badge-basico',Intermediário:'badge-intermediario',Avançado:'badge-avancado'};return `<span class="badge ${m[l]||'badge-secondary'}">${l}</span>`;}
+function fdate(d){if(!d)return '—';return new Date(d).toLocaleDateString('pt-BR');}
+function avatar(name){return (name||'?').charAt(0).toUpperCase();}
+function showAlert(id,msg,type='success'){const el=$(id);if(!el)return;el.className='alert alert-'+type;el.textContent=msg;el.style.display='block';setTimeout(()=>{el.style.display='none'},3500);}
+function closeConfirm(){$('confirm-overlay').style.display='none';}
+function showConfirm(cb){
+  $('confirm-overlay').style.display='flex';
+  $('confirm-yes').onclick=()=>{closeConfirm();cb();};
+}
+function setActive(page){
+  document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('active'));
+  const el=document.querySelector(`.sb-item[data-page="${page}"]`);
+  if(el)el.classList.add('active');
+}
+function nav(page, params={}){
+  setActive(page);
+  pages[page]&&pages[page](params);
+}
+
+// ============================
+// AUTH
+// ============================
+async function doLogin(){
+  if(!sb || SUPABASE_KEY==='COLE_SUA_ANON_KEY_AQUI'){showLoginErr('Configure a SUPABASE_KEY no topo do arquivo (Project Settings > API > anon public).');return;}
+  const email=$('login-email').value.trim();
+  const pass=$('login-pass').value.trim();
+  if(!email||!pass){showLoginErr('Preencha e-mail e senha.');return;}
+  const{data,error}=await sb.from('users').select('*').eq('email',email).single();
+  if(error||!data){showLoginErr('E-mail não encontrado.');return;}
+  // senha simples: compara texto puro (para produção use hash bcrypt no backend)
+  if(data.password_hash!==pass&&data.password_hash!=='trocar_senha'){showLoginErr('Senha incorreta.');return;}
+  currentUser=data;
+  startApp();
+}
+function showLoginErr(msg){const el=$('login-err');el.textContent=msg;el.style.display='block';}
+function doLogout(){currentUser=null;$('login-page').style.display='flex';$('app').style.display='none';}
+function startApp(){
+  $('login-page').style.display='none';
+  $('app').style.display='block';
+  $('sb-name').textContent=currentUser.name;
+  $('sb-avatar').textContent=avatar(currentUser.name);
+  const roles={super_admin:'Super Admin',admin:'Admin',escola:'Escola',escola_admin:'Escola Admin',professor:'Professor'};
+  $('sb-role').textContent=roles[currentUser.role]||currentUser.role;
+  $('topbar-user').innerHTML=`<i class="fa fa-user-circle" style="color:var(--brand);font-size:18px"></i> &nbsp;${currentUser.name}`;
+  if(!['super_admin','admin'].includes(currentUser.role)){
+    document.querySelectorAll('.admin-only').forEach(el=>el.style.display='none');
+  }
+  nav('dashboard');
+}
+
+// ============================
+// PAGES
+// ============================
+const pages={};
+
+// --- DASHBOARD ---
+pages.dashboard=async function(){
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i> Carregando...</div>`);
+  const [sc,tc,st,cl]=await Promise.all([
+    sb.from('schools').select('id',{count:'exact',head:true}).eq('status',true),
+    sb.from('teachers').select('id',{count:'exact',head:true}).eq('status',true),
+    sb.from('students').select('id',{count:'exact',head:true}).eq('status',true),
+    sb.from('classes').select('id',{count:'exact',head:true}).eq('status',true),
+  ]);
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Painel</span></div>
+    <div class="page-title"><i class="fa fa-desktop"></i> Painel</div>
+    <div class="stat-grid">
+      <div class="stat-card c-blue"><i class="fa fa-building stat-icon"></i><div><div class="stat-num">${sc.count??0}</div><div class="stat-label">Escolas ativas</div></div></div>
+      <div class="stat-card c-green"><i class="fa fa-chalkboard-teacher stat-icon"></i><div><div class="stat-num">${tc.count??0}</div><div class="stat-label">Professores</div></div></div>
+      <div class="stat-card c-amber"><i class="fa fa-user-graduate stat-icon"></i><div><div class="stat-num">${st.count??0}</div><div class="stat-label">Alunos matriculados</div></div></div>
+      <div class="stat-card c-red"><i class="fa fa-layer-group stat-icon"></i><div><div class="stat-num">${cl.count??0}</div><div class="stat-label">Turmas ativas</div></div></div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Acesso rápido</span></div>
+        <div class="panel-body" style="padding:8px 0">
+          ${['schools','teachers','students','classes'].map(p=>{
+            const icons={schools:'fa-building',teachers:'fa-chalkboard-teacher',students:'fa-user-graduate',classes:'fa-layer-group'};
+            const labels={schools:'Adicionar escola',teachers:'Adicionar professor',students:'Adicionar aluno',classes:'Criar turma'};
+            return `<div onclick="nav('${p}',{view:'form'})" style="display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--gray-200);color:var(--gray-700);font-size:13px" onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background=''"><i class="fa ${icons[p]}" style="color:var(--brand);width:16px"></i>${labels[p]}</div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Níveis de permissão</span></div>
+        <div class="panel-body" style="padding:0">
+          <table>
+            <tr><td style="padding:8px 12px">1</td><td style="padding:8px 12px"><span class="badge badge-purple">Super Admin</span></td></tr>
+            <tr><td style="padding:8px 12px">2</td><td style="padding:8px 12px"><span class="badge badge-secondary">Admin</span></td></tr>
+            <tr><td style="padding:8px 12px">3</td><td style="padding:8px 12px"><span class="badge badge-warning">Escola</span></td></tr>
+            <tr><td style="padding:8px 12px">4</td><td style="padding:8px 12px"><span class="badge badge-info">Escola Admin</span></td></tr>
+            <tr><td style="padding:8px 12px">5</td><td style="padding:8px 12px"><span class="badge badge-primary">Professor</span></td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  `);
+};
+
+// --- SCHOOLS ---
+pages.schools=async function({view,id}={}){
+  if(view==='form') return schoolForm(id);
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const name=getFilter('sch-name')||'';
+  const status=getFilter('sch-status');
+  let q=sb.from('schools').select('*').order('created_at',{ascending:false});
+  if(name) q=q.ilike('name','%'+name+'%');
+  if(status==='1') q=q.eq('status',true);
+  if(status==='0') q=q.eq('status',false);
+  const{data=[]}=await q;
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Escola</span></div>
+    <div class="page-title"><i class="fa fa-building"></i> Escola</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Busca</span></div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-col"><label>Nome</label><input id="sch-name" placeholder="Nome da escola" value="${name}"></div>
+          <div class="form-col"><label>Status</label><select id="sch-status"><option value="">Todos</option><option value="1" ${status==='1'?'selected':''}>Ativo</option><option value="0" ${status==='0'?'selected':''}>Inativo</option></select></div>
+        </div>
+        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="nav('schools')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['sch-name','sch-status']);nav('schools')">Limpa</button></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Lista de escolas</span><button class="btn btn-primary btn-sm" onclick="nav('schools',{view:'form'})"><i class="fa fa-plus"></i> Adicionar escola</button></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Nome</th><th>E-mail</th><th>Endereço</th><th>Status</th><th>Cadastro</th><th colspan="2">Ações</th></tr></thead>
+          <tbody>${data.length?data.map((s,i)=>`
+            <tr>
+              <td>${i+1}</td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(s.name)}</div><strong>${s.name}</strong></div></td>
+              <td>${s.email||'—'}</td>
+              <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.address||'—'}</td>
+              <td>${status_badge(s.status)}</td>
+              <td>${fdate(s.created_at)}</td>
+              <td><button class="btn-icon" onclick="nav('schools',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
+              <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('schools','${s.id}','schools')"><i class="fa fa-trash"></i></button></td>
+            </tr>`).join(''):`<tr><td colspan="8"><div class="empty-state"><i class="fa fa-building"></i>Nenhuma escola cadastrada</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+};
+
+async function schoolForm(id){
+  let school={};
+  if(id){const{data}=await sb.from('schools').select('*').eq('id',id).single();school=data||{};}
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('schools')">Escola</a> › <span>${id?'Editar':'Adicionar'} escola</span></div>
+    <div class="page-title"><i class="fa fa-building"></i> ${id?'Editar':'Adicionar'} escola</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">${id?'Atualizar escola':'Nova escola'}</span></div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div>
+            <div class="field"><label>Nome <span class="required">*</span></label><input id="f-name" value="${school.name||''}"></div>
+            <div class="field"><label>E-mail <span class="required">*</span></label><input id="f-email" type="email" value="${school.email||''}"></div>
+            <div class="field"><label>Senha ${id?'(deixe em branco para manter)':'<span class="required">*</span>'}</label><input id="f-pass" type="password"></div>
+          </div>
+          <div>
+            <div class="field"><label>Endereço</label><textarea id="f-address">${school.address||''}</textarea></div>
+            <div class="field"><label>Status</label><select id="f-status"><option value="true" ${school.status!==false?'selected':''}>Ativo</option><option value="false" ${school.status===false?'selected':''}>Inativo</option></select></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel-footer">
+        <button class="btn btn-default" onclick="nav('schools')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveSchool('${id||''}')"><i class="fa fa-save"></i> ${id?'Atualizar':'Adicionar'}</button>
+      </div>
+    </div>
+  `);
+}
+
+async function saveSchool(id){
+  const name=$('f-name').value.trim();
+  const email=$('f-email').value.trim();
+  const pass=$('f-pass').value.trim();
+  const address=$('f-address').value.trim();
+  const status=$('f-status').value==='true';
+  if(!name||!email){showAlert('page-alert','Preencha nome e e-mail.','danger');return;}
+  const payload={name,email,address,status};
+  let err;
+  if(id){
+    const r=await sb.from('schools').update(payload).eq('id',id);
+    err=r.error;
+    if(!err&&pass){await sb.from('users').update({password_hash:pass}).eq('email',email);}
+  } else {
+    if(!pass){showAlert('page-alert','Informe uma senha.','danger');return;}
+    const r=await sb.from('schools').insert({...payload});
+    err=r.error;
+    if(!err){await sb.from('users').insert({name,email,password_hash:pass,role:'escola',status});}
+  }
+  if(err){showAlert('page-alert','Erro: '+err.message,'danger');return;}
+  nav('schools');
+}
+
+// --- ADMINS ---
+pages.admins=async function({view,id}={}){
+  if(view==='form') return adminForm(id);
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const{data=[]}=await sb.from('users').select('*').in('role',['super_admin','admin']).order('created_at',{ascending:false});
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Administrador</span></div>
+    <div class="page-title"><i class="fa fa-user-tie"></i> Administrador</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Lista de administradores</span><button class="btn btn-primary btn-sm" onclick="nav('admins',{view:'form'})"><i class="fa fa-plus"></i> Adicionar</button></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Nome</th><th>E-mail</th><th>Status</th><th>Permissão</th><th>Cadastro</th><th colspan="2">Ações</th></tr></thead>
+          <tbody>${data.length?data.map((u,i)=>`
+            <tr>
+              <td>${i+1}</td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(u.name)}</div><strong>${u.name}</strong></div></td>
+              <td>${u.email}</td>
+              <td>${status_badge(u.status)}</td>
+              <td>${role_badge(u.role)}</td>
+              <td>${fdate(u.created_at)}</td>
+              <td><button class="btn-icon" onclick="nav('admins',{view:'form',id:'${u.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
+              <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('users','${u.id}','admins')"><i class="fa fa-trash"></i></button></td>
+            </tr>`).join(''):`<tr><td colspan="8"><div class="empty-state"><i class="fa fa-user-tie"></i>Nenhum admin cadastrado</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+};
+
+async function adminForm(id){
+  let user={};
+  if(id){const{data}=await sb.from('users').select('*').eq('id',id).single();user=data||{};}
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('admins')">Administrador</a> › <span>${id?'Editar':'Adicionar'}</span></div>
+    <div class="page-title"><i class="fa fa-user-tie"></i> ${id?'Editar':'Adicionar'} administrador</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">${id?'Atualizar':'Novo'} administrador</span></div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div>
+            <div class="field"><label>Nome <span class="required">*</span></label><input id="f-name" value="${user.name||''}"></div>
+            <div class="field"><label>E-mail <span class="required">*</span></label><input id="f-email" type="email" value="${user.email||''}"></div>
+            <div class="field"><label>Senha ${id?'(deixe em branco)':'<span class="required">*</span>'}</label><input id="f-pass" type="password"></div>
+          </div>
+          <div>
+            <div class="field"><label>Endereço</label><textarea id="f-address">${user.address||''}</textarea></div>
+            <div class="field"><label>Permissão</label><select id="f-role"><option value="admin" ${user.role==='admin'?'selected':''}>Admin</option><option value="super_admin" ${user.role==='super_admin'?'selected':''}>Super Admin</option></select></div>
+            <div class="field"><label>Status</label><select id="f-status"><option value="true" ${user.status!==false?'selected':''}>Ativo</option><option value="false" ${user.status===false?'selected':''}>Inativo</option></select></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel-footer">
+        <button class="btn btn-default" onclick="nav('admins')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveAdmin('${id||''}')"><i class="fa fa-save"></i> ${id?'Atualizar':'Adicionar'}</button>
+      </div>
+    </div>
+  `);
+}
+
+async function saveAdmin(id){
+  const name=$('f-name').value.trim();
+  const email=$('f-email').value.trim();
+  const pass=$('f-pass').value.trim();
+  const address=$('f-address').value.trim();
+  const role=$('f-role').value;
+  const status=$('f-status').value==='true';
+  if(!name||!email){showAlert('page-alert','Preencha nome e e-mail.','danger');return;}
+  const payload={name,email,address,role,status};
+  if(pass) payload.password_hash=pass;
+  let err;
+  if(id){const r=await sb.from('users').update(payload).eq('id',id);err=r.error;}
+  else{if(!pass){showAlert('page-alert','Informe uma senha.','danger');return;}const r=await sb.from('users').insert({...payload,password_hash:pass});err=r.error;}
+  if(err){showAlert('page-alert','Erro: '+err.message,'danger');return;}
+  nav('admins');
+}
+
+// --- TEACHERS ---
+pages.teachers=async function({view,id}={}){
+  if(view==='form') return teacherForm(id);
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const name=getFilter('tc-name')||'';
+  const status=getFilter('tc-status');
+  let q=sb.from('teachers').select('*').order('created_at',{ascending:false});
+  if(name) q=q.or(`first_name.ilike.%${name}%,last_name.ilike.%${name}%`);
+  if(status==='1') q=q.eq('status',true);
+  if(status==='0') q=q.eq('status',false);
+  const{data=[]}=await q;
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Professor</span></div>
+    <div class="page-title"><i class="fa fa-chalkboard-teacher"></i> Professor</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Busca</span></div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-col"><label>Nome</label><input id="tc-name" placeholder="Nome" value="${name}"></div>
+          <div class="form-col"><label>Status</label><select id="tc-status"><option value="">Todos</option><option value="1" ${status==='1'?'selected':''}>Ativo</option><option value="0" ${status==='0'?'selected':''}>Inativo</option></select></div>
+        </div>
+        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="nav('teachers')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['tc-name','tc-status']);nav('teachers')">Limpa</button></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Lista de professores</span><button class="btn btn-primary btn-sm" onclick="nav('teachers',{view:'form'})"><i class="fa fa-plus"></i> Adicionar professor</button></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Nome</th><th>Celular</th><th>Qualificação</th><th>Adesão</th><th>Status</th><th colspan="2">Ações</th></tr></thead>
+          <tbody>${data.length?data.map((t,i)=>`
+            <tr>
+              <td>${i+1}</td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(t.first_name)}</div><strong>${t.first_name} ${t.last_name}</strong></div></td>
+              <td>${t.mobile_number||'—'}</td>
+              <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.qualification||'—'}</td>
+              <td>${fdate(t.date_joining)}</td>
+              <td>${status_badge(t.status)}</td>
+              <td><button class="btn-icon" onclick="nav('teachers',{view:'form',id:'${t.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
+              <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('teachers','${t.id}','teachers')"><i class="fa fa-trash"></i></button></td>
+            </tr>`).join(''):`<tr><td colspan="8"><div class="empty-state"><i class="fa fa-chalkboard-teacher"></i>Nenhum professor cadastrado</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+};
+
+async function teacherForm(id){
+  let t={};
+  if(id){const{data}=await sb.from('teachers').select('*').eq('id',id).single();t=data||{};}
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('teachers')">Professor</a> › <span>${id?'Editar':'Adicionar'}</span></div>
+    <div class="page-title"><i class="fa fa-chalkboard-teacher"></i> ${id?'Editar':'Adicionar'} professor</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">${id?'Atualizar':'Novo'} professor</span></div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div>
+            <div class="field"><label>Primeiro nome <span class="required">*</span></label><input id="f-fn" value="${t.first_name||''}"></div>
+            <div class="field"><label>Sobrenome <span class="required">*</span></label><input id="f-ln" value="${t.last_name||''}"></div>
+            <div class="field"><label>Gênero <span class="required">*</span></label><select id="f-gender"><option value="">Selecione</option><option value="male" ${t.gender==='male'?'selected':''}>Masculino</option><option value="female" ${t.gender==='female'?'selected':''}>Feminino</option></select></div>
+            <div class="field"><label>Nascimento</label><input id="f-dob" type="date" value="${t.date_birth||''}"></div>
+            <div class="field"><label>Data de adesão <span class="required">*</span></label><input id="f-doj" type="date" value="${t.date_joining||''}"></div>
+            <div class="field"><label>Celular <span class="required">*</span></label><input id="f-mobile" value="${t.mobile_number||''}"></div>
+          </div>
+          <div>
+            <div class="field"><label>Estado civil</label><input id="f-marital" value="${t.marital_status||''}"></div>
+            <div class="field"><label>Qualificação <span class="required">*</span></label><textarea id="f-qual">${t.qualification||''}</textarea></div>
+            <div class="field"><label>Experiência</label><textarea id="f-exp">${t.work_experience||''}</textarea></div>
+            <div class="field"><label>Observação</label><input id="f-note" value="${t.note||''}"></div>
+            <div class="field"><label>Status</label><select id="f-status"><option value="true" ${t.status!==false?'selected':''}>Ativo</option><option value="false" ${t.status===false?'selected':''}>Inativo</option></select></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel-footer">
+        <button class="btn btn-default" onclick="nav('teachers')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveTeacher('${id||''}')"><i class="fa fa-save"></i> ${id?'Atualizar':'Adicionar'}</button>
+      </div>
+    </div>
+  `);
+}
+
+async function saveTeacher(id){
+  const fn=$('f-fn').value.trim();
+  const ln=$('f-ln').value.trim();
+  const doj=$('f-doj').value;
+  const mobile=$('f-mobile').value.trim();
+  const qual=$('f-qual').value.trim();
+  if(!fn||!ln||!doj||!mobile||!qual){showAlert('page-alert','Preencha os campos obrigatórios.','danger');return;}
+  const payload={first_name:fn,last_name:ln,gender:$('f-gender').value,date_birth:$('f-dob').value||null,date_joining:doj,mobile_number:mobile,marital_status:$('f-marital').value,qualification:qual,work_experience:$('f-exp').value,note:$('f-note').value,status:$('f-status').value==='true'};
+  let err;
+  if(id){const r=await sb.from('teachers').update(payload).eq('id',id);err=r.error;}
+  else{const r=await sb.from('teachers').insert(payload);err=r.error;}
+  if(err){showAlert('page-alert','Erro: '+err.message,'danger');return;}
+  nav('teachers');
+}
+
+// --- STUDENTS ---
+pages.students=async function({view,id}={}){
+  if(view==='form') return studentForm(id);
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const name=getFilter('st-name')||'';
+  const classId=getFilter('st-class')||'';
+  const status=getFilter('st-status');
+  const[{data:classes=[]},{data:schools=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true)]);
+  let q=sb.from('students').select('*,class:classes(name)').order('created_at',{ascending:false});
+  if(name) q=q.or(`first_name.ilike.%${name}%,last_name.ilike.%${name}%`);
+  if(classId) q=q.eq('class_id',classId);
+  if(status==='1') q=q.eq('status',true);
+  if(status==='0') q=q.eq('status',false);
+  const{data=[]}=await q;
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Aluno</span></div>
+    <div class="page-title"><i class="fa fa-user-graduate"></i> Aluno</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Busca</span></div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-col"><label>Nome</label><input id="st-name" placeholder="Nome" value="${name}"></div>
+          <div class="form-col"><label>Turma</label><select id="st-class"><option value="">Todas</option>${classes.map(c=>`<option value="${c.id}" ${classId===c.id?'selected':''}>${c.name}</option>`).join('')}</select></div>
+          <div class="form-col"><label>Status</label><select id="st-status"><option value="">Todos</option><option value="1" ${status==='1'?'selected':''}>Ativo</option><option value="0" ${status==='0'?'selected':''}>Inativo</option></select></div>
+        </div>
+        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="nav('students')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['st-name','st-class','st-status']);nav('students')">Limpa</button></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Lista de alunos</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Nome</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="2">Ações</th></tr></thead>
+          <tbody>${data.length?data.map((s,i)=>`
+            <tr>
+              <td>${i+1}</td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(s.first_name)}</div><strong>${s.first_name} ${s.last_name}</strong></div></td>
+              <td>${s.mobile_number||'—'}</td>
+              <td>${s.class?.name||'—'}</td>
+              <td>${level_badge(s.level)}</td>
+              <td>${status_badge(s.status)}</td>
+              <td>${fdate(s.date_joining)}</td>
+              <td><button class="btn-icon" onclick="nav('students',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
+              <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('students','${s.id}','students')"><i class="fa fa-trash"></i></button></td>
+            </tr>`).join(''):`<tr><td colspan="9"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+};
+
+async function studentForm(id){
+  const[{data:classes=[]},{data:schools=[]},{data:teachers=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true),sb.from('teachers').select('id,first_name,last_name').eq('status',true)]);
+  let s={};
+  if(id){const{data}=await sb.from('students').select('*').eq('id',id).single();s=data||{};}
+  const classOpts=classes.map(c=>`<option value="${c.id}" ${s.class_id===c.id?'selected':''}>${c.name}</option>`).join('');
+  const schoolOpts=schools.map(c=>`<option value="${c.id}" ${s.school_id===c.id?'selected':''}>${c.name}</option>`).join('');
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('students')">Aluno</a> › <span>${id?'Editar':'Adicionar'}</span></div>
+    <div class="page-title"><i class="fa fa-user-graduate"></i> ${id?'Editar':'Adicionar'} aluno</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">${id?'Atualizar':'Novo'} aluno</span></div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div>
+            <div class="field"><label>Primeiro nome <span class="required">*</span></label><input id="f-fn" value="${s.first_name||''}"></div>
+            <div class="field"><label>Sobrenome <span class="required">*</span></label><input id="f-ln" value="${s.last_name||''}"></div>
+            <div class="field"><label>Gênero</label><select id="f-gender"><option value="">Selecione</option><option value="male" ${s.gender==='male'?'selected':''}>Masculino</option><option value="female" ${s.gender==='female'?'selected':''}>Feminino</option></select></div>
+            <div class="field"><label>Nascimento</label><input id="f-dob" type="date" value="${s.date_birth||''}"></div>
+            <div class="field"><label>Data matrícula <span class="required">*</span></label><input id="f-doj" type="date" value="${s.date_joining||''}"></div>
+            <div class="field"><label>Celular <span class="required">*</span></label><input id="f-mobile" value="${s.mobile_number||''}"></div>
+            <div class="field"><label>Endereço</label><textarea id="f-address">${s.address||''}</textarea></div>
+          </div>
+          <div>
+            <div class="field"><label>Nome do responsável</label><input id="f-parent" value="${s.parent_name||''}"></div>
+            <div class="field"><label>Celular do responsável</label><input id="f-parent-m" value="${s.parent_mobile||''}"></div>
+            <div class="field"><label>Turma</label><select id="f-class"><option value="">Nenhuma</option>${classOpts}</select></div>
+            <div class="field"><label>Escola</label><select id="f-school"><option value="">Nenhuma</option>${schoolOpts}</select></div>
+            <div class="field"><label>Nível</label><select id="f-level"><option value="">Selecione</option><option value="Básico" ${s.level==='Básico'?'selected':''}>Básico</option><option value="Intermediário" ${s.level==='Intermediário'?'selected':''}>Intermediário</option><option value="Avançado" ${s.level==='Avançado'?'selected':''}>Avançado</option></select></div>
+            <div class="field"><label>Observação</label><textarea id="f-note">${s.note||''}</textarea></div>
+            <div class="field"><label>Status</label><select id="f-status"><option value="true" ${s.status!==false?'selected':''}>Ativo</option><option value="false" ${s.status===false?'selected':''}>Inativo</option></select></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel-footer">
+        <button class="btn btn-default" onclick="nav('students')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveStudent('${id||''}')"><i class="fa fa-save"></i> ${id?'Atualizar':'Adicionar'}</button>
+      </div>
+    </div>
+  `);
+}
+
+async function saveStudent(id){
+  const fn=$('f-fn').value.trim();
+  const ln=$('f-ln').value.trim();
+  const doj=$('f-doj').value;
+  const mobile=$('f-mobile').value.trim();
+  if(!fn||!ln||!doj||!mobile){showAlert('page-alert','Preencha os campos obrigatórios.','danger');return;}
+  const payload={first_name:fn,last_name:ln,gender:$('f-gender').value||null,date_birth:$('f-dob').value||null,date_joining:doj,mobile_number:mobile,parent_name:$('f-parent').value,parent_mobile:$('f-parent-m').value,address:$('f-address').value,class_id:$('f-class').value||null,school_id:$('f-school').value||null,level:$('f-level').value||null,note:$('f-note').value,status:$('f-status').value==='true'};
+  let err;
+  if(id){const r=await sb.from('students').update(payload).eq('id',id);err=r.error;}
+  else{const r=await sb.from('students').insert(payload);err=r.error;}
+  if(err){showAlert('page-alert','Erro: '+err.message,'danger');return;}
+  nav('students');
+}
+
+// --- CLASSES ---
+pages.classes=async function({view,id}={}){
+  if(view==='form') return classForm(id);
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const{data=[]}=await sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').order('created_at',{ascending:false});
+  // count students per class
+  const counts={};
+  for(const c of data){const{count}=await sb.from('students').select('id',{count:'exact',head:true}).eq('class_id',c.id).eq('status',true);counts[c.id]=count||0;}
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Turmas</span></div>
+    <div class="page-title"><i class="fa fa-layer-group"></i> Turmas</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Lista de turmas</span><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'form'})"><i class="fa fa-plus"></i> Criar turma</button></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Nome</th><th>Professor</th><th>Escola</th><th>Horário</th><th>Nível</th><th>Alunos</th><th>Status</th><th colspan="2">Ações</th></tr></thead>
+          <tbody>${data.length?data.map((c,i)=>`
+            <tr>
+              <td>${i+1}</td>
+              <td><strong>${c.name}</strong></td>
+              <td>${c.teacher?c.teacher.first_name+' '+c.teacher.last_name:'—'}</td>
+              <td>${c.school?.name||'—'}</td>
+              <td>${c.schedule||'—'}</td>
+              <td>${level_badge(c.level)}</td>
+              <td><span class="badge badge-info">${counts[c.id]}</span></td>
+              <td>${status_badge(c.status)}</td>
+              <td><button class="btn-icon" onclick="nav('classes',{view:'form',id:'${c.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
+              <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('classes','${c.id}','classes')"><i class="fa fa-trash"></i></button></td>
+            </tr>`).join(''):`<tr><td colspan="10"><div class="empty-state"><i class="fa fa-layer-group"></i>Nenhuma turma cadastrada</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+};
+
+async function classForm(id){
+  const[{data:teachers=[]},{data:schools=[]}]=await Promise.all([sb.from('teachers').select('id,first_name,last_name').eq('status',true),sb.from('schools').select('id,name').eq('status',true)]);
+  let c={};
+  if(id){const{data}=await sb.from('classes').select('*').eq('id',id).single();c=data||{};}
+  const tOpts=teachers.map(t=>`<option value="${t.id}" ${c.teacher_id===t.id?'selected':''}>${t.first_name} ${t.last_name}</option>`).join('');
+  const sOpts=schools.map(s=>`<option value="${s.id}" ${c.school_id===s.id?'selected':''}>${s.name}</option>`).join('');
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('classes')">Turmas</a> › <span>${id?'Editar':'Criar'}</span></div>
+    <div class="page-title"><i class="fa fa-layer-group"></i> ${id?'Editar':'Criar'} turma</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">${id?'Atualizar':'Nova'} turma</span></div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div>
+            <div class="field"><label>Nome da turma <span class="required">*</span></label><input id="f-name" value="${c.name||''}" placeholder="Ex: Turma A — Básico"></div>
+            <div class="field"><label>Professor</label><select id="f-teacher"><option value="">Nenhum</option>${tOpts}</select></div>
+            <div class="field"><label>Escola</label><select id="f-school"><option value="">Nenhuma</option>${sOpts}</select></div>
+          </div>
+          <div>
+            <div class="field"><label>Horário</label><input id="f-schedule" value="${c.schedule||''}" placeholder="Ex: Seg/Qua 19h–20h30"></div>
+            <div class="field"><label>Nível</label><select id="f-level"><option value="">Selecione</option><option value="Básico" ${c.level==='Básico'?'selected':''}>Básico</option><option value="Intermediário" ${c.level==='Intermediário'?'selected':''}>Intermediário</option><option value="Avançado" ${c.level==='Avançado'?'selected':''}>Avançado</option></select></div>
+            <div class="field"><label>Status</label><select id="f-status"><option value="true" ${c.status!==false?'selected':''}>Ativo</option><option value="false" ${c.status===false?'selected':''}>Inativo</option></select></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel-footer">
+        <button class="btn btn-default" onclick="nav('classes')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveClass('${id||''}')"><i class="fa fa-save"></i> ${id?'Atualizar':'Criar'}</button>
+      </div>
+    </div>
+  `);
+}
+
+async function saveClass(id){
+  const name=$('f-name').value.trim();
+  if(!name){showAlert('page-alert','Informe o nome da turma.','danger');return;}
+  const payload={name,teacher_id:$('f-teacher').value||null,school_id:$('f-school').value||null,schedule:$('f-schedule').value,level:$('f-level').value||null,status:$('f-status').value==='true'};
+  let err;
+  if(id){const r=await sb.from('classes').update(payload).eq('id',id);err=r.error;}
+  else{const r=await sb.from('classes').insert(payload);err=r.error;}
+  if(err){showAlert('page-alert','Erro: '+err.message,'danger');return;}
+  nav('classes');
+}
+
+// ============================
+// FINANCEIRO
+// ============================
+function fmtBRL(v){return Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});}
+
+pages.financeiro=async function({view,studentId}={}){
+  if(view==='lancar') return finLancarBoletos(studentId);
+  if(view==='aluno')  return finAluno(studentId);
+
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+
+  const{data:kpi=[]}=await sb.from('resumo_financeiro_aluno').select('*');
+  const totalPago=kpi.reduce((s,r)=>s+parseFloat(r.valor_pago||0),0);
+  const totalAberto=kpi.reduce((s,r)=>s+parseFloat(r.valor_aberto||0),0);
+  const inadimplentes=kpi.filter(r=>parseFloat(r.valor_aberto)>0).length;
+
+  const fStatus=getFilter('fin-status');
+  const fNome=getFilter('fin-nome');
+  const fAno=getFilter('fin-ano')||new Date().getFullYear().toString();
+
+  let q=sb.from('boletos').select('*,student:students(id,first_name,last_name,status)').eq('ano_referencia',fAno).order('data_vencimento',{ascending:true});
+  if(fStatus) q=q.eq('status',fStatus);
+  const{data:boletos=[]}=await q;
+
+  const alunosMap={};
+  for(const b of boletos){
+    if(!b.student) continue;
+    const sid=b.student.id;
+    if(!alunosMap[sid]) alunosMap[sid]={...b.student,boletos:[],totalPago:0,totalAberto:0};
+    alunosMap[sid].boletos.push(b);
+    if(b.status==='pago') alunosMap[sid].totalPago+=parseFloat(b.valor);
+    if(b.status==='aberto') alunosMap[sid].totalAberto+=parseFloat(b.valor);
+  }
+
+  let alunos=Object.values(alunosMap);
+  if(fNome){const termo=fNome.toLowerCase();alunos=alunos.filter(a=>(a.first_name+' '+a.last_name).toLowerCase().includes(termo));}
+
+  const{data:todosAlunos=[]}=await sb.from('students').select('id,first_name,last_name').eq('status',true).order('first_name');
+  const anosOpts=[2024,2025,2026,2027].map(a=>`<option value="${a}" ${fAno==a?'selected':''}>${a}</option>`).join('');
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Financeiro</span></div>
+    <div class="page-title"><i class="fa fa-dollar-sign"></i> Controle Financeiro</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="fin-summary-grid">
+      <div class="fin-card c-green"><i class="fa fa-check-circle fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalPago)}</div><div class="fin-card-label">Total Pago (arrecadado)</div></div></div>
+      <div class="fin-card c-amber"><i class="fa fa-clock fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalAberto)}</div><div class="fin-card-label">Total em Aberto</div></div></div>
+      <div class="fin-card c-blue"><i class="fa fa-users fin-card-icon"></i><div><div class="fin-card-num">${inadimplentes}</div><div class="fin-card-label">Alunos com boleto em aberto</div></div></div>
+    </div>
+    <div class="panel" style="margin-bottom:14px">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-plus-circle" style="color:var(--brand)"></i> Lançar boletos para um aluno</span></div>
+      <div class="panel-body">
+        <div class="form-row" style="align-items:flex-end">
+          <div class="form-col" style="max-width:320px">
+            <label>Selecione o aluno</label>
+            <select id="fin-select-aluno"><option value="">— escolha um aluno —</option>${todosAlunos.map(a=>`<option value="${a.id}">${a.first_name} ${a.last_name}</option>`).join('')}</select>
+          </div>
+          <div><button class="btn btn-primary" onclick="finGoLancar()"><i class="fa fa-file-invoice-dollar"></i> Lançar boletos do ano</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Filtros</span></div>
+      <div class="panel-body">
+        <div class="fin-filter-bar">
+          <div class="form-col"><label>Nome do aluno</label><input id="fin-nome" value="${fNome}" placeholder="Buscar por nome…"></div>
+          <div class="form-col" style="max-width:160px"><label>Status</label><select id="fin-status"><option value="">Todos</option><option value="aberto" ${fStatus==='aberto'?'selected':''}>Em aberto</option><option value="pago" ${fStatus==='pago'?'selected':''}>Pago</option></select></div>
+          <div class="form-col" style="max-width:120px"><label>Ano</label><select id="fin-ano">${anosOpts}</select></div>
+          <div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="nav('financeiro')"><i class="fa fa-search"></i> Filtrar</button><button class="btn btn-danger" onclick="clearFilters(['fin-nome','fin-status','fin-ano']);nav('financeiro')">Limpar</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Boletos por aluno — ${fAno}</span><span style="font-size:12px;color:var(--gray-500)">${alunos.length} aluno(s)</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Aluno</th><th>Pago</th><th>Em aberto</th><th>Situação</th><th>Ações</th></tr></thead>
+          <tbody>${alunos.length?alunos.map(a=>`
+            <tr>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${a.first_name} ${a.last_name}</strong></div></td>
+              <td style="color:#155724;font-weight:600">${fmtBRL(a.totalPago)}</td>
+              <td style="color:#856404;font-weight:600">${fmtBRL(a.totalAberto)}</td>
+              <td>${a.totalAberto>0?'<span class="badge badge-warning"><i class="fa fa-exclamation-triangle"></i> Em aberto</span>':'<span class="badge badge-success"><i class="fa fa-check"></i> Em dia</span>'}</td>
+              <td><button class="btn btn-primary btn-sm" onclick="nav('financeiro',{view:'aluno',studentId:'${a.id}'})"><i class="fa fa-list"></i> Ver boletos</button></td>
+            </tr>`).join(''):`<tr><td colspan="5"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto encontrado com os filtros selecionados.</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+};
+
+async function finAluno(studentId){
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const fAno=getFilter('fin-ano')||new Date().getFullYear().toString();
+  const[{data:student},{data:boletos=[]}]=await Promise.all([
+    sb.from('students').select('id,first_name,last_name').eq('id',studentId).single(),
+    sb.from('boletos').select('*').eq('student_id',studentId).eq('ano_referencia',fAno).order('mes_referencia',{ascending:true}),
+  ]);
+  if(!student){nav('financeiro');return;}
+
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const totalPago=boletos.filter(b=>b.status==='pago').reduce((s,b)=>s+parseFloat(b.valor),0);
+  const totalAberto=boletos.filter(b=>b.status==='aberto').reduce((s,b)=>s+parseFloat(b.valor),0);
+
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('financeiro')">Financeiro</a> › <span>${student.first_name} ${student.last_name}</span></div>
+    <div class="page-title"><i class="fa fa-file-invoice-dollar"></i> Boletos — ${student.first_name} ${student.last_name}</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="fin-summary-grid" style="grid-template-columns:1fr 1fr 1fr">
+      <div class="fin-card c-green"><i class="fa fa-check-circle fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalPago)}</div><div class="fin-card-label">Total Pago</div></div></div>
+      <div class="fin-card c-amber"><i class="fa fa-clock fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalAberto)}</div><div class="fin-card-label">Em Aberto</div></div></div>
+      <div class="fin-card c-blue"><i class="fa fa-file-invoice fin-card-icon"></i><div><div class="fin-card-num">${boletos.length}</div><div class="fin-card-label">Boletos lançados</div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Boletos ${fAno}</span><button class="btn btn-primary btn-sm" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar / Reeditar boletos</button></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pgto.</th><th>Observação</th></tr></thead>
+          <tbody>${boletos.length?boletos.map(b=>`
+            <tr id="row-${b.id}">
+              <td><strong>${meses[(b.mes_referencia-1)]} / ${b.ano_referencia}</strong></td>
+              <td>${fdate(b.data_vencimento)}</td>
+              <td>${fmtBRL(b.valor)}</td>
+              <td><button class="boleto-status-toggle ${b.status==='pago'?'boleto-pago':'boleto-aberto'}" onclick="toggleBoletoStatus('${b.id}','${b.status}','${student.id}')"><i class="fa ${b.status==='pago'?'fa-check-circle':'fa-clock'}"></i> ${b.status==='pago'?'Pago':'Em aberto'}</button></td>
+              <td>${b.data_pagamento?fdate(b.data_pagamento):'—'}</td>
+              <td style="font-size:12px;color:var(--gray-500)">${b.observacao||'—'}</td>
+            </tr>`).join(''):`<tr><td colspan="6"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto lançado para ${fAno}.<br><br><button class="btn btn-primary" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar boletos agora</button></div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+}
+
+async function finLancarBoletos(studentId){
+  const{data:student}=await sb.from('students').select('id,first_name,last_name').eq('id',studentId).single();
+  if(!student){nav('financeiro');return;}
+
+  const ano=new Date().getFullYear();
+  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const{data:existentes=[]}=await sb.from('boletos').select('*').eq('student_id',studentId).eq('ano_referencia',ano);
+  const existMap={};
+  for(const b of existentes) existMap[b.mes_referencia]=b;
+
+  const linhas=meses.map((m,i)=>{
+    const mes=i+1;
+    const ex=existMap[mes];
+    const dataDefault=`${ano}-${String(mes).padStart(2,'0')}-10`;
+    return `
+      <tr>
+        <td style="font-weight:600;color:var(--gray-700)">${m}</td>
+        <td><input type="date" id="venc-${mes}" value="${ex?.data_vencimento||dataDefault}" style="width:140px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px"></td>
+        <td><input type="number" id="valor-${mes}" value="${ex?.valor||''}" placeholder="0,00" min="0" step="0.01" style="width:120px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px"></td>
+        <td><span class="${ex?(ex.status==='pago'?'badge badge-success':'badge badge-warning'):'badge badge-secondary'}">${ex?(ex.status==='pago'?'Pago':'Em aberto'):'Novo'}</span></td>
+      </tr>`;
+  }).join('');
+
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('financeiro')">Financeiro</a> › <a onclick="nav('financeiro',{view:'aluno',studentId:'${student.id}'})">${student.first_name} ${student.last_name}</a> › Lançar boletos</div>
+    <div class="page-title"><i class="fa fa-file-invoice-dollar"></i> Lançar boletos — ${student.first_name} ${student.last_name} (${ano})</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Parcelas mensais ${ano}</span>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--gray-700)">
+          Aplicar mesmo valor a todos:
+          <input type="number" id="valor-global" placeholder="Ex: 350,00" min="0" step="0.01" style="width:110px;padding:4px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px">
+          <button class="btn btn-default btn-sm" onclick="aplicarValorGlobal()">Aplicar</button>
+        </div>
+      </div>
+      <div class="panel-body" style="padding:0">
+        <table><thead><tr><th>Mês</th><th>Data de Vencimento</th><th>Valor (R$)</th><th>Situação</th></tr></thead><tbody>${linhas}</tbody></table>
+      </div>
+      <div class="panel-footer">
+        <button class="btn btn-default" onclick="nav('financeiro',{view:'aluno',studentId:'${student.id}'})">Cancelar</button>
+        <button class="btn btn-primary" onclick="salvarBoletos('${student.id}')"><i class="fa fa-save"></i> Salvar todos os boletos</button>
+      </div>
+    </div>
+  `);
+}
+
+function finGoLancar(){
+  const sid=$('fin-select-aluno')?.value;
+  if(!sid){alert('Selecione um aluno primeiro.');return;}
+  nav('financeiro',{view:'lancar',studentId:sid});
+}
+
+function aplicarValorGlobal(){
+  const v=$('valor-global')?.value;
+  if(!v) return;
+  for(let m=1;m<=12;m++){const el=$(`valor-${m}`);if(el)el.value=v;}
+}
+
+async function salvarBoletos(studentId){
+  const ano=new Date().getFullYear();
+  const rows=[];
+  for(let m=1;m<=12;m++){
+    const venc=$(`venc-${m}`)?.value;
+    const valor=parseFloat($(`valor-${m}`)?.value||0);
+    if(!venc||!valor) continue;
+    rows.push({student_id:studentId,mes_referencia:m,ano_referencia:ano,data_vencimento:venc,valor});
+  }
+  if(!rows.length){showAlert('page-alert','Informe ao menos um mês com vencimento e valor.','danger');return;}
+  const{error}=await sb.from('boletos').upsert(rows,{onConflict:'student_id,mes_referencia,ano_referencia',ignoreDuplicates:false});
+  if(error){showAlert('page-alert','Erro ao salvar: '+error.message,'danger');return;}
+  nav('financeiro',{view:'aluno',studentId});
+}
+
+async function toggleBoletoStatus(boletoId,statusAtual,studentId){
+  const novoStatus=statusAtual==='pago'?'aberto':'pago';
+  const payload={status:novoStatus,data_pagamento:novoStatus==='pago'?new Date().toISOString().split('T')[0]:null};
+  const{error}=await sb.from('boletos').update(payload).eq('id',boletoId);
+  if(error){alert('Erro ao atualizar: '+error.message);return;}
+  const btn=document.querySelector(`#row-${boletoId} .boleto-status-toggle`);
+  if(btn){
+    btn.className=`boleto-status-toggle ${novoStatus==='pago'?'boleto-pago':'boleto-aberto'}`;
+    btn.innerHTML=`<i class="fa ${novoStatus==='pago'?'fa-check-circle':'fa-clock'}"></i> ${novoStatus==='pago'?'Pago':'Em aberto'}`;
+    btn.setAttribute('onclick',`toggleBoletoStatus('${boletoId}','${novoStatus}','${studentId}')`);
+  }
+  const row=document.getElementById(`row-${boletoId}`);
+  if(row){const cells=row.querySelectorAll('td');if(cells[4]) cells[4].textContent=novoStatus==='pago'?fdate(payload.data_pagamento):'—';}
+}
+
+// ============================
+// HELPERS
+// ============================
+function setContent(html){$('content').innerHTML=html;}
+
+async function deleteRecord(table,id,returnPage){
+  showConfirm(async()=>{
+    const{error}=await sb.from(table).delete().eq('id',id);
+    if(error){alert('Erro ao excluir: '+error.message);return;}
+    nav(returnPage);
+  });
+}
+
+const _filters={};
+function getFilter(key){return $( key)?.value||_filters[key]||'';}
+function clearFilters(keys){keys.forEach(k=>{const el=$(k);if(el)el.value='';delete _filters[k];});}
+
+// Enter no login
+document.addEventListener('DOMContentLoaded',()=>{
+  document.addEventListener('keydown',e=>{if(e.key==='Enter'&&$('login-page').style.display!=='none')doLogin();});
+});
+</script>
+</body>
+</html>
