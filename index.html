@@ -1014,9 +1014,11 @@ async function finLancarBoletos(studentId){
         <td><input type="date" id="venc-${mes}" value="${ex?.data_vencimento||dataDefault}" style="width:140px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px"></td>
         <td><input type="number" id="valor-${mes}" value="${ex?.valor||''}" placeholder="0,00" min="0" step="0.01" style="width:120px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px"></td>
         <td><span class="${ex?(ex.status==='pago'?'badge badge-success':'badge badge-warning'):'badge badge-secondary'}">${ex?(ex.status==='pago'?'Pago':'Em aberto'):'Novo'}</span></td>
-        <td style="white-space:nowrap">
-          <input type="url" id="url-${mes}" value="${ex?.url_boleto||''}" placeholder="Link (https://...)" style="width:180px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;margin-bottom:4px;display:block">
-          <input type="text" id="codigo-${mes}" value="${ex?.codigo_boleto||''}" placeholder="Código de barras" style="width:180px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;display:block">
+        <td>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <input type="url" id="url-${mes}" value="${ex?.url_boleto||''}" placeholder="🔗 Link do boleto" style="width:220px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px">
+            <input type="text" id="codigo-${mes}" value="${ex?.codigo_boleto||''}" placeholder="# Código de barras" style="width:220px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;font-family:monospace">
+          </div>
         </td>
       </tr>`;
   }).join('');
