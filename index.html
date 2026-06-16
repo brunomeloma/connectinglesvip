@@ -966,20 +966,25 @@ async function finAluno(studentId){
       <div class="fin-card c-orange"><i class="fa fa-clock fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalAberto)}</div><div class="fin-card-label">Em Aberto</div></div></div>
       <div class="fin-card c-dark"><i class="fa fa-file-invoice fin-card-icon"></i><div><div class="fin-card-num">${boletos.length}</div><div class="fin-card-label">Boletos lançados</div></div></div>
     </div>
+    ${(()=>{const vencidos=boletos.filter(b=>b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date());return vencidos.length?`<div style="background:#fff5f5;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px;color:#721c24"><i class="fa fa-exclamation-triangle" style="color:var(--danger);font-size:16px"></i><strong>\${vencidos.length} boleto\${vencidos.length>1?'s':''} vencido\${vencidos.length>1?'s':''}</strong> — verifique os meses destacados em vermelho abaixo.</div>`:''})()}
     <div class="panel">
       <div class="panel-head"><span class="panel-title">Boletos ${fAno}</span><button class="btn btn-primary btn-sm" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar / Reeditar boletos</button></div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pgto.</th><th>Observação</th><th>Boleto</th></tr></thead>
           <tbody>${boletos.length?boletos.map(b=>`
-            <tr id="row-${b.id}">
-              <td><strong>${meses[(b.mes_referencia-1)]} / ${b.ano_referencia}</strong></td>
-              <td>${fdate(b.data_vencimento)}</td>
+            <tr id="row-${b.id}" style="${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'background:#fff5f5;border-left:3px solid var(--danger)':''}">
+              <td><strong>${meses[(b.mes_referencia-1)]} / ${b.ano_referencia}</strong>${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'<span class="badge badge-danger" style="margin-left:6px">Vencido</span>':''}</td>
+              <td style="${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'color:var(--danger);font-weight:600':''}">${fdate(b.data_vencimento)}</td>
               <td>${fmtBRL(b.valor)}</td>
               <td><button class="boleto-status-toggle ${b.status==='pago'?'boleto-pago':'boleto-aberto'}" onclick="toggleBoletoStatus('${b.id}','${b.status}','${student.id}')"><i class="fa ${b.status==='pago'?'fa-check-circle':'fa-clock'}"></i> ${b.status==='pago'?'Pago':'Em aberto'}</button></td>
               <td>${b.data_pagamento?fdate(b.data_pagamento):'—'}</td>
               <td style="font-size:12px;color:var(--gray-500)">${b.observacao||'—'}</td>
-              <td>${b.url_boleto?`<a href="${b.url_boleto}" target="_blank" class="btn btn-primary btn-sm"><i class="fa fa-barcode"></i> Abrir</a>`:'<span style="color:var(--gray-500);font-size:12px">—</span>'}</td>
+              <td style="white-space:nowrap">
+                ${b.url_boleto?`<a href="${b.url_boleto}" target="_blank" class="btn btn-primary btn-sm" style="margin-right:4px"><i class="fa fa-external-link-alt"></i> Abrir</a>`:''}
+                ${b.codigo_boleto?`<button class="btn btn-default btn-sm" onclick="copiarCodigo('${b.id}','${b.codigo_boleto}')" title="Copiar código"><i class="fa fa-copy"></i> <span id="copy-label-${b.id}">Copiar código</span></button>`:''}
+                ${!b.url_boleto&&!b.codigo_boleto?'<span style="color:var(--gray-500);font-size:12px">—</span>':''}
+              </td>
             </tr>`).join(''):`<tr><td colspan="7"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto lançado para ${fAno}.<br><br><button class="btn btn-primary" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar boletos agora</button></div></td></tr>`}
           </tbody>
         </table>
@@ -1008,7 +1013,10 @@ async function finLancarBoletos(studentId){
         <td><input type="date" id="venc-${mes}" value="${ex?.data_vencimento||dataDefault}" style="width:140px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px"></td>
         <td><input type="number" id="valor-${mes}" value="${ex?.valor||''}" placeholder="0,00" min="0" step="0.01" style="width:120px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px"></td>
         <td><span class="${ex?(ex.status==='pago'?'badge badge-success':'badge badge-warning'):'badge badge-secondary'}">${ex?(ex.status==='pago'?'Pago':'Em aberto'):'Novo'}</span></td>
-        <td><input type="url" id="url-${mes}" value="${ex?.url_boleto||''}" placeholder="https://..." style="width:220px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px"></td>
+        <td style="white-space:nowrap">
+          <input type="url" id="url-${mes}" value="${ex?.url_boleto||''}" placeholder="Link (https://...)" style="width:180px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;margin-bottom:4px;display:block">
+          <input type="text" id="codigo-${mes}" value="${ex?.codigo_boleto||''}" placeholder="Código de barras" style="width:180px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;display:block">
+        </td>
       </tr>`;
   }).join('');
 
@@ -1026,7 +1034,7 @@ async function finLancarBoletos(studentId){
         </div>
       </div>
       <div class="panel-body" style="padding:0">
-        <table><thead><tr><th>Mês</th><th>Data de Vencimento</th><th>Valor (R$)</th><th>Situação</th><th>Link do Boleto</th></tr></thead><tbody>${linhas}</tbody></table>
+        <table><thead><tr><th>Mês</th><th>Data de Vencimento</th><th>Valor (R$)</th><th>Situação</th><th>Link & Código do Boleto</th></tr></thead><tbody>${linhas}</tbody></table>
       </div>
       <div class="panel-footer">
         <button class="btn btn-default" onclick="nav('financeiro',{view:'aluno',studentId:'${student.id}'})">Cancelar</button>
@@ -1056,7 +1064,8 @@ async function salvarBoletos(studentId){
     const valor=parseFloat($(`valor-${m}`)?.value||0);
     if(!venc||!valor) continue;
     const url=$(`url-${m}`)?.value?.trim()||null;
-    rows.push({student_id:studentId,mes_referencia:m,ano_referencia:ano,data_vencimento:venc,valor,url_boleto:url});
+    const codigo=$(`codigo-${m}`)?.value?.trim()||null;
+    rows.push({student_id:studentId,mes_referencia:m,ano_referencia:ano,data_vencimento:venc,valor,url_boleto:url,codigo_boleto:codigo});
   }
   if(!rows.length){showAlert('page-alert','Informe ao menos um mês com vencimento e valor.','danger');return;}
   const{error}=await sb.from('boletos').upsert(rows,{onConflict:'student_id,mes_referencia,ano_referencia',ignoreDuplicates:false});
@@ -1082,6 +1091,12 @@ async function toggleBoletoStatus(boletoId,statusAtual,studentId){
 // ============================
 // HELPERS
 // ============================
+function copiarCodigo(id, codigo){
+  navigator.clipboard.writeText(codigo).then(()=>{
+    const label=document.getElementById('copy-label-'+id);
+    if(label){label.textContent='Copiado!';setTimeout(()=>{label.textContent='Copiar código';},2000);}
+  }).catch(()=>alert('Código: '+codigo));
+}
 function setContent(html){$('content').innerHTML=html;}
 
 async function deleteRecord(table,id,returnPage){
