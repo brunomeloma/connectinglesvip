@@ -1499,12 +1499,12 @@ async function marcarVencidosComoPago(studentId, ids){
 // VIP ONLINE
 // ============================
 const MSG_TEMPLATES={
-  confirmar_presenca:{label:'Confirmar presença',icon:'fa-check-circle',text:'Olá, {nome}! Tudo bem? Passando para confirmar sua presença na aula de inglês VIP online de hoje. Você consegue participar?'},
-  lembrar_aula:{label:'Lembrar aula de hoje',icon:'fa-bell',text:'Olá, {nome}! Lembrando que hoje você tem aula de inglês VIP online. Te esperamos!'},
-  avisar_atraso:{label:'Avisar atraso',icon:'fa-clock',text:'Olá, {nome}! Informamos que a aula de hoje terá um pequeno atraso. Pedimos desculpas pelo inconveniente.'},
-  reagendar:{label:'Reagendar aula',icon:'fa-calendar-alt',text:'Olá, {nome}! Precisamos reagendar sua aula de inglês VIP online. Qual horário fica melhor para você?'},
-  cobranca:{label:'Cobrança amigável',icon:'fa-hand-holding-usd',text:'Olá, {nome}! Tudo bem? Gostaríamos de lembrar que há uma mensalidade em aberto. Poderia verificar, por favor?'},
-  boleto_vencido:{label:'Boleto vencido',icon:'fa-exclamation-triangle',text:'Olá, {nome}! Identificamos que seu boleto está vencido. Por favor, regularize o quanto antes para evitar interrupção nas aulas.'},
+  confirmar_presenca:{label:'Confirmar presença',icon:'fa-check-circle',text:'Olá, {nome}! Tudo bem? 😊\nAqui é da *{escola}*. Passando para confirmar sua presença na aula de inglês VIP online de hoje{professor}.\nVocê consegue participar?'},
+  lembrar_aula:{label:'Lembrar aula de hoje',icon:'fa-bell',text:'Olá, {nome}! 📚\nLembrando que hoje você tem aula de inglês VIP online na *{escola}*{professor}.\nTe esperamos! 😄'},
+  avisar_atraso:{label:'Avisar atraso',icon:'fa-clock',text:'Olá, {nome}! ⏰\nAqui é da *{escola}*. Informamos que a aula de hoje{professor} terá um pequeno atraso.\nPedimos desculpas pelo inconveniente e avisaremos assim que estiver tudo pronto!'},
+  reagendar:{label:'Reagendar aula',icon:'fa-calendar-alt',text:'Olá, {nome}! 📅\nAqui é da *{escola}*. Precisamos reagendar sua aula de inglês VIP online{professor}.\nQual horário fica melhor para você?'},
+  cobranca:{label:'Cobrança amigável',icon:'fa-hand-holding-usd',text:'Olá, {nome}! Tudo bem? 😊\nAqui é da *{escola}*. Gostaríamos de lembrar que há uma mensalidade em aberto referente ao seu curso de inglês.\nPoderia verificar, por favor? Qualquer dúvida estamos à disposição!'},
+  boleto_vencido:{label:'Boleto vencido',icon:'fa-exclamation-triangle',text:'Olá, {nome}! 🔔\nAqui é da *{escola}*. Identificamos que seu boleto referente ao curso de inglês está vencido.\nPor favor, regularize o quanto antes para evitar interrupção nas aulas.\nSe já pagou, desconsidere esta mensagem. Qualquer dúvida, estamos aqui!'},
 };
 
 pages.vip=async function({view,studentId}={}){
@@ -1547,11 +1547,16 @@ pages.vip=async function({view,studentId}={}){
   `);
 };
 
+let _vipCtx={};
 async function vipContato(studentId){
-  const{data:s}=await sb.from('students').select('*').eq('id',studentId).single();
+  const{data:s}=await sb.from('students').select('*,class:classes(name,teacher_id,school_id,teacher:teachers(first_name,last_name),school:schools(name))').eq('id',studentId).single();
   if(!s){nav('vip');return;}
   const nome=s.first_name;
-  const numero=(s.whatsapp||s.mobile_number||'').replace(/\D/g,'');
+  let numero=(s.whatsapp||s.mobile_number||'').replace(/\D/g,'');
+  if(numero&&!numero.startsWith('55'))numero='55'+numero;
+  const escolaNome=s.class?.school?.name||'Connect Inglês VIP';
+  const profNome=s.class?.teacher?s.class.teacher.first_name+' '+s.class.teacher.last_name:'';
+  _vipCtx={nome,escolaNome,profNome};
 
   setContent(`
     <div class="breadcrumb"><a onclick="nav('vip')">VIP Online</a> › <span>${s.first_name} ${s.last_name}</span> › Contato</div>
@@ -1562,7 +1567,7 @@ async function vipContato(studentId){
         <div class="panel-head"><span class="panel-title">Mensagens rápidas</span></div>
         <div class="panel-body" style="padding:8px">
           ${Object.entries(MSG_TEMPLATES).map(([k,t])=>`
-            <div class="msg-template" onclick="preencherMsg('${k}','${nome}')">
+            <div class="msg-template" onclick="preencherMsg('${k}')">
               <i class="fa ${t.icon}"></i> ${t.label}
             </div>`).join('')}
         </div>
@@ -1588,19 +1593,22 @@ async function vipContato(studentId){
   carregarUltimosContatos(studentId,5);
 }
 
-function preencherMsg(tipo,nome){
+function preencherMsg(tipo){
   const t=MSG_TEMPLATES[tipo];
   if(!t) return;
+  const{nome,escolaNome,profNome}=_vipCtx;
   const sel=$('vip-msg-type');if(sel)sel.value=tipo;
-  const ta=$('vip-msg-text');if(ta)ta.value=t.text.replace(/\{nome\}/g,nome);
+  const profTxt=profNome?' com o(a) professor(a) '+profNome:'';
+  const texto=t.text.replace(/\{nome\}/g,nome).replace(/\{escola\}/g,escolaNome).replace(/\{professor\}/g,profTxt);
+  const ta=$('vip-msg-text');if(ta)ta.value=texto;
 }
 
 async function enviarWhatsApp(studentId,numero){
   const texto=$('vip-msg-text')?.value?.trim();
   if(!texto){showAlert('page-alert','Digite uma mensagem.','danger');return;}
-  if(!numero){showAlert('page-alert','Aluno sem número de WhatsApp cadastrado.','danger');return;}
-  const encoded=encodeURIComponent(texto);
-  window.open(`https://wa.me/${numero}?text=${encoded}`,'_blank');
+  if(!numero||numero.length<10){showAlert('page-alert','Aluno sem número de WhatsApp válido. Verifique o cadastro.','danger');return;}
+  const url='https://wa.me/'+numero+'?text='+encodeURIComponent(texto);
+  window.open(url,'_blank');
   await registrarContato(studentId,'whatsapp');
 }
 
@@ -1625,10 +1633,11 @@ async function carregarUltimosContatos(studentId,limit){
   el.innerHTML=data.map(c=>{
     const label=MSG_TEMPLATES[c.contact_type]?.label||c.contact_type||'Personalizada';
     const channelIcon=c.channel==='whatsapp'?'<i class="fab fa-whatsapp" style="color:#25D366"></i>':'<i class="fa fa-comment" style="color:var(--gray-500)"></i>';
+    const delBtn=isAdmin()?` <button class="btn-icon" style="color:var(--danger);float:right" onclick="deletarContato('${c.id}','${studentId}')" title="Excluir"><i class="fa fa-trash"></i></button>`:'';
     return `<div class="contact-log">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div>${channelIcon} <strong>${label}</strong> <span class="badge badge-secondary">${c.channel}</span></div>
-        <span class="contact-log-date">${new Date(c.created_at).toLocaleString('pt-BR')}</span>
+        <div>${delBtn} <span class="contact-log-date">${new Date(c.created_at).toLocaleString('pt-BR')}</span></div>
       </div>
       <div style="margin-top:4px;color:var(--gray-700)">${c.message}</div>
       ${c.notes?`<div style="margin-top:3px;font-style:italic;color:var(--gray-500)">Nota: ${c.notes}</div>`:''}
@@ -1653,10 +1662,11 @@ async function vipHistorico(studentId){
         ${contatos.length?contatos.map(c=>{
           const label=MSG_TEMPLATES[c.contact_type]?.label||c.contact_type||'Personalizada';
           const channelIcon=c.channel==='whatsapp'?'<i class="fab fa-whatsapp" style="color:#25D366"></i>':'<i class="fa fa-comment" style="color:var(--gray-500)"></i>';
+          const delBtn=isAdmin()?` <button class="btn-icon" style="color:var(--danger)" onclick="deletarContato('${c.id}','${studentId}')" title="Excluir"><i class="fa fa-trash"></i></button>`:'';
           return `<div class="contact-log">
             <div style="display:flex;justify-content:space-between;align-items:center">
               <div>${channelIcon} <strong>${label}</strong> <span class="badge badge-secondary">${c.channel}</span></div>
-              <span class="contact-log-date">${new Date(c.created_at).toLocaleString('pt-BR')}</span>
+              <div>${delBtn} <span class="contact-log-date">${new Date(c.created_at).toLocaleString('pt-BR')}</span></div>
             </div>
             <div style="margin-top:4px;color:var(--gray-700)">${c.message}</div>
             ${c.notes?`<div style="margin-top:3px;font-style:italic;color:var(--gray-500)">Nota: ${c.notes}</div>`:''}
@@ -1665,6 +1675,14 @@ async function vipHistorico(studentId){
       </div>
     </div>
   `);
+}
+
+async function deletarContato(contatoId,studentId){
+  showConfirm(async()=>{
+    const{error}=await sb.from('student_contacts').delete().eq('id',contatoId);
+    if(error){alert('Erro ao excluir: '+error.message);return;}
+    nav('vip',{view:'historico',studentId});
+  });
 }
 
 // ============================
