@@ -410,6 +410,7 @@ let currentUser = null;
 // UTILS
 // ============================
 function $(id){return document.getElementById(id)}
+function escapeHtml(s){if(!s)return '';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML;}
 function role_badge(role){
   const map={super_admin:'badge-purple',admin:'badge-secondary',direcao:'badge-purple',financeiro:'badge-info',secretaria:'badge-gold',escola:'badge-warning',escola_admin:'badge-info',professor:'badge-primary'};
   const label={super_admin:'Super Admin',admin:'Admin',direcao:'Direção',financeiro:'Financeiro',secretaria:'Secretaria',escola:'Escola',escola_admin:'Escola Admin',professor:'Professor'};
@@ -426,7 +427,7 @@ function requireRole(allowed,msg){if(!allowed){showAlert('page-alert',msg||'Sem 
 function status_badge(s){return s?'<span class="badge badge-success">Ativo</span>':'<span class="badge badge-warning">Inativo</span>';}
 function level_badge(l){if(!l)return '—';const m={Básico:'badge-basico',Intermediário:'badge-intermediario',Avançado:'badge-avancado'};return `<span class="badge ${m[l]||'badge-secondary'}">${l}</span>`;}
 function fdate(d){if(!d)return '—';return new Date(d).toLocaleDateString('pt-BR');}
-function avatar(name){return (name||'?').charAt(0).toUpperCase();}
+function avatar(name){return escapeHtml((name||'?').charAt(0).toUpperCase());}
 function showAlert(id,msg,type='success'){const el=$(id);if(!el)return;el.className='alert alert-'+type;el.textContent=msg;el.style.display='block';setTimeout(()=>{el.style.display='none'},3500);}
 function closeConfirm(){$('confirm-overlay').style.display='none';}
 function showConfirm(cb){
@@ -1333,18 +1334,21 @@ pages.financeiro=async function({view,studentId}={}){
   const fNome=getFilter('fin-nome')||'';
   const fAno=getFilter('fin-ano')||new Date().getFullYear().toString();
 
-  const{data:boletos=[]}=await sb.rpc('get_boletos_com_aluno',{p_ano:parseInt(fAno),p_status:fStatus||null});
-
-  const alunosMap={};
-  for(const b of boletos){
-    const sid=b.student_id;
-    if(!alunosMap[sid]) alunosMap[sid]={id:sid,first_name:b.first_name,last_name:b.last_name,boletos:[],totalPago:0,totalAberto:0};
-    alunosMap[sid].boletos.push(b);
-    if(b.status==='pago') alunosMap[sid].totalPago+=parseFloat(b.valor);
-    if(b.status==='aberto') alunosMap[sid].totalAberto+=parseFloat(b.valor);
+  let alunos=[];
+  if(canSeeFinanceiroGlobal()){
+    const{data:boletos=[]}=await sb.rpc('get_boletos_com_aluno',{p_ano:parseInt(fAno),p_status:fStatus||null});
+    const alunosMap={};
+    for(const b of boletos){
+      const sid=b.student_id;
+      if(!alunosMap[sid]) alunosMap[sid]={id:sid,first_name:b.first_name,last_name:b.last_name,totalPago:0,totalAberto:0};
+      if(b.status==='pago') alunosMap[sid].totalPago+=parseFloat(b.valor);
+      if(b.status==='aberto') alunosMap[sid].totalAberto+=parseFloat(b.valor);
+    }
+    alunos=Object.values(alunosMap);
+  } else {
+    const{data:lista=[]}=await sb.rpc('get_alunos_com_boletos_status',{p_ano:parseInt(fAno)});
+    alunos=lista.map(a=>({id:a.student_id,first_name:a.first_name,last_name:a.last_name,totalAberto:a.tem_aberto?1:0,totalPago:0}));
   }
-
-  let alunos=Object.values(alunosMap);
   if(fNome){const termo=fNome.toLowerCase();alunos=alunos.filter(a=>(a.first_name+' '+a.last_name).toLowerCase().includes(termo));}
 
   const{data:todosAlunos=[]}=await sb.from('students').select('id,first_name,last_name').eq('status',true).order('first_name');
@@ -1457,7 +1461,7 @@ async function finAluno(studentId){
               <td>${b.data_pagamento?fdate(b.data_pagamento):'—'}</td>
               <td style="font-size:12px;color:var(--gray-500)">${b.observacao||'—'}</td>
               <td style="white-space:nowrap">
-                ${b.comprovante_url||b.comprovante_path?`<a href="#" onclick="abrirComprovante('${b.comprovante_path||b.comprovante_url}');return false" class="comprovante-icon" style="margin-right:6px"><i class="fa fa-image"></i> Comprovante</a>`:''}
+                ${b.comprovante_path?`<a href="#" onclick="abrirComprovante('${escapeHtml(b.comprovante_path)}','path');return false" class="comprovante-icon" style="margin-right:6px"><i class="fa fa-image"></i> Comprovante</a>`:b.comprovante_url?`<a href="${escapeHtml(b.comprovante_url)}" target="_blank" class="comprovante-icon" style="margin-right:6px"><i class="fa fa-image"></i> Comprovante</a>`:''}
                 ${b.url_boleto?`<a href="${b.url_boleto}" target="_blank" class="btn btn-primary btn-sm" style="margin-right:4px"><i class="fa fa-external-link-alt"></i> Abrir</a>`:''}
                 ${b.codigo_boleto?`<button class="btn btn-default btn-sm" onclick="copiarCodigo('${b.id}','${b.codigo_boleto}')" title="Copiar código"><i class="fa fa-copy"></i> <span id="copy-label-${b.id}">Copiar código</span></button>`:''}
                 ${!b.comprovante_url&&!b.url_boleto&&!b.codigo_boleto?'<span style="color:var(--gray-500);font-size:12px">—</span>':''}
@@ -1870,12 +1874,15 @@ async function deletarContato(contatoId,studentId){
 // ============================
 // HELPERS
 // ============================
-async function abrirComprovante(pathOrUrl){
-  if(!pathOrUrl) return;
-  if(pathOrUrl.startsWith('http')){window.open(pathOrUrl,'_blank');return;}
-  const{data,error}=await sb.storage.from('comprovantes').createSignedUrl(pathOrUrl,3600);
-  if(error||!data?.signedUrl){alert('Erro ao gerar link do comprovante.');return;}
-  window.open(data.signedUrl,'_blank');
+async function abrirComprovante(value,tipo){
+  if(!value) return;
+  if(tipo==='path'){
+    const{data,error}=await sb.storage.from('comprovantes').createSignedUrl(value,3600);
+    if(error||!data?.signedUrl){alert('Erro ao gerar link do comprovante.');return;}
+    window.open(data.signedUrl,'_blank');
+  } else {
+    window.open(value,'_blank');
+  }
 }
 
 function copiarCodigo(id, codigo){
