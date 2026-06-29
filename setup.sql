@@ -285,6 +285,87 @@ AS $$ BEGIN
   DELETE FROM boletos WHERE id=p_boleto_id;
 END; $$;
 
+-- Boletos que vencem hoje (com dados do aluno, para aba Cobranças)
+CREATE OR REPLACE FUNCTION get_boletos_vencem_hoje()
+RETURNS TABLE(
+  id uuid, student_id uuid, first_name text, last_name text, whatsapp text, mobile_number text,
+  mes_referencia int, ano_referencia int, data_vencimento date, valor numeric,
+  status text, url_boleto text, codigo_boleto text, observacao text,
+  comprovante_path text, comprovante_url text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT b.id, b.student_id, s.first_name, s.last_name, s.whatsapp, s.mobile_number,
+      b.mes_referencia, b.ano_referencia, b.data_vencimento, b.valor,
+      b.status, b.url_boleto, b.codigo_boleto, b.observacao,
+      b.comprovante_path, b.comprovante_url
+    FROM boletos b JOIN students s ON s.id=b.student_id
+    WHERE b.data_vencimento=CURRENT_DATE AND b.status='aberto'
+    ORDER BY s.first_name;
+END; $$;
+
+-- Boletos vencidos (não pagos, data < hoje)
+CREATE OR REPLACE FUNCTION get_boletos_vencidos()
+RETURNS TABLE(
+  id uuid, student_id uuid, first_name text, last_name text, whatsapp text, mobile_number text,
+  mes_referencia int, ano_referencia int, data_vencimento date, valor numeric,
+  status text, url_boleto text, codigo_boleto text, observacao text,
+  dias_atraso int, comprovante_path text, comprovante_url text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT b.id, b.student_id, s.first_name, s.last_name, s.whatsapp, s.mobile_number,
+      b.mes_referencia, b.ano_referencia, b.data_vencimento, b.valor,
+      b.status, b.url_boleto, b.codigo_boleto, b.observacao,
+      (CURRENT_DATE - b.data_vencimento)::int,
+      b.comprovante_path, b.comprovante_url
+    FROM boletos b JOIN students s ON s.id=b.student_id
+    WHERE b.data_vencimento<CURRENT_DATE AND b.status='aberto'
+    ORDER BY b.data_vencimento;
+END; $$;
+
+-- Boletos pagos hoje
+CREATE OR REPLACE FUNCTION get_boletos_pagos_hoje()
+RETURNS TABLE(
+  id uuid, student_id uuid, first_name text, last_name text,
+  mes_referencia int, ano_referencia int, valor numeric, data_pagamento date, observacao text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT b.id, b.student_id, s.first_name, s.last_name,
+      b.mes_referencia, b.ano_referencia, b.valor, b.data_pagamento, b.observacao
+    FROM boletos b JOIN students s ON s.id=b.student_id
+    WHERE b.data_pagamento=CURRENT_DATE AND b.status='pago'
+    ORDER BY s.first_name;
+END; $$;
+
+-- Registrar cobrança (usa student_contacts)
+CREATE OR REPLACE FUNCTION registrar_cobranca_boleto(
+  p_student_id uuid, p_contact_type text, p_message text,
+  p_channel text DEFAULT 'whatsapp', p_notes text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  INSERT INTO student_contacts (student_id, user_id, contact_type, message, channel, notes)
+  VALUES (p_student_id, auth.uid(), p_contact_type, p_message, p_channel, p_notes);
+END; $$;
+
+-- Última cobrança por aluno
+CREATE OR REPLACE FUNCTION get_ultima_cobranca(p_student_id uuid)
+RETURNS TABLE(created_at timestamptz, contact_type text, message text, channel text)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT sc.created_at, sc.contact_type, sc.message, sc.channel
+    FROM student_contacts sc
+    WHERE sc.student_id=p_student_id AND sc.contact_type IN ('cobranca','boleto_vencido','confirmacao_pagamento')
+    ORDER BY sc.created_at DESC LIMIT 1;
+END; $$;
+
 
 -- #####################################################################
 -- 7. RLS POLICIES
