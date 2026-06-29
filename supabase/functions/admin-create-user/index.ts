@@ -74,6 +74,13 @@ serve(async (req) => {
       );
     }
 
+    if (role === "super_admin" && callerProfile.role !== "super_admin") {
+      return new Response(
+        JSON.stringify({ error: "Apenas super_admin pode criar outro super_admin." }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({

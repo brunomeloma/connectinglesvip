@@ -1321,24 +1321,24 @@ pages.financeiro=async function({view,studentId}={}){
 
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
 
-  const{data:kpi=[]}=await sb.from('resumo_financeiro_aluno').select('*');
-  const totalPago=kpi.reduce((s,r)=>s+parseFloat(r.valor_pago||0),0);
-  const totalAberto=kpi.reduce((s,r)=>s+parseFloat(r.valor_aberto||0),0);
-  const inadimplentes=kpi.filter(r=>parseFloat(r.valor_aberto)>0).length;
+  let totalPago=0,totalAberto=0,inadimplentes=0;
+  if(canSeeFinanceiroGlobal()){
+    const{data:kpi=[]}=await sb.rpc('get_resumo_financeiro');
+    totalPago=kpi.reduce((s,r)=>s+parseFloat(r.valor_pago||0),0);
+    totalAberto=kpi.reduce((s,r)=>s+parseFloat(r.valor_aberto||0),0);
+    inadimplentes=kpi.filter(r=>parseFloat(r.valor_aberto)>0).length;
+  }
 
   const fStatus=getFilter('fin-status');
   const fNome=getFilter('fin-nome')||'';
   const fAno=getFilter('fin-ano')||new Date().getFullYear().toString();
 
-  let q=sb.from('boletos').select('*,student:students(id,first_name,last_name,status)').eq('ano_referencia',fAno).order('data_vencimento',{ascending:true});
-  if(fStatus) q=q.eq('status',fStatus);
-  const{data:boletos=[]}=await q;
+  const{data:boletos=[]}=await sb.rpc('get_boletos_com_aluno',{p_ano:parseInt(fAno),p_status:fStatus||null});
 
   const alunosMap={};
   for(const b of boletos){
-    if(!b.student) continue;
-    const sid=b.student.id;
-    if(!alunosMap[sid]) alunosMap[sid]={...b.student,boletos:[],totalPago:0,totalAberto:0};
+    const sid=b.student_id;
+    if(!alunosMap[sid]) alunosMap[sid]={id:sid,first_name:b.first_name,last_name:b.last_name,boletos:[],totalPago:0,totalAberto:0};
     alunosMap[sid].boletos.push(b);
     if(b.status==='pago') alunosMap[sid].totalPago+=parseFloat(b.valor);
     if(b.status==='aberto') alunosMap[sid].totalAberto+=parseFloat(b.valor);
@@ -1407,7 +1407,7 @@ async function finAluno(studentId){
   const fAno=getFilter('fin-ano')||new Date().getFullYear().toString();
   const[{data:student},{data:boletos=[]}]=await Promise.all([
     sb.from('students').select('id,first_name,last_name').eq('id',studentId).single(),
-    sb.from('boletos').select('*').eq('student_id',studentId).eq('ano_referencia',fAno).order('mes_referencia',{ascending:true}),
+    sb.rpc('get_boletos_aluno',{p_student_id:studentId,p_ano:parseInt(fAno)}),
   ]);
   if(!student){nav('financeiro');return;}
 
@@ -1457,7 +1457,7 @@ async function finAluno(studentId){
               <td>${b.data_pagamento?fdate(b.data_pagamento):'—'}</td>
               <td style="font-size:12px;color:var(--gray-500)">${b.observacao||'—'}</td>
               <td style="white-space:nowrap">
-                ${b.comprovante_url?`<a href="${b.comprovante_url}" target="_blank" class="comprovante-icon" style="margin-right:6px"><i class="fa fa-image"></i> Comprovante</a>`:''}
+                ${b.comprovante_url||b.comprovante_path?`<a href="#" onclick="abrirComprovante('${b.comprovante_path||b.comprovante_url}');return false" class="comprovante-icon" style="margin-right:6px"><i class="fa fa-image"></i> Comprovante</a>`:''}
                 ${b.url_boleto?`<a href="${b.url_boleto}" target="_blank" class="btn btn-primary btn-sm" style="margin-right:4px"><i class="fa fa-external-link-alt"></i> Abrir</a>`:''}
                 ${b.codigo_boleto?`<button class="btn btn-default btn-sm" onclick="copiarCodigo('${b.id}','${b.codigo_boleto}')" title="Copiar código"><i class="fa fa-copy"></i> <span id="copy-label-${b.id}">Copiar código</span></button>`:''}
                 ${!b.comprovante_url&&!b.url_boleto&&!b.codigo_boleto?'<span style="color:var(--gray-500);font-size:12px">—</span>':''}
@@ -1477,7 +1477,7 @@ async function finLancarBoletos(studentId){
 
   const ano=new Date().getFullYear();
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const{data:existentes=[]}=await sb.from('boletos').select('*').eq('student_id',studentId).eq('ano_referencia',ano);
+  const{data:existentes=[]}=await sb.rpc('get_boletos_aluno',{p_student_id:studentId,p_ano:ano});
   const existMap={};
   for(const b of existentes) existMap[b.mes_referencia]=b;
 
@@ -1548,18 +1548,15 @@ async function salvarBoletos(studentId){
     rows.push({student_id:studentId,mes_referencia:m,ano_referencia:ano,data_vencimento:venc,valor,url_boleto:url,codigo_boleto:codigo});
   }
   if(!rows.length){showAlert('page-alert','Informe ao menos um mês com vencimento e valor.','danger');return;}
-  const{error}=await sb.from('boletos').upsert(rows,{onConflict:'student_id,mes_referencia,ano_referencia',ignoreDuplicates:false});
+  const{error}=await sb.rpc('lancar_boletos_aluno',{p_rows:rows});
   if(error){showAlert('page-alert','Erro ao salvar: '+error.message,'danger');return;}
   nav('financeiro',{view:'aluno',studentId});
 }
 
 async function deletarBoleto(boletoId, studentId){
   showConfirm(async()=>{
-    const{error}=await sb.from('boletos').delete().eq('id',boletoId);
+    const{error}=await sb.rpc('deletar_boleto',{p_boleto_id:boletoId});
     if(error){alert('Erro ao excluir: '+error.message);return;}
-    const row=document.getElementById('row-'+boletoId);
-    if(row) row.remove();
-    // refresh page to update banner
     nav('financeiro',{view:'aluno',studentId});
   });
 }
@@ -1617,157 +1614,51 @@ async function confirmarPagamentoModal(){
   const btn=$('pgto-confirmar');
   if(btn){btn.disabled=true;btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Salvando...';}
 
-  const payload={status:novoStatus};
+  let comprovantePath=null;
+  let dataPgto=null;
+  let obs=null;
 
   if(novoStatus==='pago'){
-    payload.data_pagamento=$('pgto-data')?.value||new Date().toISOString().split('T')[0];
-    payload.observacao=$('pgto-obs')?.value?.trim()||null;
+    dataPgto=$('pgto-data')?.value||new Date().toISOString().split('T')[0];
+    obs=$('pgto-obs')?.value?.trim()||null;
 
-    // Comprovante: arquivo tem prioridade sobre link
     const arquivo=$('pgto-arquivo')?.files[0];
     const link=$('pgto-link')?.value?.trim();
     if(arquivo){
-      // Faz upload para Supabase Storage
       const ext=arquivo.name.split('.').pop();
-      const path='comprovantes/'+boletoId+'-'+Date.now()+'.'+ext;
-      const{data:upData,error:upErr}=await sb.storage.from('comprovantes').upload(path,arquivo,{upsert:true});
+      const path=boletoId+'-'+Date.now()+'.'+ext;
+      const{error:upErr}=await sb.storage.from('comprovantes').upload(path,arquivo,{upsert:true});
       if(upErr){
         alert('Erro ao enviar comprovante: '+upErr.message);
         if(btn){btn.disabled=false;btn.innerHTML='<i class="fa fa-check"></i> Confirmar pagamento';}
         return;
       }
-      const{data:urlData}=sb.storage.from('comprovantes').getPublicUrl(path);
-      payload.comprovante_url=urlData?.publicUrl||null;
+      comprovantePath=path;
     } else if(link){
-      payload.comprovante_url=link;
-    } else {
-      payload.comprovante_url=null;
+      comprovantePath=link;
     }
-  } else {
-    // Desfazendo pagamento
-    payload.data_pagamento=null;
-    payload.observacao=null;
-    payload.comprovante_url=null;
   }
 
-  const{error}=await sb.from('boletos').update(payload).eq('id',boletoId);
+  const{error}=await sb.rpc('marcar_pagamento_boleto',{
+    p_boleto_id:boletoId,
+    p_status:novoStatus,
+    p_data_pagamento:dataPgto,
+    p_observacao:obs,
+    p_comprovante_path:comprovantePath
+  });
 
   if(btn){btn.disabled=false;btn.innerHTML='<i class="fa fa-check"></i> Confirmar pagamento';}
-
   if(error){alert('Erro ao salvar: '+error.message);return;}
 
   closePgtoModal();
-
-  // Atualiza DOM da linha instantaneamente
-  const rowEl=document.getElementById('row-'+boletoId);
-  if(rowEl){
-    const cells=rowEl.querySelectorAll('td');
-    // botão status (coluna 3)
-    const toggleBtn=rowEl.querySelector('.boleto-status-toggle');
-    if(toggleBtn){
-      toggleBtn.className='boleto-status-toggle '+(novoStatus==='pago'?'boleto-pago':'boleto-aberto');
-      const mesTxt=cells[0]?cells[0].querySelector('strong')?.textContent||'':'';
-      toggleBtn.innerHTML='<i class="fa '+(novoStatus==='pago'?'fa-check-circle':'fa-clock')+'"></i> '+(novoStatus==='pago'?'Pago':'Em aberto');
-      toggleBtn.setAttribute('onclick',"abrirPgtoModal('"+boletoId+"','"+novoStatus+"','"+studentId+"','"+mesTxt+"')");
-    }
-    // data pagamento (coluna 4)
-    if(cells[4]) cells[4].textContent=novoStatus==='pago'&&payload.data_pagamento?fdate(payload.data_pagamento):'—';
-    // observação (coluna 5)
-    if(cells[5]){cells[5].textContent=payload.observacao||'—';cells[5].style.color=payload.observacao?'var(--gray-900)':'var(--gray-500)';}
-    // comprovante (coluna 6) — insere link se houver
-    if(cells[6]&&novoStatus==='pago'&&payload.comprovante_url){
-      const jaTemLink=cells[6].querySelector('.comprovante-icon');
-      if(!jaTemLink){
-        const linkEl=document.createElement('a');
-        linkEl.href=payload.comprovante_url;
-        linkEl.target='_blank';
-        linkEl.className='comprovante-icon';
-        linkEl.innerHTML='<i class="fa fa-image"></i> Comprovante';
-        cells[6].prepend(linkEl);
-      }
-    }
-    if(cells[6]&&novoStatus==='aberto'){
-      const jaTemLink=cells[6].querySelector('.comprovante-icon');
-      if(jaTemLink) jaTemLink.remove();
-    }
-    // cor da linha
-    const dataVenc=rowEl.dataset.vencimento;
-    const estaVencido=novoStatus!=='pago'&&dataVenc&&new Date(dataVenc)<new Date();
-    rowEl.style.background=estaVencido?'#fff5f5':'';
-    rowEl.style.borderLeft=estaVencido?'3px solid var(--danger)':'';
-    const badgeVencido=cells[0]?cells[0].querySelector('.badge-danger'):null;
-    if(novoStatus==='pago'&&badgeVencido) badgeVencido.remove();
-    if(cells[1]){cells[1].style.color=estaVencido?'var(--danger)':'';cells[1].style.fontWeight=estaVencido?'600':'';}
-  }
-
-  _atualizarResumoAluno(studentId);
-}
-
-async function toggleBoletoStatus(boletoId,statusAtual,studentId){
-  // legado — redireciona para modal
-  const row=document.getElementById('row-'+boletoId);
-  const mesTxt=row?row.querySelector('strong')?.textContent||'':'';
-  abrirPgtoModal(boletoId,statusAtual,studentId,mesTxt);
-}
-
-function _atualizarResumoAluno(studentId){
-  // Recalcula totais lendo o DOM atual
-  let totalPago=0, totalAberto=0, vencidosIds=[];
-  document.querySelectorAll('tr[id^="row-"]').forEach(row=>{
-    const btn=row.querySelector('.boleto-status-toggle');
-    if(!btn) return;
-    const pago=btn.classList.contains('boleto-pago');
-    // pega valor da coluna 2
-    const cells=row.querySelectorAll('td');
-    const valTxt=cells[2]?cells[2].textContent.replace('R$','').replace(/\./g,'').replace(',','.').trim():'0';
-    const val=parseFloat(valTxt)||0;
-    if(pago) totalPago+=val; else totalAberto+=val;
-    // detecta vencido
-    const dataVenc=row.dataset.vencimento;
-    if(!pago&&dataVenc&&new Date(dataVenc)<new Date()){
-      const id=row.id.replace('row-','');
-      vencidosIds.push(id);
-    }
-  });
-
-  // Atualiza cards
-  document.querySelectorAll('.fin-card').forEach(card=>{
-    const label=card.querySelector('.fin-card-label');
-    const num=card.querySelector('.fin-card-num');
-    if(!label||!num) return;
-    if(label.textContent.trim()==='Total Pago') num.textContent=fmtBRL(totalPago);
-    if(label.textContent.trim()==='Em Aberto') num.textContent=fmtBRL(totalAberto);
-  });
-
-  // Atualiza banner de vencidos
-  const bannerExistente=document.querySelector('.banner-vencidos');
-  const insertRef=document.querySelector('.fin-summary-grid');
-  if(!vencidosIds.length){
-    if(bannerExistente) bannerExistente.remove();
-    return;
-  }
-  const n=vencidosIds.length, plural=n>1;
-  const idsJson=JSON.stringify(vencidosIds);
-  const html='<div class="banner-vencidos">'
-    +'<i class="fa fa-exclamation-circle banner-vencidos-icon"></i>'
-    +'<div class="banner-vencidos-text">'
-    +'<strong>&#9888;&#65039; '+n+' boleto'+(plural?'s':'')+' vencido'+(plural?'s':'')+' sem pagamento</strong>'
-    +'<span>Verifique os meses destacados em vermelho na tabela abaixo.</span>'
-    +'</div>'
-    +'<div class="banner-vencidos-actions">'
-    +'<button class="btn btn-success btn-sm" onclick="marcarVencidosComoPago(\''+studentId+'\','+idsJson+')">'
-    +'<i class="fa fa-check-circle"></i> Marcar '+(plural?'todos':'como')+' pago'+(plural?'s':'')
-    +'</button></div></div>';
-  if(bannerExistente) bannerExistente.outerHTML=html;
-  else if(insertRef) insertRef.insertAdjacentHTML('afterend',html);
+  nav('financeiro',{view:'aluno',studentId});
 }
 
 async function marcarVencidosComoPago(studentId, ids){
   if(!ids||!ids.length) return;
   const plural=ids.length>1;
   showConfirm(async()=>{
-    const hoje=new Date().toISOString().split('T')[0];
-    const{error}=await sb.from('boletos').update({status:'pago',data_pagamento:hoje}).in('id',ids);
+    const{error}=await sb.rpc('marcar_vencidos_pago',{p_boleto_ids:ids});
     if(error){alert('Erro ao atualizar: '+error.message);return;}
     nav('financeiro',{view:'aluno',studentId});
   });
@@ -1979,6 +1870,14 @@ async function deletarContato(contatoId,studentId){
 // ============================
 // HELPERS
 // ============================
+async function abrirComprovante(pathOrUrl){
+  if(!pathOrUrl) return;
+  if(pathOrUrl.startsWith('http')){window.open(pathOrUrl,'_blank');return;}
+  const{data,error}=await sb.storage.from('comprovantes').createSignedUrl(pathOrUrl,3600);
+  if(error||!data?.signedUrl){alert('Erro ao gerar link do comprovante.');return;}
+  window.open(data.signedUrl,'_blank');
+}
+
 function copiarCodigo(id, codigo){
   navigator.clipboard.writeText(codigo).then(()=>{
     const label=document.getElementById('copy-label-'+id);

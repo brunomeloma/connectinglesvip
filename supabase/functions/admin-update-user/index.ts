@@ -70,6 +70,26 @@ serve(async (req) => {
         });
       }
 
+      if (role === "super_admin" && callerProfile.role !== "super_admin") {
+        return new Response(
+          JSON.stringify({ error: "Apenas super_admin pode promover a super_admin." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { data: targetProfile } = await adminClient
+        .from("profiles")
+        .select("role")
+        .eq("id", user_id)
+        .single();
+
+      if (targetProfile?.role === "super_admin" && callerProfile.role !== "super_admin") {
+        return new Response(
+          JSON.stringify({ error: "Apenas super_admin pode alterar outro super_admin." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const updates: Record<string, unknown> = {};
       if (name !== undefined) updates.name = name;
       if (role !== undefined) updates.role = role;
@@ -101,6 +121,13 @@ serve(async (req) => {
         );
       }
 
+      if (new_password.length < 6) {
+        return new Response(
+          JSON.stringify({ error: "Senha deve ter no mínimo 6 caracteres." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const { error } = await adminClient.auth.admin.updateUserById(user_id, {
         password: new_password,
       });
@@ -124,6 +151,26 @@ serve(async (req) => {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+      }
+
+      if (user_id === caller.id) {
+        return new Response(
+          JSON.stringify({ error: "Você não pode desativar a si mesmo." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { data: targetProfile } = await adminClient
+        .from("profiles")
+        .select("role")
+        .eq("id", user_id)
+        .single();
+
+      if (targetProfile?.role === "super_admin" && callerProfile.role !== "super_admin") {
+        return new Response(
+          JSON.stringify({ error: "Apenas super_admin pode desativar outro super_admin." }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
 
       await adminClient.from("profiles").update({ status: false }).eq("id", user_id);
