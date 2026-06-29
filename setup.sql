@@ -1,6 +1,9 @@
 -- =====================================================================
--- Connect Inglês VIP — setup.sql (único arquivo, ordem correta)
--- Reexecutável. Execute inteiro no SQL Editor do Supabase.
+-- Connect Inglês VIP — setup.sql
+-- ESTE É O ÚNICO SQL QUE DEVE SER EXECUTADO para configurar
+-- segurança e banco. Não execute outros arquivos .sql.
+-- Reexecutável: usa IF NOT EXISTS e DROP IF EXISTS em tudo.
+-- Ordem: profiles > campos > constraints > helpers > RPCs > RLS > storage
 -- =====================================================================
 
 
@@ -367,7 +370,8 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "anon_all_users" ON users;
 
 -- storage comprovantes
-UPDATE storage.buckets SET public=false WHERE id='comprovantes';
+INSERT INTO storage.buckets (id, name, public) VALUES ('comprovantes', 'comprovantes', false)
+ON CONFLICT (id) DO UPDATE SET public = false;
 DROP POLICY IF EXISTS "comprovantes_select" ON storage.objects;
 DROP POLICY IF EXISTS "comprovantes_insert" ON storage.objects;
 DROP POLICY IF EXISTS "comprovantes_delete" ON storage.objects;
