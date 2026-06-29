@@ -290,7 +290,6 @@ const SUPABASE_URL = 'https://jrkbwzpyzgekycqtmvco.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impya2J3enB5emdla3ljcXRtdmNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NTUwMzAsImV4cCI6MjA5NzEzMTAzMH0.-G7zDgGQ5ha6brAk3rk-hpRaZs36QM_z9dumLDLi0rg';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Usuário logado em memória (sem auth do Supabase, login simples por tabela)
 let currentUser = null;
 </script>
 
@@ -458,28 +457,67 @@ function closeSidebar(){
 }
 
 // ============================
-// AUTH
+// AUTH — Supabase Auth
 // ============================
+
+async function loadProfile(userId){
+  const{data,error}=await sb.from('profiles').select('id,name,email,role,status,address,created_at').eq('id',userId).single();
+  if(error||!data) return null;
+  return data;
+}
+
 async function doLogin(){
   const email=$('login-email').value.trim();
   const pass=$('login-pass').value.trim();
   if(!email||!pass){showLoginErr('Preencha e-mail e senha.');return;}
-  const{data,error}=await sb.from('users').select('id,name,email,role,status,password_hash,address,created_at').eq('email',email).single();
-  if(error||!data){showLoginErr('E-mail não encontrado.');return;}
-  if(!data.status){showLoginErr('Conta desativada. Contate a administração.');return;}
-  if(data.password_hash!==pass&&data.password_hash!=='trocar_senha'){showLoginErr('Senha incorreta.');return;}
-  const{password_hash,...safeUser}=data;
-  currentUser=safeUser;
+
+  const{data:authData,error:authError}=await sb.auth.signInWithPassword({email,password:pass});
+  if(authError){
+    const msg=authError.message;
+    if(msg.includes('Invalid login')||msg.includes('invalid')){showLoginErr('E-mail ou senha incorretos.');}
+    else if(msg.includes('Email not confirmed')){showLoginErr('E-mail não confirmado. Verifique sua caixa de entrada.');}
+    else{showLoginErr('Erro ao entrar: '+msg);}
+    return;
+  }
+
+  const profile=await loadProfile(authData.user.id);
+  if(!profile){showLoginErr('Perfil não encontrado. Contate a administração.');await sb.auth.signOut();return;}
+  if(!profile.status){showLoginErr('Conta desativada. Contate a administração.');await sb.auth.signOut();return;}
+
+  currentUser=profile;
   startApp();
 }
+
+async function initAuth(){
+  const{data:{session}}=await sb.auth.getSession();
+  if(!session){showLogin();return;}
+
+  const profile=await loadProfile(session.user.id);
+  if(!profile||!profile.status){showLogin();return;}
+
+  currentUser=profile;
+  startApp();
+}
+
+function showLogin(){
+  $('login-page').style.display='flex';
+  $('app').style.display='none';
+}
+
 function showLoginErr(msg){const el=$('login-err');el.textContent=msg;el.style.display='block';}
-function doLogout(){currentUser=null;$('login-page').style.display='flex';$('app').style.display='none';}
+
+async function doLogout(){
+  await sb.auth.signOut();
+  currentUser=null;
+  showLogin();
+}
+
 function startApp(){
   $('login-page').style.display='none';
   $('app').style.display='block';
   $('sb-name').textContent=currentUser.name;
   $('sb-avatar').textContent=avatar(currentUser.name);
-  const roles={super_admin:'Super Admin',admin:'Admin',direcao:'Direção',financeiro:'Financeiro',secretaria:'Secretaria',escola:'Escola',escola_admin:'Escola Admin',professor:'Professor'};
+  const roles={super_admin:'Super Admin',direcao:'Direção',financeiro:'Financeiro',secretaria:'Secretaria',professor:'Professor'};
   $('sb-role').textContent=roles[currentUser.role]||currentUser.role;
   $('topbar-user').innerHTML=`<i class="fa fa-user-circle" style="color:var(--brand);font-size:18px"></i> &nbsp;${currentUser.name}`;
   document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isAdmin()?'':'none');
@@ -627,7 +665,6 @@ async function schoolForm(id){
           <div>
             <div class="field"><label>Nome <span class="required">*</span></label><input id="f-name" value="${school.name||''}"></div>
             <div class="field"><label>E-mail <span class="required">*</span></label><input id="f-email" type="email" value="${school.email||''}"></div>
-            <div class="field"><label>Senha ${id?'(deixe em branco para manter)':'<span class="required">*</span>'}</label><input id="f-pass" type="password"></div>
           </div>
           <div>
             <div class="field"><label>Endereço</label><textarea id="f-address">${school.address||''}</textarea></div>
@@ -646,7 +683,6 @@ async function schoolForm(id){
 async function saveSchool(id){
   const name=$('f-name').value.trim();
   const email=$('f-email').value.trim();
-  const pass=$('f-pass').value.trim();
   const address=$('f-address').value.trim();
   const status=$('f-status').value==='true';
   if(!name||!email){showAlert('page-alert','Preencha nome e e-mail.','danger');return;}
@@ -655,12 +691,9 @@ async function saveSchool(id){
   if(id){
     const r=await sb.from('schools').update(payload).eq('id',id);
     err=r.error;
-    if(!err&&pass){await sb.from('users').update({password_hash:pass}).eq('email',email);}
   } else {
-    if(!pass){showAlert('page-alert','Informe uma senha.','danger');return;}
-    const r=await sb.from('schools').insert({...payload});
+    const r=await sb.from('schools').insert(payload);
     err=r.error;
-    if(!err){await sb.from('users').insert({name,email,password_hash:pass,role:'escola',status});}
   }
   if(err){showAlert('page-alert','Erro: '+err.message,'danger');return;}
   nav('schools');
@@ -671,13 +704,13 @@ pages.admins=async function({view,id}={}){
   if(!canManageUsers()){nav('dashboard');return;}
   if(view==='form') return adminForm(id);
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const{data=[]}=await sb.from('users').select('id,name,email,role,status,address,created_at').in('role',['super_admin','admin','direcao','financeiro','secretaria']).order('created_at',{ascending:false});
+  const{data=[]}=await sb.from('profiles').select('id,name,email,role,status,address,created_at').order('created_at',{ascending:false});
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>Administrador</span></div>
     <div class="page-title"><i class="fa fa-user-tie"></i> Administrador</div>
     <div id="page-alert" class="alert"></div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">Lista de administradores</span><button class="btn btn-primary btn-sm" onclick="nav('admins',{view:'form'})"><i class="fa fa-plus"></i> Adicionar</button></div>
+      <div class="panel-head"><span class="panel-title">Usuários do sistema</span><span style="font-size:11px;color:var(--gray-500)">Novos usuários: Supabase Dashboard &gt; Authentication</span></div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>ID</th><th>Nome</th><th>E-mail</th><th>Status</th><th>Permissão</th><th>Cadastro</th><th colspan="2">Ações</th></tr></thead>
@@ -690,7 +723,7 @@ pages.admins=async function({view,id}={}){
               <td>${role_badge(u.role)}</td>
               <td>${fdate(u.created_at)}</td>
               <td><button class="btn-icon" onclick="nav('admins',{view:'form',id:'${u.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
-              <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('users','${u.id}','admins')"><i class="fa fa-trash"></i></button></td>
+              <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('profiles','${u.id}','admins')"><i class="fa fa-trash"></i></button></td>
             </tr>`).join(''):`<tr><td colspan="8"><div class="empty-state"><i class="fa fa-user-tie"></i>Nenhum admin cadastrado</div></td></tr>`}
           </tbody>
         </table>
@@ -702,7 +735,7 @@ pages.admins=async function({view,id}={}){
 async function adminForm(id){
   if(!canManageUsers()){nav('dashboard');return;}
   let user={};
-  if(id){const{data}=await sb.from('users').select('id,name,email,role,status,address,created_at').eq('id',id).single();user=data||{};}
+  if(id){const{data}=await sb.from('profiles').select('id,name,email,role,status,address,created_at').eq('id',id).single();user=data||{};}
   setContent(`
     <div class="breadcrumb"><a onclick="nav('admins')">Administrador</a> › <span>${id?'Editar':'Adicionar'}</span></div>
     <div class="page-title"><i class="fa fa-user-tie"></i> ${id?'Editar':'Adicionar'} administrador</div>
@@ -713,8 +746,8 @@ async function adminForm(id){
         <div class="form-grid">
           <div>
             <div class="field"><label>Nome <span class="required">*</span></label><input id="f-name" value="${user.name||''}"></div>
-            <div class="field"><label>E-mail <span class="required">*</span></label><input id="f-email" type="email" value="${user.email||''}"></div>
-            <div class="field"><label>Senha ${id?'(deixe em branco)':'<span class="required">*</span>'}</label><input id="f-pass" type="password"></div>
+            <div class="field"><label>E-mail</label><input id="f-email" type="email" value="${user.email||''}" disabled style="opacity:.6"></div>
+            <div class="help-text" style="margin-bottom:12px">E-mail e senha são gerenciados no Supabase Authentication.</div>
           </div>
           <div>
             <div class="field"><label>Endereço</label><textarea id="f-address">${user.address||''}</textarea></div>
@@ -735,17 +768,17 @@ async function saveAdmin(id){
   if(!canManageUsers()) return;
   const name=$('f-name').value.trim();
   const email=$('f-email').value.trim();
-  const pass=$('f-pass').value.trim();
   const address=$('f-address').value.trim();
   const role=$('f-role').value;
   const status=$('f-status').value==='true';
   if(!name||!email){showAlert('page-alert','Preencha nome e e-mail.','danger');return;}
-  const payload={name,email,address,role,status};
-  if(pass) payload.password_hash=pass;
-  let err;
-  if(id){const r=await sb.from('users').update(payload).eq('id',id);err=r.error;}
-  else{if(!pass){showAlert('page-alert','Informe uma senha.','danger');return;}const r=await sb.from('users').insert({...payload,password_hash:pass});err=r.error;}
-  if(err){showAlert('page-alert','Erro: '+err.message,'danger');return;}
+  if(id){
+    const{error}=await sb.rpc('admin_update_profile',{target_id:id,new_role:role,new_status:status,new_name:name,new_address:address});
+    if(error){showAlert('page-alert','Erro: '+error.message,'danger');return;}
+  } else {
+    showAlert('page-alert','Para criar novos usuários, use o painel do Supabase (Authentication > Users). Após criar, o perfil será gerado automaticamente.','danger');
+    return;
+  }
   nav('admins');
 }
 
@@ -1792,7 +1825,7 @@ async function registrarContato(studentId,channel){
 }
 
 async function carregarUltimosContatos(studentId,limit){
-  const{data=[]}=await sb.from('student_contacts').select('*,user:users(name)').eq('student_id',studentId).order('created_at',{ascending:false}).limit(limit);
+  const{data=[]}=await sb.from('student_contacts').select('*,user:profiles(name)').eq('student_id',studentId).order('created_at',{ascending:false}).limit(limit);
   const el=$('vip-ultimos-contatos');
   if(!el) return;
   if(!data.length){el.innerHTML='<div class="empty-state" style="padding:20px"><i class="fa fa-comment-slash"></i>Nenhum contato registrado</div>';return;}
@@ -1815,7 +1848,7 @@ async function vipHistorico(studentId){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const[{data:s},{data:contatos=[]}]=await Promise.all([
     sb.from('students').select('id,first_name,last_name').eq('id',studentId).single(),
-    sb.from('student_contacts').select('*,user:users(name)').eq('student_id',studentId).order('created_at',{ascending:false}),
+    sb.from('student_contacts').select('*,user:profiles(name)').eq('student_id',studentId).order('created_at',{ascending:false}),
   ]);
   if(!s){nav('vip');return;}
 
@@ -1863,7 +1896,7 @@ function copiarCodigo(id, codigo){
 function setContent(html){$('content').innerHTML=html;}
 
 async function deleteRecord(table,id,returnPage){
-  if(table==='users'&&!canManageUsers()){alert('Sem permissão.');return;}
+  if(table==='profiles'&&!canManageUsers()){alert('Sem permissão.');return;}
   showConfirm(async()=>{
     const{error}=await sb.from(table).delete().eq('id',id);
     if(error){alert('Erro ao excluir: '+error.message);return;}
@@ -1875,9 +1908,10 @@ const _filters={};
 function getFilter(key){return $( key)?.value||_filters[key]||'';}
 function clearFilters(keys){keys.forEach(k=>{const el=$(k);if(el)el.value='';delete _filters[k];});}
 
-// Enter no login
+// Inicialização
 document.addEventListener('DOMContentLoaded',()=>{
   document.addEventListener('keydown',e=>{if(e.key==='Enter'&&$('login-page').style.display!=='none')doLogin();});
+  initAuth();
 });
 </script>
 </body>
