@@ -699,32 +699,49 @@ async function saveSchool(id){
   nav('schools');
 }
 
-// --- ADMINS ---
+// --- ADMINS / USUÁRIOS ---
+async function callEdgeFn(fnName, body){
+  const{data:{session}}=await sb.auth.getSession();
+  if(!session) throw new Error('Não autenticado');
+  const res=await fetch(SUPABASE_URL+'/functions/v1/'+fnName,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_KEY},
+    body:JSON.stringify(body),
+  });
+  const json=await res.json();
+  if(!res.ok) throw new Error(json.error||'Erro na operação');
+  return json;
+}
+
 pages.admins=async function({view,id}={}){
   if(!canManageUsers()){nav('dashboard');return;}
   if(view==='form') return adminForm(id);
+  if(view==='reset') return adminResetSenha(id);
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const{data=[]}=await sb.from('profiles').select('id,name,email,role,status,address,created_at').order('created_at',{ascending:false});
+  const{data=[]}=await sb.from('profiles').select('id,name,email,role,status,created_at').order('created_at',{ascending:false});
   setContent(`
-    <div class="breadcrumb"><span>Home</span> › <span>Administrador</span></div>
-    <div class="page-title"><i class="fa fa-user-tie"></i> Administrador</div>
+    <div class="breadcrumb"><span>Home</span> › <span>Usuários</span></div>
+    <div class="page-title"><i class="fa fa-user-tie"></i> Gestão de Usuários</div>
     <div id="page-alert" class="alert"></div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">Usuários do sistema</span><span style="font-size:11px;color:var(--gray-500)">Novos usuários: Supabase Dashboard &gt; Authentication</span></div>
+      <div class="panel-head"><span class="panel-title">Usuários do sistema</span><button class="btn btn-primary btn-sm" onclick="nav('admins',{view:'form'})"><i class="fa fa-plus"></i> Criar usuário</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>E-mail</th><th>Status</th><th>Permissão</th><th>Cadastro</th><th colspan="2">Ações</th></tr></thead>
+          <thead><tr><th>#</th><th>Nome</th><th>E-mail</th><th>Cargo</th><th>Status</th><th>Cadastro</th><th>Ações</th></tr></thead>
           <tbody>${data.length?data.map((u,i)=>`
             <tr>
               <td>${i+1}</td>
               <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(u.name)}</div><strong>${u.name}</strong></div></td>
               <td>${u.email}</td>
-              <td>${status_badge(u.status)}</td>
               <td>${role_badge(u.role)}</td>
+              <td>${status_badge(u.status)}</td>
               <td>${fdate(u.created_at)}</td>
-              <td><button class="btn-icon" onclick="nav('admins',{view:'form',id:'${u.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
-              <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('profiles','${u.id}','admins')"><i class="fa fa-trash"></i></button></td>
-            </tr>`).join(''):`<tr><td colspan="8"><div class="empty-state"><i class="fa fa-user-tie"></i>Nenhum admin cadastrado</div></td></tr>`}
+              <td style="white-space:nowrap">
+                <button class="btn btn-default btn-sm" onclick="nav('admins',{view:'form',id:'${u.id}'})"><i class="fa fa-pencil-alt"></i> Editar</button>
+                <button class="btn btn-default btn-sm" onclick="nav('admins',{view:'reset',id:'${u.id}'})"><i class="fa fa-key"></i> Senha</button>
+                ${u.id!==currentUser.id?`<button class="btn-icon" style="color:var(--danger)" onclick="desativarUsuario('${u.id}','${u.name}',${u.status})" title="${u.status?'Desativar':'Ativar'}"><i class="fa fa-${u.status?'ban':'check-circle'}"></i></button>`:''}
+              </td>
+            </tr>`).join(''):`<tr><td colspan="7"><div class="empty-state"><i class="fa fa-user-tie"></i>Nenhum usuário cadastrado</div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -736,29 +753,36 @@ async function adminForm(id){
   if(!canManageUsers()){nav('dashboard');return;}
   let user={};
   if(id){const{data}=await sb.from('profiles').select('id,name,email,role,status,address,created_at').eq('id',id).single();user=data||{};}
+  const isNew=!id;
   setContent(`
-    <div class="breadcrumb"><a onclick="nav('admins')">Administrador</a> › <span>${id?'Editar':'Adicionar'}</span></div>
-    <div class="page-title"><i class="fa fa-user-tie"></i> ${id?'Editar':'Adicionar'} administrador</div>
+    <div class="breadcrumb"><a onclick="nav('admins')">Usuários</a> › <span>${isNew?'Criar':'Editar'} usuário</span></div>
+    <div class="page-title"><i class="fa fa-user-tie"></i> ${isNew?'Criar':'Editar'} usuário</div>
     <div id="page-alert" class="alert"></div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">${id?'Atualizar':'Novo'} administrador</span></div>
+      <div class="panel-head"><span class="panel-title">${isNew?'Novo usuário':'Editar '+user.name}</span></div>
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Nome <span class="required">*</span></label><input id="f-name" value="${user.name||''}"></div>
-            <div class="field"><label>E-mail</label><input id="f-email" type="email" value="${user.email||''}" disabled style="opacity:.6"></div>
-            <div class="help-text" style="margin-bottom:12px">E-mail e senha são gerenciados no Supabase Authentication.</div>
+            <div class="field"><label>Nome completo <span class="required">*</span></label><input id="f-name" value="${user.name||''}"></div>
+            <div class="field"><label>E-mail <span class="required">*</span></label><input id="f-email" type="email" value="${user.email||''}" ${isNew?'':'disabled style="opacity:.6"'}></div>
+            ${isNew?'<div class="field"><label>Senha temporária <span class="required">*</span></label><input id="f-pass" type="password" placeholder="Mínimo 6 caracteres"></div>':''}
           </div>
           <div>
-            <div class="field"><label>Endereço</label><textarea id="f-address">${user.address||''}</textarea></div>
-            <div class="field"><label>Permissão</label><select id="f-role"><option value="admin" ${user.role==='admin'?'selected':''}>Admin</option><option value="super_admin" ${user.role==='super_admin'?'selected':''}>Super Admin</option><option value="direcao" ${user.role==='direcao'?'selected':''}>Direção</option><option value="financeiro" ${user.role==='financeiro'?'selected':''}>Financeiro</option><option value="secretaria" ${user.role==='secretaria'?'selected':''}>Secretaria</option></select></div>
+            <div class="field"><label>Cargo / Permissão <span class="required">*</span></label><select id="f-role">
+              <option value="secretaria" ${user.role==='secretaria'?'selected':''}>Secretaria</option>
+              <option value="financeiro" ${user.role==='financeiro'?'selected':''}>Financeiro</option>
+              <option value="professor" ${user.role==='professor'?'selected':''}>Professor</option>
+              <option value="direcao" ${user.role==='direcao'?'selected':''}>Direção</option>
+              <option value="super_admin" ${user.role==='super_admin'?'selected':''}>Super Admin</option>
+            </select></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${user.status!==false?'selected':''}>Ativo</option><option value="false" ${user.status===false?'selected':''}>Inativo</option></select></div>
+            <div class="field"><label>Endereço</label><textarea id="f-address">${user.address||''}</textarea></div>
           </div>
         </div>
       </div>
       <div class="panel-footer">
         <button class="btn btn-default" onclick="nav('admins')">Cancelar</button>
-        <button class="btn btn-primary" onclick="saveAdmin('${id||''}')"><i class="fa fa-save"></i> ${id?'Atualizar':'Adicionar'}</button>
+        <button class="btn btn-primary" id="btn-save-admin" onclick="saveAdmin('${id||''}')"><i class="fa fa-save"></i> ${isNew?'Criar usuário':'Salvar'}</button>
       </div>
     </div>
   `);
@@ -768,18 +792,86 @@ async function saveAdmin(id){
   if(!canManageUsers()) return;
   const name=$('f-name').value.trim();
   const email=$('f-email').value.trim();
-  const address=$('f-address').value.trim();
   const role=$('f-role').value;
   const status=$('f-status').value==='true';
-  if(!name||!email){showAlert('page-alert','Preencha nome e e-mail.','danger');return;}
-  if(id){
-    const{error}=await sb.rpc('admin_update_profile',{target_id:id,new_role:role,new_status:status,new_name:name,new_address:address});
-    if(error){showAlert('page-alert','Erro: '+error.message,'danger');return;}
-  } else {
-    showAlert('page-alert','Para criar novos usuários, use o painel do Supabase (Authentication > Users). Após criar, o perfil será gerado automaticamente.','danger');
-    return;
+  const address=$('f-address')?.value?.trim()||'';
+  if(!name){showAlert('page-alert','Informe o nome.','danger');return;}
+
+  const btn=$('btn-save-admin');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Salvando...';}
+
+  try{
+    if(id){
+      await callEdgeFn('admin-update-user',{action:'update',user_id:id,name,role,status});
+    } else {
+      if(!email){showAlert('page-alert','Informe o e-mail.','danger');return;}
+      const pass=$('f-pass')?.value||'';
+      if(pass.length<6){showAlert('page-alert','Senha deve ter no mínimo 6 caracteres.','danger');return;}
+      await callEdgeFn('admin-create-user',{email,password:pass,name,role,status});
+    }
+    nav('admins');
+  }catch(e){
+    showAlert('page-alert','Erro: '+e.message,'danger');
+  }finally{
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="fa fa-save"></i> Salvar';}
   }
-  nav('admins');
+}
+
+async function adminResetSenha(userId){
+  if(!canManageUsers()){nav('dashboard');return;}
+  const{data:user}=await sb.from('profiles').select('id,name,email').eq('id',userId).single();
+  if(!user){nav('admins');return;}
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('admins')">Usuários</a> › <span>Resetar senha</span></div>
+    <div class="page-title"><i class="fa fa-key"></i> Resetar senha — ${user.name}</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Nova senha para ${user.email}</span></div>
+      <div class="panel-body">
+        <div class="field"><label>Nova senha <span class="required">*</span></label><input id="f-new-pass" type="password" placeholder="Mínimo 6 caracteres"></div>
+        <div class="field"><label>Confirmar senha <span class="required">*</span></label><input id="f-new-pass2" type="password" placeholder="Repita a senha"></div>
+      </div>
+      <div class="panel-footer">
+        <button class="btn btn-default" onclick="nav('admins')">Cancelar</button>
+        <button class="btn btn-primary" id="btn-reset-pass" onclick="doResetSenha('${userId}')"><i class="fa fa-key"></i> Resetar senha</button>
+      </div>
+    </div>
+  `);
+}
+
+async function doResetSenha(userId){
+  const p1=$('f-new-pass')?.value||'';
+  const p2=$('f-new-pass2')?.value||'';
+  if(p1.length<6){showAlert('page-alert','Senha deve ter no mínimo 6 caracteres.','danger');return;}
+  if(p1!==p2){showAlert('page-alert','As senhas não coincidem.','danger');return;}
+  const btn=$('btn-reset-pass');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Salvando...';}
+  try{
+    await callEdgeFn('admin-update-user',{action:'reset_password',user_id:userId,new_password:p1});
+    showAlert('page-alert','Senha resetada com sucesso!','success');
+    setTimeout(()=>nav('admins'),1500);
+  }catch(e){
+    showAlert('page-alert','Erro: '+e.message,'danger');
+  }finally{
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="fa fa-key"></i> Resetar senha';}
+  }
+}
+
+async function desativarUsuario(userId,nome,statusAtual){
+  const acao=statusAtual?'desativar':'reativar';
+  showConfirm(async()=>{
+    try{
+      await callEdgeFn('admin-update-user',{action:statusAtual?'deactivate':'update',user_id:userId,status:!statusAtual});
+      nav('admins');
+    }catch(e){alert('Erro: '+e.message);}
+  });
+  const box=document.querySelector('.confirm-box');
+  if(box){
+    box.querySelector('h4').textContent=statusAtual?'Desativar usuário':'Reativar usuário';
+    box.querySelector('p').textContent=`${statusAtual?'Desativar':'Reativar'} o usuário "${nome}"? ${statusAtual?'Ele não conseguirá mais acessar o sistema.':'O acesso será restaurado.'}`;
+    box.querySelector('#confirm-yes').textContent=statusAtual?'Desativar':'Reativar';
+    box.querySelector('#confirm-yes').className=statusAtual?'btn btn-danger':'btn btn-success';
+  }
 }
 
 // --- TEACHERS ---
