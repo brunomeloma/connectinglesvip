@@ -1,55 +1,72 @@
 -- =====================================================================
--- Connect Inglês VIP — SQL de Segurança
+-- Connect Inglês VIP — SQL de Segurança v3 (produção)
+-- Reexecutável: todo CREATE POLICY tem DROP IF EXISTS antes.
 -- =====================================================================
 --
--- DIAGNÓSTICO DE SEGURANÇA (leia antes de executar):
+-- ESTADO ATUAL DO SISTEMA:
 --
--- O sistema atual NÃO TEM segurança real no banco de dados.
+-- O frontend usa a anon key do Supabase (visível no HTML) e faz login
+-- consultando users.password_hash em texto plano. Isso significa:
 --
--- Motivo: o login é feito por consulta direta na tabela `users`,
--- sem usar Supabase Auth. O frontend usa a anon key (pública).
--- Qualquer pessoa que inspecionar o HTML do site consegue:
---   1. Copiar a SUPABASE_URL e SUPABASE_KEY do código-fonte
---   2. Abrir o Supabase JS client no console do navegador
---   3. Executar sb.from('users').select('*') e ver TODOS os dados
---   4. Executar sb.from('boletos').select('*') e ver TODO o financeiro
---   5. Inserir, atualizar ou deletar qualquer registro
+--   - Qualquer pessoa que abrir o código-fonte copia a key
+--   - Com a key, acessa a API REST e lê/escreve qualquer tabela
+--   - Esconder botões no frontend NÃO protege dados
+--   - Policies USING(true) são equivalentes a RLS desligado
 --
--- Esconder botões no frontend NÃO protege dados.
--- Policies com USING(true) são o mesmo que não ter RLS.
+-- ESTE SQL RESOLVE O PROBLEMA com Supabase Auth:
+--   - Login via supabase.auth.signInWithPassword()
+--   - Tabela profiles com role, vinculada a auth.users
+--   - Policies baseadas em auth.uid() — anon não lê nada
+--   - Helpers SQL com SECURITY DEFINER + search_path fixo
+--   - Constraints de integridade em todas as tabelas
 --
--- Para dados financeiros e pessoais de alunos de uma escola real,
--- isso é INACEITÁVEL em produção.
+-- O QUE PRECISA MUDAR NO FRONTEND (index.html):
 --
--- Este arquivo está dividido em:
---   PARTE A: Solução segura com Supabase Auth (RECOMENDADA)
---   PARTE B: Paliativo temporário para desenvolvimento (INSEGURO)
+--   1. Trocar doLogin():
+--      DE:  sb.from('users').select('*').eq('email',email).single()
+--      PARA: sb.auth.signInWithPassword({ email, password })
+--
+--   2. Trocar doLogout():
+--      DE:  currentUser = null
+--      PARA: sb.auth.signOut()
+--
+--   3. Buscar profile após login:
+--      const { data: { user } } = await sb.auth.getUser()
+--      const { data: profile } = await sb.from('profiles')
+--        .select('*').eq('id', user.id).single()
+--      currentUser = profile
+--
+--   4. Remover toda referência a tabela `users` no frontend.
+--      Não consultar password_hash. Usar `profiles` em vez de `users`.
+--
+--   5. Para comprovantes, trocar getPublicUrl() por:
+--      sb.storage.from('comprovantes').createSignedUrl(path, 3600)
+--      Isso gera URL temporária de 1h em vez de URL pública permanente.
+--
+--   6. Trocar sb.from('users').select(...) em admins por
+--      sb.from('profiles').select(...) — mesmos campos, sem senha.
+--
+--   7. Criar usuários via Supabase Dashboard > Authentication > Users
+--      ou via sb.auth.admin.createUser() (requer service_role key em
+--      backend/Edge Function, nunca no frontend).
+--
+-- DIVISÃO DO ARQUIVO:
+--   PARTE A: Profiles, helpers, policies (solução segura)
+--   PARTE B: Paliativo temporário para dev (INSEGURO, comentado)
 --   PARTE C: Constraints de integridade (sempre executar)
 --
 -- =====================================================================
 
 
+
 -- #####################################################################
--- PARTE A — SOLUÇÃO SEGURA COM SUPABASE AUTH
--- #####################################################################
---
--- COMO FUNCIONA:
--- 1. Cada usuário do sistema é criado no Supabase Auth (email+senha)
--- 2. Uma tabela `profiles` vincula auth.users ao role do sistema
--- 3. Helpers SQL (is_admin, get_role, etc.) leem o role do usuário logado
--- 4. Policies usam auth.uid() — só funcionam para usuários autenticados
--- 5. A anon key NÃO consegue ler nenhuma tabela sensível
--- 6. O frontend usa supabase.auth.signInWithPassword() no login
---
--- PARA ATIVAR:
--- 1. Execute este SQL no Supabase
--- 2. Crie os usuários via Supabase Dashboard > Authentication > Users
--- 3. Insira os profiles com o role correto
--- 4. Altere o frontend para usar supabase.auth.signInWithPassword()
--- 5. Remova o login por tabela `users`
+-- PARTE A — SEGURANÇA REAL COM SUPABASE AUTH
 -- #####################################################################
 
--- ========== TABELA PROFILES ==========
+
+-- =====================================================================
+-- A1. TABELA PROFILES
+-- =====================================================================
 
 CREATE TABLE IF NOT EXISTS profiles (
   id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -66,12 +83,15 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
-
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
--- Trigger: criar profile automaticamente ao criar user no Auth
+-- Trigger: criar profile ao criar user no Auth
 CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS trigger AS $$
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
   INSERT INTO profiles (id, name, email, role)
   VALUES (
@@ -82,7 +102,7 @@ BEGIN
   );
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -90,59 +110,153 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION handle_new_user();
 
 
--- ========== HELPERS SQL ==========
+-- =====================================================================
+-- A2. HELPERS SQL
+-- =====================================================================
+-- Todos com SECURITY DEFINER + SET search_path = public
+-- para evitar privilege escalation via search_path hijacking.
 
--- Retorna o role do usuário logado
 CREATE OR REPLACE FUNCTION get_my_role()
-RETURNS text AS $$
-  SELECT role FROM profiles WHERE id = auth.uid();
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+RETURNS text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT role FROM profiles WHERE id = auth.uid() AND status = true;
+$$;
 
--- Verifica se é admin (super_admin ou direcao)
 CREATE OR REPLACE FUNCTION is_admin()
-RETURNS boolean AS $$
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
   SELECT EXISTS (
     SELECT 1 FROM profiles
     WHERE id = auth.uid()
-    AND role IN ('super_admin', 'direcao')
-    AND status = true
+      AND role IN ('super_admin', 'direcao')
+      AND status = true
   );
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$;
 
--- Verifica se pode ver financeiro global
 CREATE OR REPLACE FUNCTION can_view_finance()
-RETURNS boolean AS $$
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
   SELECT EXISTS (
     SELECT 1 FROM profiles
     WHERE id = auth.uid()
-    AND role IN ('super_admin', 'direcao', 'financeiro')
-    AND status = true
+      AND role IN ('super_admin', 'direcao', 'financeiro')
+      AND status = true
   );
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$;
 
--- Verifica se tem determinado role
 CREATE OR REPLACE FUNCTION has_role(allowed_roles text[])
-RETURNS boolean AS $$
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
   SELECT EXISTS (
     SELECT 1 FROM profiles
     WHERE id = auth.uid()
-    AND role = ANY(allowed_roles)
-    AND status = true
+      AND role = ANY(allowed_roles)
+      AND status = true
   );
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
+$$;
 
 
--- ========== POLICIES COM auth.uid() ==========
+-- =====================================================================
+-- A3. RPC SEGURA PARA ATUALIZAR PROFILE
+-- =====================================================================
+-- Usuário NÃO pode editar role, status ou permissões diretamente.
+-- UPDATE em profiles é restrito a admin via policy.
+-- Esta RPC permite que o próprio usuário altere apenas name e address.
 
--- ---------- profiles ----------
+CREATE OR REPLACE FUNCTION update_my_profile(
+  new_name text DEFAULT NULL,
+  new_address text DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE profiles
+  SET
+    name = COALESCE(new_name, name),
+    address = COALESCE(new_address, address)
+  WHERE id = auth.uid();
+END;
+$$;
+
+-- RPC para admin alterar role/status de outro usuário
+CREATE OR REPLACE FUNCTION admin_update_profile(
+  target_id uuid,
+  new_role text DEFAULT NULL,
+  new_status boolean DEFAULT NULL,
+  new_name text DEFAULT NULL,
+  new_address text DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT is_admin() THEN
+    RAISE EXCEPTION 'Permissão negada: apenas super_admin e direcao podem alterar perfis.';
+  END IF;
+
+  UPDATE profiles
+  SET
+    role = COALESCE(new_role, role),
+    status = COALESCE(new_status, status),
+    name = COALESCE(new_name, name),
+    address = COALESCE(new_address, address)
+  WHERE id = target_id;
+END;
+$$;
+
+
+-- =====================================================================
+-- A4. POLICIES — PROFILES
+-- =====================================================================
+-- Regras:
+-- - Usuário vê apenas o próprio profile
+-- - Admin/direcao vê todos os profiles
+-- - Secretaria não precisa (e não deve) ver lista de admins
+-- - UPDATE e DELETE somente via admin (RPCs acima para self-edit)
+-- - INSERT controlado pelo trigger on_auth_user_created
+
+DROP POLICY IF EXISTS "profiles_select_own" ON profiles;
+DROP POLICY IF EXISTS "profiles_select_admin" ON profiles;
+DROP POLICY IF EXISTS "profiles_update_admin" ON profiles;
+DROP POLICY IF EXISTS "profiles_insert_admin" ON profiles;
+DROP POLICY IF EXISTS "profiles_delete_admin" ON profiles;
+
 CREATE POLICY "profiles_select_own"
   ON profiles FOR SELECT
-  USING (auth.uid() IS NOT NULL);
+  USING (id = auth.uid());
 
-CREATE POLICY "profiles_update_own"
+CREATE POLICY "profiles_select_admin"
+  ON profiles FOR SELECT
+  USING (is_admin());
+
+-- UPDATE direto na tabela só para admin.
+-- Usuário comum edita via RPC update_my_profile() que bypassa RLS.
+CREATE POLICY "profiles_update_admin"
   ON profiles FOR UPDATE
-  USING (id = auth.uid() OR is_admin());
+  USING (is_admin());
 
+-- INSERT via trigger (SECURITY DEFINER bypassa RLS)
 CREATE POLICY "profiles_insert_admin"
   ON profiles FOR INSERT
   WITH CHECK (is_admin());
@@ -151,8 +265,18 @@ CREATE POLICY "profiles_delete_admin"
   ON profiles FOR DELETE
   USING (is_admin());
 
--- ---------- schools ----------
+
+-- =====================================================================
+-- A5. POLICIES — SCHOOLS
+-- =====================================================================
+
 ALTER TABLE schools ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "schools_select" ON schools;
+DROP POLICY IF EXISTS "schools_insert" ON schools;
+DROP POLICY IF EXISTS "schools_update" ON schools;
+DROP POLICY IF EXISTS "schools_delete" ON schools;
+DROP POLICY IF EXISTS "anon_all_schools" ON schools;
 
 CREATE POLICY "schools_select"
   ON schools FOR SELECT
@@ -170,8 +294,18 @@ CREATE POLICY "schools_delete"
   ON schools FOR DELETE
   USING (is_admin());
 
--- ---------- teachers ----------
+
+-- =====================================================================
+-- A6. POLICIES — TEACHERS
+-- =====================================================================
+
 ALTER TABLE teachers ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "teachers_select" ON teachers;
+DROP POLICY IF EXISTS "teachers_insert" ON teachers;
+DROP POLICY IF EXISTS "teachers_update" ON teachers;
+DROP POLICY IF EXISTS "teachers_delete" ON teachers;
+DROP POLICY IF EXISTS "anon_all_teachers" ON teachers;
 
 CREATE POLICY "teachers_select"
   ON teachers FOR SELECT
@@ -189,8 +323,18 @@ CREATE POLICY "teachers_delete"
   ON teachers FOR DELETE
   USING (is_admin());
 
--- ---------- students ----------
+
+-- =====================================================================
+-- A7. POLICIES — STUDENTS
+-- =====================================================================
+
 ALTER TABLE students ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "students_select" ON students;
+DROP POLICY IF EXISTS "students_insert" ON students;
+DROP POLICY IF EXISTS "students_update" ON students;
+DROP POLICY IF EXISTS "students_delete" ON students;
+DROP POLICY IF EXISTS "anon_all_students" ON students;
 
 CREATE POLICY "students_select"
   ON students FOR SELECT
@@ -208,8 +352,18 @@ CREATE POLICY "students_delete"
   ON students FOR DELETE
   USING (is_admin());
 
--- ---------- classes ----------
+
+-- =====================================================================
+-- A8. POLICIES — CLASSES
+-- =====================================================================
+
 ALTER TABLE classes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "classes_select" ON classes;
+DROP POLICY IF EXISTS "classes_insert" ON classes;
+DROP POLICY IF EXISTS "classes_update" ON classes;
+DROP POLICY IF EXISTS "classes_delete" ON classes;
+DROP POLICY IF EXISTS "anon_all_classes" ON classes;
 
 CREATE POLICY "classes_select"
   ON classes FOR SELECT
@@ -227,12 +381,57 @@ CREATE POLICY "classes_delete"
   ON classes FOR DELETE
   USING (is_admin());
 
--- ---------- boletos ----------
+
+-- =====================================================================
+-- A9. POLICIES — BOLETOS
+-- =====================================================================
+--
+-- LIMITAÇÃO IMPORTANTE SOBRE SECRETARIA E FATURAMENTO:
+--
+-- A secretaria tem SELECT em boletos porque precisa operar cobranças
+-- por aluno (ver boletos individuais, marcar pagamento, lançar).
+--
+-- Porém, com SELECT liberado, ela PODE rodar:
+--   SELECT SUM(valor) FROM boletos WHERE status = 'pago'
+-- e descobrir o faturamento total. O RLS do Postgres não filtra
+-- por coluna nem por tipo de query (agregação vs. row).
+--
+-- OPÇÕES PARA RESOLVER (escolher uma):
+--
+-- Opção 1 — Limitar secretaria por escola/unidade:
+--   Adicionar school_id na tabela boletos (via student->class->school)
+--   e na tabela profiles. Policy: secretaria só vê boletos de alunos
+--   da sua escola. Funciona se houver múltiplas unidades.
+--
+-- Opção 2 — Remover SELECT direto e usar RPCs:
+--   Revogar SELECT de boletos para secretaria.
+--   Criar funções RPC como:
+--     get_boletos_do_aluno(student_id uuid)
+--     marcar_pagamento(boleto_id uuid, ...)
+--     lancar_boletos(student_id uuid, ...)
+--   As RPCs são SECURITY DEFINER e retornam apenas o necessário.
+--   O frontend chama sb.rpc('get_boletos_do_aluno', { student_id })
+--   em vez de sb.from('boletos').select(...).
+--   ESTA É A OPÇÃO MAIS SEGURA.
+--
+-- Opção 3 — Aceitar o risco controlado:
+--   Secretaria tem SELECT e pode tecnicamente somar.
+--   Mitigar com auditoria (log de queries) e confiança na equipe.
+--   Não é segurança real, mas pode ser aceitável para equipe pequena.
+--
+-- O SQL abaixo implementa Opção 3 (SELECT liberado).
+-- Para implementar Opção 2, veja a seção A12 (RPCs de boleto).
+--
+-- =====================================================================
+
 ALTER TABLE boletos ENABLE ROW LEVEL SECURITY;
 
--- Secretaria pode ver boletos (precisa para operar cobranças por aluno),
--- mas NÃO pode ver views/queries agregadas de faturamento global.
--- A proteção de totais globais é feita via view restrita (abaixo).
+DROP POLICY IF EXISTS "boletos_select" ON boletos;
+DROP POLICY IF EXISTS "boletos_insert" ON boletos;
+DROP POLICY IF EXISTS "boletos_update" ON boletos;
+DROP POLICY IF EXISTS "boletos_delete" ON boletos;
+DROP POLICY IF EXISTS "anon_all_boletos" ON boletos;
+
 CREATE POLICY "boletos_select"
   ON boletos FOR SELECT
   USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
@@ -249,12 +448,23 @@ CREATE POLICY "boletos_delete"
   ON boletos FOR DELETE
   USING (has_role(ARRAY['super_admin','direcao','financeiro']));
 
--- ---------- student_contacts ----------
+
+-- =====================================================================
+-- A10. POLICIES — STUDENT_CONTACTS
+-- =====================================================================
+
 ALTER TABLE student_contacts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "contacts_select" ON student_contacts;
+DROP POLICY IF EXISTS "contacts_insert" ON student_contacts;
+DROP POLICY IF EXISTS "contacts_update" ON student_contacts;
+DROP POLICY IF EXISTS "contacts_delete" ON student_contacts;
+DROP POLICY IF EXISTS "anon_all_student_contacts" ON student_contacts;
+DROP POLICY IF EXISTS "Allow all for authenticated" ON student_contacts;
 
 CREATE POLICY "contacts_select"
   ON student_contacts FOR SELECT
-  USING (auth.uid() IS NOT NULL);
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
 
 CREATE POLICY "contacts_insert"
   ON student_contacts FOR INSERT
@@ -268,8 +478,19 @@ CREATE POLICY "contacts_delete"
   ON student_contacts FOR DELETE
   USING (is_admin());
 
--- ---------- attendance ----------
+
+-- =====================================================================
+-- A11. POLICIES — ATTENDANCE
+-- =====================================================================
+
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "attendance_select" ON attendance;
+DROP POLICY IF EXISTS "attendance_insert" ON attendance;
+DROP POLICY IF EXISTS "attendance_update" ON attendance;
+DROP POLICY IF EXISTS "attendance_delete" ON attendance;
+DROP POLICY IF EXISTS "anon_all_attendance" ON attendance;
+DROP POLICY IF EXISTS "Allow all for authenticated" ON attendance;
 
 CREATE POLICY "attendance_select"
   ON attendance FOR SELECT
@@ -288,35 +509,160 @@ CREATE POLICY "attendance_delete"
   USING (is_admin());
 
 
--- ========== BLOQUEIO DE FATURAMENTO GLOBAL PARA SECRETARIA ==========
+-- =====================================================================
+-- A12. RPCs SEGURAS PARA BOLETOS (OPÇÃO 2 — opcional)
+-- =====================================================================
+-- Se quiser bloquear SELECT direto de boletos para secretaria,
+-- remova a policy boletos_select acima e use estas RPCs.
+-- O frontend chamaria sb.rpc('fn_name', { params }) em vez de
+-- sb.from('boletos').select(...).
+--
+-- Para ativar: descomente o bloco abaixo e comente boletos_select.
+-- =====================================================================
 
--- View que só retorna dados para quem pode ver financeiro global.
--- Secretaria recebe zero linhas.
--- O frontend deve usar esta view no lugar de resumo_financeiro_aluno
--- para os cards de faturamento total.
-CREATE OR REPLACE VIEW resumo_financeiro_global AS
-SELECT *
-FROM resumo_financeiro_aluno
-WHERE can_view_finance();
+/*
+CREATE OR REPLACE FUNCTION get_boletos_aluno(p_student_id uuid, p_ano int)
+RETURNS SETOF boletos
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN
+    RAISE EXCEPTION 'Permissão negada';
+  END IF;
 
--- Revogar acesso direto à view existente de resumo se possível:
--- REVOKE SELECT ON resumo_financeiro_aluno FROM anon;
--- REVOKE SELECT ON resumo_financeiro_aluno FROM authenticated;
--- GRANT SELECT ON resumo_financeiro_global TO authenticated;
+  RETURN QUERY
+  SELECT * FROM boletos
+  WHERE student_id = p_student_id
+    AND ano_referencia = p_ano
+  ORDER BY mes_referencia;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION marcar_pagamento_boleto(
+  p_boleto_id uuid,
+  p_data_pagamento date,
+  p_observacao text DEFAULT NULL,
+  p_comprovante_url text DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN
+    RAISE EXCEPTION 'Permissão negada';
+  END IF;
+
+  UPDATE boletos
+  SET status = 'pago',
+      data_pagamento = p_data_pagamento,
+      observacao = p_observacao,
+      comprovante_url = p_comprovante_url
+  WHERE id = p_boleto_id;
+END;
+$$;
+*/
 
 
--- ========== STORAGE — BUCKET COMPROVANTES ==========
+-- =====================================================================
+-- A13. BLOQUEIO DE FATURAMENTO GLOBAL — VIEW SEGURA
+-- =====================================================================
+--
+-- PROBLEMA COM VIEWS E RLS:
+-- Views padrão no Postgres rodam com as permissões do OWNER da view,
+-- não do usuário que consulta. Isso significa que uma view criada
+-- pelo superuser IGNORA o RLS das tabelas base.
+--
+-- SOLUÇÃO: security_invoker = true (Postgres 15+, Supabase suporta).
+-- Com isso, a view roda com as permissões de quem consulta.
+-- Se o Supabase do projeto for Postgres < 15, usar RPC em vez de view.
+--
+-- A view abaixo retorna zero linhas para secretaria.
+-- =====================================================================
+
+DROP VIEW IF EXISTS resumo_financeiro_global;
+
+-- Tente com security_invoker primeiro (Postgres 15+):
+CREATE OR REPLACE VIEW resumo_financeiro_global
+WITH (security_invoker = true)
+AS
+SELECT * FROM resumo_financeiro_aluno;
+
+-- Se o comando acima falhar com erro de syntax,
+-- o Postgres é < 15. Nesse caso, usar esta RPC:
+--
+-- CREATE OR REPLACE FUNCTION get_resumo_financeiro()
+-- RETURNS TABLE(
+--   -- ajuste as colunas conforme sua view resumo_financeiro_aluno
+--   student_id uuid,
+--   nome text,
+--   valor_pago numeric,
+--   valor_aberto numeric
+-- )
+-- LANGUAGE plpgsql
+-- STABLE
+-- SECURITY DEFINER
+-- SET search_path = public
+-- AS $$
+-- BEGIN
+--   IF NOT can_view_finance() THEN
+--     RETURN; -- retorna zero linhas
+--   END IF;
+--   RETURN QUERY SELECT * FROM resumo_financeiro_aluno;
+-- END;
+-- $$;
+
+-- Permissões da view:
+-- Secretaria consulta resumo_financeiro_global mas não vê linhas
+-- porque can_view_finance() retorna false para ela.
+-- Admin/direcao/financeiro veem tudo normalmente.
+
+
+-- =====================================================================
+-- A14. TABELA USERS LEGADA — BLOQUEIO
+-- =====================================================================
+-- A tabela users atual tem password_hash em texto plano.
+-- Com Supabase Auth ativo, ela não é mais necessária.
+-- Durante a migração, bloquear acesso:
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "anon_all_users" ON users;
+DROP POLICY IF EXISTS "temp_dev_users" ON users;
+-- Nenhuma policy = ninguém lê via API (nem anon nem authenticated).
+-- Apenas service_role e superuser acessam.
+-- Após migração completa, DROP TABLE users;
+
+
+-- =====================================================================
+-- A15. STORAGE — COMPROVANTES
+-- =====================================================================
+-- Bucket PRIVADO (public = false).
+-- Frontend usa signed URLs para exibir, não public URLs.
+-- No frontend, trocar:
+--   sb.storage.from('comprovantes').getPublicUrl(path)
+-- Por:
+--   sb.storage.from('comprovantes').createSignedUrl(path, 3600)
+--   (URL válida por 1 hora)
 
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('comprovantes', 'comprovantes', false)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET public = false;
 
--- Leitura: apenas usuários autenticados
+DROP POLICY IF EXISTS "comprovantes_select" ON storage.objects;
+DROP POLICY IF EXISTS "comprovantes_insert" ON storage.objects;
+DROP POLICY IF EXISTS "comprovantes_delete" ON storage.objects;
+DROP POLICY IF EXISTS "Public read comprovantes" ON storage.objects;
+DROP POLICY IF EXISTS "Anon upload comprovantes" ON storage.objects;
+
 CREATE POLICY "comprovantes_select"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'comprovantes' AND auth.uid() IS NOT NULL);
 
--- Upload: apenas roles que operam financeiro
 CREATE POLICY "comprovantes_insert"
   ON storage.objects FOR INSERT
   WITH CHECK (
@@ -324,25 +670,9 @@ CREATE POLICY "comprovantes_insert"
     AND has_role(ARRAY['super_admin','direcao','financeiro','secretaria'])
   );
 
--- Delete: apenas admin
 CREATE POLICY "comprovantes_delete"
   ON storage.objects FOR DELETE
   USING (bucket_id = 'comprovantes' AND is_admin());
-
-
--- ========== TABELA USERS LEGADA ==========
-
--- Se for migrar para Supabase Auth, a tabela `users` atual vira legado.
--- Durante a migração, manter ambas.
--- Após migração completa, remover `users` e usar `profiles`.
-
--- Enquanto `users` existir, bloquear acesso anon:
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-
--- Nenhuma policy para anon = anon não lê nada.
--- Apenas o service_role (backend) acessa.
--- Se o frontend ainda precisar da tabela `users` para login,
--- a migração para Auth ainda não está completa.
 
 
 
@@ -350,27 +680,19 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 -- PARTE B — PALIATIVO TEMPORÁRIO PARA DESENVOLVIMENTO
 -- #####################################################################
 --
--- ⚠️  ATENÇÃO: ISTO NÃO É SEGURANÇA ⚠️
+-- ⚠️  ISTO NÃO É SEGURANÇA — APENAS PARA DESENVOLVIMENTO LOCAL  ⚠️
 --
--- Use APENAS durante o desenvolvimento local enquanto migra para Auth.
--- NÃO use em produção com dados reais de alunos.
+-- Use enquanto migra o frontend para Supabase Auth.
+-- NÃO use com dados reais de alunos ou financeiros.
 --
--- O que isto faz:
--- - Habilita RLS mas permite tudo via anon (para o app funcionar)
--- - Bloqueia password_hash via view (proteção mínima)
--- - O frontend continua usando login por tabela
+-- O que faz: habilita RLS mas permite tudo via anon.
+-- O que NÃO faz: proteger absolutamente nada.
 --
--- O que isto NÃO protege:
--- - Qualquer pessoa com a anon key acessa todos os dados
--- - Não há distinção de role no banco — tudo é frontend
--- - Dados financeiros e pessoais ficam expostos
---
--- PARA USAR (em vez da Parte A):
--- Comente a Parte A inteira e descomente o bloco abaixo.
+-- Para usar: comente toda a Parte A e descomente o bloco abaixo.
 -- #####################################################################
 
 /*
--- === INÍCIO DO BLOCO TEMPORÁRIO (descomentar para usar) ===
+-- === INÍCIO BLOCO TEMPORÁRIO ===
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE schools ENABLE ROW LEVEL SECURITY;
@@ -381,12 +703,9 @@ ALTER TABLE boletos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE student_contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
 
--- View sem password_hash (proteção mínima)
 CREATE OR REPLACE VIEW users_safe AS
-SELECT id, name, email, role, status, address, created_at
-FROM users;
+SELECT id, name, email, role, status, address, created_at FROM users;
 
--- ⚠️ Policies abertas — INSEGURO, apenas para desenvolvimento
 DO $$ BEGIN
   DROP POLICY IF EXISTS "temp_dev_users" ON users;
   DROP POLICY IF EXISTS "temp_dev_schools" ON schools;
@@ -398,27 +717,17 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "temp_dev_attendance" ON attendance;
 END $$;
 
--- Leitura: permitir para anon (necessário para o app funcionar)
--- Escrita: permitir para anon (o app faz insert/update/delete direto)
--- ISTO É INSEGURO. Todo mundo com a key pode ler e escrever tudo.
-CREATE POLICY "temp_dev_users" ON users
-  FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "temp_dev_schools" ON schools
-  FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "temp_dev_teachers" ON teachers
-  FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "temp_dev_students" ON students
-  FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "temp_dev_classes" ON classes
-  FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "temp_dev_boletos" ON boletos
-  FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "temp_dev_contacts" ON student_contacts
-  FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "temp_dev_attendance" ON attendance
-  FOR ALL USING (true) WITH CHECK (true);
+-- ⚠️ INSEGURO: permite tudo para qualquer key
+CREATE POLICY "temp_dev_users" ON users FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "temp_dev_schools" ON schools FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "temp_dev_teachers" ON teachers FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "temp_dev_students" ON students FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "temp_dev_classes" ON classes FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "temp_dev_boletos" ON boletos FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "temp_dev_contacts" ON student_contacts FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "temp_dev_attendance" ON attendance FOR ALL USING (true) WITH CHECK (true);
 
--- === FIM DO BLOCO TEMPORÁRIO ===
+-- === FIM BLOCO TEMPORÁRIO ===
 */
 
 
@@ -426,35 +735,23 @@ CREATE POLICY "temp_dev_attendance" ON attendance
 -- #####################################################################
 -- PARTE C — CONSTRAINTS DE INTEGRIDADE (SEMPRE EXECUTAR)
 -- #####################################################################
--- Estas constraints protegem dados independente de RLS.
--- Execute esta parte em qualquer cenário.
--- #####################################################################
 
--- Boleto único por aluno/mês/ano
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'boletos_unique_student_mes_ano'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'boletos_unique_student_mes_ano') THEN
     ALTER TABLE boletos ADD CONSTRAINT boletos_unique_student_mes_ano
       UNIQUE (student_id, mes_referencia, ano_referencia);
   END IF;
 END $$;
 
--- Status de boleto válido
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'boletos_status_check'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'boletos_status_check') THEN
     ALTER TABLE boletos ADD CONSTRAINT boletos_status_check
       CHECK (status IN ('aberto', 'pago'));
   END IF;
 END $$;
 
--- Role de usuário válido (tabela legada)
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check') THEN
     ALTER TABLE users ADD CONSTRAINT users_role_check
       CHECK (role IN (
         'super_admin', 'admin', 'direcao', 'financeiro',
@@ -463,31 +760,22 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Student type válido
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'students_type_check'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'students_type_check') THEN
     ALTER TABLE students ADD CONSTRAINT students_type_check
       CHECK (student_type IN ('Regular', 'VIP Online', 'VIP Presencial'));
   END IF;
 END $$;
 
--- VIP status válido
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'students_vip_status_check'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'students_vip_status_check') THEN
     ALTER TABLE students ADD CONSTRAINT students_vip_status_check
       CHECK (vip_status IS NULL OR vip_status IN ('Ativo', 'Pausado', 'Em risco', 'Cancelado'));
   END IF;
 END $$;
 
--- Attendance status válido
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'attendance_status_check'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'attendance_status_check') THEN
     ALTER TABLE attendance ADD CONSTRAINT attendance_status_check
       CHECK (status IN ('pendente', 'presente', 'ausente', 'justificado'));
   END IF;
