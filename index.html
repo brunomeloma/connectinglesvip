@@ -420,6 +420,10 @@ function isAdmin(){return ['super_admin','admin','direcao'].includes(currentUser
 function isFinanceiro(){return isAdmin()||currentUser?.role==='financeiro';}
 function isSecretaria(){return currentUser?.role==='secretaria';}
 function canSeeFinanceiroGlobal(){return isFinanceiro();}
+function canManageUsers(){return isAdmin();}
+function canManageBilling(){return isFinanceiro()||isSecretaria();}
+function canAccessVipFollowup(){return isAdmin()||isFinanceiro()||isSecretaria();}
+function requireRole(allowed,msg){if(!allowed){showAlert('page-alert',msg||'Sem permissão para esta ação.','danger');return false;}return true;}
 function status_badge(s){return s?'<span class="badge badge-success">Ativo</span>':'<span class="badge badge-warning">Inativo</span>';}
 function level_badge(l){if(!l)return '—';const m={Básico:'badge-basico',Intermediário:'badge-intermediario',Avançado:'badge-avancado'};return `<span class="badge ${m[l]||'badge-secondary'}">${l}</span>`;}
 function fdate(d){if(!d)return '—';return new Date(d).toLocaleDateString('pt-BR');}
@@ -460,11 +464,12 @@ async function doLogin(){
   const email=$('login-email').value.trim();
   const pass=$('login-pass').value.trim();
   if(!email||!pass){showLoginErr('Preencha e-mail e senha.');return;}
-  const{data,error}=await sb.from('users').select('*').eq('email',email).single();
+  const{data,error}=await sb.from('users').select('id,name,email,role,status,password_hash,address,created_at').eq('email',email).single();
   if(error||!data){showLoginErr('E-mail não encontrado.');return;}
-  // senha simples: compara texto puro (para produção use hash bcrypt no backend)
+  if(!data.status){showLoginErr('Conta desativada. Contate a administração.');return;}
   if(data.password_hash!==pass&&data.password_hash!=='trocar_senha'){showLoginErr('Senha incorreta.');return;}
-  currentUser=data;
+  const{password_hash,...safeUser}=data;
+  currentUser=safeUser;
   startApp();
 }
 function showLoginErr(msg){const el=$('login-err');el.textContent=msg;el.style.display='block';}
@@ -477,9 +482,7 @@ function startApp(){
   const roles={super_admin:'Super Admin',admin:'Admin',direcao:'Direção',financeiro:'Financeiro',secretaria:'Secretaria',escola:'Escola',escola_admin:'Escola Admin',professor:'Professor'};
   $('sb-role').textContent=roles[currentUser.role]||currentUser.role;
   $('topbar-user').innerHTML=`<i class="fa fa-user-circle" style="color:var(--brand);font-size:18px"></i> &nbsp;${currentUser.name}`;
-  if(!isAdmin()){
-    document.querySelectorAll('.admin-only').forEach(el=>el.style.display='none');
-  }
+  document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isAdmin()?'':'none');
   nav('dashboard');
 }
 
@@ -665,9 +668,10 @@ async function saveSchool(id){
 
 // --- ADMINS ---
 pages.admins=async function({view,id}={}){
+  if(!canManageUsers()){nav('dashboard');return;}
   if(view==='form') return adminForm(id);
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const{data=[]}=await sb.from('users').select('*').in('role',['super_admin','admin']).order('created_at',{ascending:false});
+  const{data=[]}=await sb.from('users').select('id,name,email,role,status,address,created_at').in('role',['super_admin','admin','direcao','financeiro','secretaria']).order('created_at',{ascending:false});
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>Administrador</span></div>
     <div class="page-title"><i class="fa fa-user-tie"></i> Administrador</div>
@@ -696,8 +700,9 @@ pages.admins=async function({view,id}={}){
 };
 
 async function adminForm(id){
+  if(!canManageUsers()){nav('dashboard');return;}
   let user={};
-  if(id){const{data}=await sb.from('users').select('*').eq('id',id).single();user=data||{};}
+  if(id){const{data}=await sb.from('users').select('id,name,email,role,status,address,created_at').eq('id',id).single();user=data||{};}
   setContent(`
     <div class="breadcrumb"><a onclick="nav('admins')">Administrador</a> › <span>${id?'Editar':'Adicionar'}</span></div>
     <div class="page-title"><i class="fa fa-user-tie"></i> ${id?'Editar':'Adicionar'} administrador</div>
@@ -727,6 +732,7 @@ async function adminForm(id){
 }
 
 async function saveAdmin(id){
+  if(!canManageUsers()) return;
   const name=$('f-name').value.trim();
   const email=$('f-email').value.trim();
   const pass=$('f-pass').value.trim();
@@ -1196,7 +1202,7 @@ pages.financeiro=async function({view,studentId}={}){
   const inadimplentes=kpi.filter(r=>parseFloat(r.valor_aberto)>0).length;
 
   const fStatus=getFilter('fin-status');
-  const fNome=getFilter('fin-nome');
+  const fNome=getFilter('fin-nome')||'';
   const fAno=getFilter('fin-ano')||new Date().getFullYear().toString();
 
   let q=sb.from('boletos').select('*,student:students(id,first_name,last_name,status)').eq('ano_referencia',fAno).order('data_vencimento',{ascending:true});
@@ -1288,11 +1294,11 @@ async function finAluno(studentId){
     <div class="breadcrumb"><a onclick="nav('financeiro')">Financeiro</a> › <span>${student.first_name} ${student.last_name}</span></div>
     <div class="page-title"><i class="fa fa-file-invoice-dollar"></i> Boletos — ${student.first_name} ${student.last_name}</div>
     <div id="page-alert" class="alert"></div>
-    <div class="fin-summary-grid" style="grid-template-columns:1fr 1fr 1fr">
+    ${canSeeFinanceiroGlobal()?`<div class="fin-summary-grid" style="grid-template-columns:1fr 1fr 1fr">
       <div class="fin-card c-gold"><i class="fa fa-check-circle fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalPago)}</div><div class="fin-card-label">Total Pago</div></div></div>
       <div class="fin-card c-orange"><i class="fa fa-clock fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalAberto)}</div><div class="fin-card-label">Em Aberto</div></div></div>
       <div class="fin-card c-dark"><i class="fa fa-file-invoice fin-card-icon"></i><div><div class="fin-card-num">${boletos.length}</div><div class="fin-card-label">Boletos lançados</div></div></div>
-    </div>
+    </div>`:''}
     ${(()=>{
       const vencidos=boletos.filter(b=>b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date());
       if(!vencidos.length) return '';
@@ -1857,6 +1863,7 @@ function copiarCodigo(id, codigo){
 function setContent(html){$('content').innerHTML=html;}
 
 async function deleteRecord(table,id,returnPage){
+  if(table==='users'&&!canManageUsers()){alert('Sem permissão.');return;}
   showConfirm(async()=>{
     const{error}=await sb.from(table).delete().eq('id',id);
     if(error){alert('Erro ao excluir: '+error.message);return;}
