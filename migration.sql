@@ -1,18 +1,20 @@
 -- =============================================
--- Migration: Permissões, campos VIP e contatos
+-- Migration: Permissões, campos VIP, contatos,
+-- horários de turma e chamada/presença
 -- Connect Inglês VIP — Gestão Escolar
 -- =============================================
 
--- 1. Adicionar campo 'role' na tabela users (se ainda não existir com os novos valores)
--- Roles possíveis: super_admin, admin, direcao, financeiro, secretaria, escola, escola_admin, professor
--- Já existe a coluna role, apenas garantir que aceita os novos valores.
-
--- 2. Novos campos na tabela students
+-- 1. Novos campos na tabela students (VIP)
 ALTER TABLE students ADD COLUMN IF NOT EXISTS student_type text DEFAULT 'Regular';
 ALTER TABLE students ADD COLUMN IF NOT EXISTS contact_preference text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS whatsapp text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS vip_status text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS vip_notes text;
+
+-- 2. Novos campos na tabela classes (horários estruturados)
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS class_days text;
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS start_time text;
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS end_time text;
 
 -- 3. Tabela de histórico de contatos com alunos
 CREATE TABLE IF NOT EXISTS student_contacts (
@@ -26,16 +28,35 @@ CREATE TABLE IF NOT EXISTS student_contacts (
   created_at timestamptz DEFAULT now()
 );
 
--- 4. Índices para performance
+-- 4. Tabela de chamada / presença
+CREATE TABLE IF NOT EXISTS attendance (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  class_id uuid REFERENCES classes(id) ON DELETE CASCADE,
+  student_id uuid REFERENCES students(id) ON DELETE CASCADE,
+  date date NOT NULL,
+  status text DEFAULT 'pendente',
+  confirmed boolean DEFAULT false,
+  marked_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(class_id, student_id, date)
+);
+
+-- 5. Índices
 CREATE INDEX IF NOT EXISTS idx_student_contacts_student_id ON student_contacts(student_id);
 CREATE INDEX IF NOT EXISTS idx_student_contacts_created_at ON student_contacts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_students_student_type ON students(student_type);
+CREATE INDEX IF NOT EXISTS idx_attendance_class_date ON attendance(class_id, date);
+CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
 
--- 5. RLS (Row Level Security) para student_contacts
+-- 6. RLS
 ALTER TABLE student_contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow all for authenticated" ON student_contacts
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow all for authenticated' AND tablename = 'student_contacts') THEN
+    CREATE POLICY "Allow all for authenticated" ON student_contacts FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+
+CREATE POLICY "Allow all for authenticated" ON attendance
   FOR ALL USING (true) WITH CHECK (true);
-
--- 6. Permitir leitura da view resumo_financeiro_aluno (já existente)
--- Nenhuma alteração necessária, o controle de visibilidade é feito no frontend por role.

@@ -506,6 +506,7 @@ pages.dashboard=async function(){
       <div class="stat-card c-dark"><i class="fa fa-user-graduate stat-icon"></i><div><div class="stat-num">${st.count??0}</div><div class="stat-label">Alunos matriculados</div></div></div>
       <div class="stat-card c-brown"><i class="fa fa-layer-group stat-icon"></i><div><div class="stat-num">${cl.count??0}</div><div class="stat-label">Turmas ativas</div></div></div>
     </div>
+    <div id="dash-aulas-hoje"></div>
     <div class="two-col">
       <div class="panel">
         <div class="panel-head"><span class="panel-title">Acesso rápido</span></div>
@@ -531,7 +532,35 @@ pages.dashboard=async function(){
       </div>
     </div>
   `);
+  carregarAulasHoje();
 };
+
+async function carregarAulasHoje(){
+  const diasSemana=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const hoje=diasSemana[new Date().getDay()];
+  const{data:turmas=[]}=await sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('status',true);
+  const aulasHoje=turmas.filter(t=>(t.class_days||'').includes(hoje));
+  const el=$('dash-aulas-hoje');
+  if(!el) return;
+  if(!aulasHoje.length){
+    el.innerHTML=`<div class="panel" style="margin-bottom:18px"><div class="panel-head"><span class="panel-title"><i class="fa fa-calendar-day" style="color:var(--brand)"></i> Aulas de hoje (${hoje})</span></div><div class="panel-body"><div class="empty-state" style="padding:16px"><i class="fa fa-coffee"></i>Nenhuma aula programada para hoje</div></div></div>`;
+    return;
+  }
+  el.innerHTML=`<div class="panel" style="margin-bottom:18px">
+    <div class="panel-head"><span class="panel-title"><i class="fa fa-calendar-day" style="color:var(--brand)"></i> Aulas de hoje (${hoje}) — ${aulasHoje.length} turma(s)</span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Turma</th><th>Horário</th><th>Professor</th><th>Escola</th><th>Nível</th><th>Ações</th></tr></thead>
+      <tbody>${aulasHoje.map(c=>`<tr>
+        <td><strong>${c.name}</strong></td>
+        <td><i class="fa fa-clock" style="color:var(--brand)"></i> ${c.start_time||''}–${c.end_time||''}</td>
+        <td>${c.teacher?c.teacher.first_name+' '+c.teacher.last_name:'—'}</td>
+        <td>${c.school?.name||'—'}</td>
+        <td>${level_badge(c.level)}</td>
+        <td><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}'})"><i class="fa fa-clipboard-check"></i> Chamada</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
 
 // --- SCHOOLS ---
 pages.schools=async function({view,id}={}){
@@ -945,6 +974,7 @@ async function saveStudent(id){
 // --- CLASSES ---
 pages.classes=async function({view,id}={}){
   if(view==='form') return classForm(id);
+  if(view==='detail') return classDetail(id);
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const{data=[]}=await sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').order('created_at',{ascending:false});
   // count students per class
@@ -958,7 +988,7 @@ pages.classes=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Lista de turmas</span><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'form'})"><i class="fa fa-plus"></i> Criar turma</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Professor</th><th>Escola</th><th>Horário</th><th>Nível</th><th>Alunos</th><th>Status</th><th colspan="2">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Professor</th><th>Escola</th><th>Horário</th><th>Nível</th><th>Alunos</th><th>Status</th><th>Ações</th></tr></thead>
           <tbody>${data.length?data.map((c,i)=>`
             <tr>
               <td>${i+1}</td>
@@ -969,8 +999,11 @@ pages.classes=async function({view,id}={}){
               <td>${level_badge(c.level)}</td>
               <td><span class="badge badge-info">${counts[c.id]}</span></td>
               <td>${status_badge(c.status)}</td>
-              <td><button class="btn-icon" onclick="nav('classes',{view:'form',id:'${c.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
-              <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('classes','${c.id}','classes')"><i class="fa fa-trash"></i></button></td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}'})"><i class="fa fa-eye"></i> Ver</button>
+                <button class="btn-icon" onclick="nav('classes',{view:'form',id:'${c.id}'})"><i class="fa fa-pencil-alt"></i></button>
+                <button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('classes','${c.id}','classes')"><i class="fa fa-trash"></i></button>
+              </td>
             </tr>`).join(''):`<tr><td colspan="10"><div class="empty-state"><i class="fa fa-layer-group"></i>Nenhuma turma cadastrada</div></td></tr>`}
           </tbody>
         </table>
@@ -997,11 +1030,21 @@ async function classForm(id){
             <div class="field"><label>Nome da turma <span class="required">*</span></label><input id="f-name" value="${c.name||''}" placeholder="Ex: Turma A — Básico"></div>
             <div class="field"><label>Professor</label><select id="f-teacher"><option value="">Nenhum</option>${tOpts}</select></div>
             <div class="field"><label>Escola</label><select id="f-school"><option value="">Nenhuma</option>${sOpts}</select></div>
-          </div>
-          <div>
-            <div class="field"><label>Horário</label><input id="f-schedule" value="${c.schedule||''}" placeholder="Ex: Seg/Qua 19h–20h30"></div>
             <div class="field"><label>Nível</label><select id="f-level"><option value="">Selecione</option><option value="Básico" ${c.level==='Básico'?'selected':''}>Básico</option><option value="Intermediário" ${c.level==='Intermediário'?'selected':''}>Intermediário</option><option value="Avançado" ${c.level==='Avançado'?'selected':''}>Avançado</option></select></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${c.status!==false?'selected':''}>Ativo</option><option value="false" ${c.status===false?'selected':''}>Inativo</option></select></div>
+          </div>
+          <div>
+            <div class="field"><label>Dias da semana <span class="required">*</span></label>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px" id="f-days">
+                ${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>{
+                  const checked=(c.class_days||'').includes(d);
+                  return `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:4px 8px;border:1px solid var(--gray-300);border-radius:4px;background:${checked?'var(--brand)':'var(--white)'};color:${checked?'#111':'var(--gray-700)'}"><input type="checkbox" value="${d}" ${checked?'checked':''} style="display:none" onchange="this.parentElement.style.background=this.checked?'var(--brand)':'var(--white)';this.parentElement.style.color=this.checked?'#111':'var(--gray-700)'">${d}</label>`;
+                }).join('')}
+              </div>
+            </div>
+            <div class="field"><label>Horário de início <span class="required">*</span></label><input id="f-start-time" type="time" value="${c.start_time||''}"></div>
+            <div class="field"><label>Horário de término <span class="required">*</span></label><input id="f-end-time" type="time" value="${c.end_time||''}"></div>
+            <div class="field"><label>Descrição do horário (resumo)</label><input id="f-schedule" value="${c.schedule||''}" placeholder="Gerado automaticamente se vazio"></div>
           </div>
         </div>
       </div>
@@ -1016,12 +1059,103 @@ async function classForm(id){
 async function saveClass(id){
   const name=$('f-name').value.trim();
   if(!name){showAlert('page-alert','Informe o nome da turma.','danger');return;}
-  const payload={name,teacher_id:$('f-teacher').value||null,school_id:$('f-school').value||null,schedule:$('f-schedule').value,level:$('f-level').value||null,status:$('f-status').value==='true'};
+  const days=[...document.querySelectorAll('#f-days input:checked')].map(i=>i.value);
+  const startTime=$('f-start-time').value;
+  const endTime=$('f-end-time').value;
+  if(!days.length||!startTime||!endTime){showAlert('page-alert','Informe dias e horários da turma.','danger');return;}
+  let schedule=$('f-schedule').value.trim();
+  if(!schedule) schedule=days.join('/')+' '+startTime+'–'+endTime;
+  const payload={name,teacher_id:$('f-teacher').value||null,school_id:$('f-school').value||null,schedule,class_days:days.join(','),start_time:startTime,end_time:endTime,level:$('f-level').value||null,status:$('f-status').value==='true'};
   let err;
   if(id){const r=await sb.from('classes').update(payload).eq('id',id);err=r.error;}
   else{const r=await sb.from('classes').insert(payload);err=r.error;}
   if(err){showAlert('page-alert','Erro: '+err.message,'danger');return;}
   nav('classes');
+}
+
+async function classDetail(classId){
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const[{data:c},{data:alunos=[]}]=await Promise.all([
+    sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('id',classId).single(),
+    sb.from('students').select('*').eq('class_id',classId).eq('status',true).order('first_name'),
+  ]);
+  if(!c){nav('classes');return;}
+  const hoje=new Date().toISOString().split('T')[0];
+  const{data:presencasHoje=[]}=await sb.from('attendance').select('*').eq('class_id',classId).eq('date',hoje);
+  const presMap={};presencasHoje.forEach(p=>presMap[p.student_id]=p);
+
+  const diasMap={'Seg':'Segunda','Ter':'Terça','Qua':'Quarta','Qui':'Quinta','Sex':'Sexta','Sáb':'Sábado','Dom':'Domingo'};
+  const diasTxt=(c.class_days||'').split(',').map(d=>diasMap[d]||d).join(', ');
+  const horario=c.start_time&&c.end_time?c.start_time+' – '+c.end_time:(c.schedule||'—');
+
+  const diasHoje=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][new Date().getDay()];
+  const temAulaHoje=(c.class_days||'').includes(diasHoje);
+
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('classes')">Turmas</a> › <span>${c.name}</span></div>
+    <div class="page-title"><i class="fa fa-layer-group"></i> ${c.name}</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="stat-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="stat-card c-gold"><i class="fa fa-calendar stat-icon"></i><div><div class="stat-num" style="font-size:16px">${diasTxt||'—'}</div><div class="stat-label">Dias da semana</div></div></div>
+      <div class="stat-card c-orange"><i class="fa fa-clock stat-icon"></i><div><div class="stat-num" style="font-size:18px">${horario}</div><div class="stat-label">Horário</div></div></div>
+      <div class="stat-card c-dark"><i class="fa fa-users stat-icon"></i><div><div class="stat-num">${alunos.length}</div><div class="stat-label">Alunos matriculados</div></div></div>
+      <div class="stat-card c-brown"><i class="fa ${temAulaHoje?'fa-check-circle':'fa-minus-circle'} stat-icon"></i><div><div class="stat-num" style="font-size:16px">${temAulaHoje?'Sim':'Não'}</div><div class="stat-label">Aula hoje?</div></div></div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Informações</span><button class="btn btn-default btn-sm" onclick="nav('classes',{view:'form',id:'${classId}'})"><i class="fa fa-pencil-alt"></i> Editar</button></div>
+        <div class="panel-body">
+          <p><strong>Professor:</strong> ${c.teacher?c.teacher.first_name+' '+c.teacher.last_name:'Não definido'}</p>
+          <p style="margin-top:6px"><strong>Escola:</strong> ${c.school?.name||'Não definida'}</p>
+          <p style="margin-top:6px"><strong>Nível:</strong> ${c.level||'—'}</p>
+          <p style="margin-top:6px"><strong>Status:</strong> ${status_badge(c.status)}</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title"><i class="fa fa-clipboard-check" style="color:var(--brand)"></i> Chamada — Hoje (${new Date().toLocaleDateString('pt-BR')})</span></div>
+        <div class="panel-body" style="padding:0">
+          ${!temAulaHoje?'<div class="empty-state" style="padding:20px"><i class="fa fa-calendar-times"></i>Não há aula hoje para esta turma</div>'
+          :alunos.length?`<table><thead><tr><th>Aluno</th><th>Presença</th><th>Confirmou?</th></tr></thead><tbody>${alunos.map(a=>{
+            const p=presMap[a.id];
+            const status=p?.status||'pendente';
+            const confirmed=p?.confirmed;
+            return `<tr>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div>${a.first_name} ${a.last_name}</div></td>
+              <td>
+                <select onchange="marcarPresenca('${classId}','${a.id}',this.value)" style="padding:4px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px">
+                  <option value="pendente" ${status==='pendente'?'selected':''}>Pendente</option>
+                  <option value="presente" ${status==='presente'?'selected':''}>✅ Presente</option>
+                  <option value="ausente" ${status==='ausente'?'selected':''}>❌ Ausente</option>
+                  <option value="justificado" ${status==='justificado'?'selected':''}>📋 Justificado</option>
+                </select>
+              </td>
+              <td>${confirmed?'<span class="badge badge-success">Confirmou</span>':'<span class="badge badge-secondary">Não confirmou</span>'}</td>
+            </tr>`}).join('')}</tbody></table>`:'<div class="empty-state" style="padding:20px"><i class="fa fa-user-graduate"></i>Nenhum aluno nesta turma</div>'}
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-head"><span class="panel-title">Alunos matriculados</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Aluno</th><th>Tipo</th><th>Celular</th><th>WhatsApp</th><th>Nível</th><th>Ações</th></tr></thead>
+        <tbody>${alunos.length?alunos.map(a=>`<tr>
+          <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${a.first_name} ${a.last_name}</strong></div></td>
+          <td>${a.student_type&&a.student_type!=='Regular'?`<span class="badge badge-vip">${a.student_type}</span>`:'<span class="badge badge-secondary">Regular</span>'}</td>
+          <td>${a.mobile_number||'—'}</td>
+          <td>${a.whatsapp||'—'}</td>
+          <td>${level_badge(a.level)}</td>
+          <td><button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${a.id}'})"><i class="fa fa-pencil-alt"></i> Editar</button></td>
+        </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno matriculado</div></td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+  `);
+}
+
+async function marcarPresenca(classId,studentId,status){
+  const hoje=new Date().toISOString().split('T')[0];
+  const{error}=await sb.from('attendance').upsert({class_id:classId,student_id:studentId,date:hoje,status,marked_by:currentUser.id},{onConflict:'class_id,student_id,date'});
+  if(error) alert('Erro: '+error.message);
 }
 
 // ============================
@@ -1499,10 +1633,10 @@ async function marcarVencidosComoPago(studentId, ids){
 // VIP ONLINE
 // ============================
 const MSG_TEMPLATES={
-  confirmar_presenca:{label:'Confirmar presença',icon:'fa-check-circle',text:'Olá, {nome}! Tudo bem? 😊\nAqui é da *{escola}*. Passando para confirmar sua presença na aula de inglês VIP online de hoje{professor}.\nVocê consegue participar?'},
-  lembrar_aula:{label:'Lembrar aula de hoje',icon:'fa-bell',text:'Olá, {nome}! 📚\nLembrando que hoje você tem aula de inglês VIP online na *{escola}*{professor}.\nTe esperamos! 😄'},
-  avisar_atraso:{label:'Avisar atraso',icon:'fa-clock',text:'Olá, {nome}! ⏰\nAqui é da *{escola}*. Informamos que a aula de hoje{professor} terá um pequeno atraso.\nPedimos desculpas pelo inconveniente e avisaremos assim que estiver tudo pronto!'},
-  reagendar:{label:'Reagendar aula',icon:'fa-calendar-alt',text:'Olá, {nome}! 📅\nAqui é da *{escola}*. Precisamos reagendar sua aula de inglês VIP online{professor}.\nQual horário fica melhor para você?'},
+  confirmar_presenca:{label:'Confirmar presença',icon:'fa-check-circle',text:'Olá, {nome}! Tudo bem? 😊\nAqui é da *{escola}*. Passando para confirmar sua presença na aula de inglês VIP online de hoje{horario}{professor}.\nVocê consegue participar?'},
+  lembrar_aula:{label:'Lembrar aula de hoje',icon:'fa-bell',text:'Olá, {nome}! 📚\nLembrando que hoje você tem aula de inglês VIP online na *{escola}*{horario}{professor}.\nTe esperamos! 😄'},
+  avisar_atraso:{label:'Avisar atraso',icon:'fa-clock',text:'Olá, {nome}! ⏰\nAqui é da *{escola}*. Informamos que a aula de hoje{horario}{professor} terá um pequeno atraso.\nPedimos desculpas pelo inconveniente e avisaremos assim que estiver tudo pronto!'},
+  reagendar:{label:'Reagendar aula',icon:'fa-calendar-alt',text:'Olá, {nome}! 📅\nAqui é da *{escola}*. Precisamos reagendar sua aula de inglês VIP online{horario}{professor}.\nQual horário fica melhor para você?'},
   cobranca:{label:'Cobrança amigável',icon:'fa-hand-holding-usd',text:'Olá, {nome}! Tudo bem? 😊\nAqui é da *{escola}*. Gostaríamos de lembrar que há uma mensalidade em aberto referente ao seu curso de inglês.\nPoderia verificar, por favor? Qualquer dúvida estamos à disposição!'},
   boleto_vencido:{label:'Boleto vencido',icon:'fa-exclamation-triangle',text:'Olá, {nome}! 🔔\nAqui é da *{escola}*. Identificamos que seu boleto referente ao curso de inglês está vencido.\nPor favor, regularize o quanto antes para evitar interrupção nas aulas.\nSe já pagou, desconsidere esta mensagem. Qualquer dúvida, estamos aqui!'},
 };
@@ -1549,14 +1683,15 @@ pages.vip=async function({view,studentId}={}){
 
 let _vipCtx={};
 async function vipContato(studentId){
-  const{data:s}=await sb.from('students').select('*,class:classes(name,teacher_id,school_id,teacher:teachers(first_name,last_name),school:schools(name))').eq('id',studentId).single();
+  const{data:s}=await sb.from('students').select('*,class:classes(name,start_time,end_time,class_days,schedule,teacher:teachers(first_name,last_name),school:schools(name))').eq('id',studentId).single();
   if(!s){nav('vip');return;}
   const nome=s.first_name;
   let numero=(s.whatsapp||s.mobile_number||'').replace(/\D/g,'');
   if(numero&&!numero.startsWith('55'))numero='55'+numero;
   const escolaNome=s.class?.school?.name||'Connect Inglês VIP';
   const profNome=s.class?.teacher?s.class.teacher.first_name+' '+s.class.teacher.last_name:'';
-  _vipCtx={nome,escolaNome,profNome};
+  const horarioTxt=s.class?.start_time&&s.class?.end_time?' às '+s.class.start_time+'–'+s.class.end_time:'';
+  _vipCtx={nome,escolaNome,profNome,horarioTxt};
 
   setContent(`
     <div class="breadcrumb"><a onclick="nav('vip')">VIP Online</a> › <span>${s.first_name} ${s.last_name}</span> › Contato</div>
@@ -1596,10 +1731,10 @@ async function vipContato(studentId){
 function preencherMsg(tipo){
   const t=MSG_TEMPLATES[tipo];
   if(!t) return;
-  const{nome,escolaNome,profNome}=_vipCtx;
+  const{nome,escolaNome,profNome,horarioTxt}=_vipCtx;
   const sel=$('vip-msg-type');if(sel)sel.value=tipo;
   const profTxt=profNome?' com o(a) professor(a) '+profNome:'';
-  const texto=t.text.replace(/\{nome\}/g,nome).replace(/\{escola\}/g,escolaNome).replace(/\{professor\}/g,profTxt);
+  const texto=t.text.replace(/\{nome\}/g,nome).replace(/\{escola\}/g,escolaNome).replace(/\{professor\}/g,profTxt).replace(/\{horario\}/g,horarioTxt||'');
   const ta=$('vip-msg-text');if(ta)ta.value=texto;
 }
 
