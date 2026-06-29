@@ -936,12 +936,24 @@ async function studentForm(id){
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Tipo de aluno</label><select id="f-student-type"><option value="Regular" ${s.student_type==='Regular'||!s.student_type?'selected':''}>Regular</option><option value="VIP Online" ${s.student_type==='VIP Online'?'selected':''}>VIP Online</option><option value="VIP Presencial" ${s.student_type==='VIP Presencial'?'selected':''}>VIP Presencial</option></select></div>
+            <div class="field"><label>Tipo de aluno</label><select id="f-student-type" onchange="toggleVipSchedule()"><option value="Regular" ${s.student_type==='Regular'||!s.student_type?'selected':''}>Regular</option><option value="VIP Online" ${s.student_type==='VIP Online'?'selected':''}>VIP Online</option><option value="VIP Presencial" ${s.student_type==='VIP Presencial'?'selected':''}>VIP Presencial</option></select></div>
             <div class="field"><label>WhatsApp</label><input id="f-whatsapp" value="${s.whatsapp||''}" placeholder="5511999999999"></div>
             <div class="field"><label>Preferência de contato</label><select id="f-contact-pref"><option value="">Selecione</option><option value="WhatsApp" ${s.contact_preference==='WhatsApp'?'selected':''}>WhatsApp</option><option value="E-mail" ${s.contact_preference==='E-mail'?'selected':''}>E-mail</option><option value="Telefone" ${s.contact_preference==='Telefone'?'selected':''}>Telefone</option></select></div>
+            <div class="field"><label>Status de acompanhamento</label><select id="f-vip-status"><option value="">Selecione</option><option value="Ativo" ${s.vip_status==='Ativo'?'selected':''}>Ativo</option><option value="Pausado" ${s.vip_status==='Pausado'?'selected':''}>Pausado</option><option value="Em risco" ${s.vip_status==='Em risco'?'selected':''}>Em risco</option><option value="Cancelado" ${s.vip_status==='Cancelado'?'selected':''}>Cancelado</option></select></div>
           </div>
           <div>
-            <div class="field"><label>Status de acompanhamento</label><select id="f-vip-status"><option value="">Selecione</option><option value="Ativo" ${s.vip_status==='Ativo'?'selected':''}>Ativo</option><option value="Pausado" ${s.vip_status==='Pausado'?'selected':''}>Pausado</option><option value="Em risco" ${s.vip_status==='Em risco'?'selected':''}>Em risco</option><option value="Cancelado" ${s.vip_status==='Cancelado'?'selected':''}>Cancelado</option></select></div>
+            <div id="vip-schedule-fields" style="${(s.student_type||'').includes('VIP')?'':'display:none'}">
+              <div class="field"><label><i class="fa fa-calendar" style="color:var(--brand)"></i> Dias da aula individual</label>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px" id="f-vip-days">
+                  ${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>{
+                    const checked=(s.vip_class_days||'').includes(d);
+                    return `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:4px 8px;border:1px solid var(--gray-300);border-radius:4px;background:${checked?'var(--brand)':'var(--white)'};color:${checked?'#111':'var(--gray-700)'}"><input type="checkbox" value="${d}" ${checked?'checked':''} style="display:none" onchange="this.parentElement.style.background=this.checked?'var(--brand)':'var(--white)';this.parentElement.style.color=this.checked?'#111':'var(--gray-700)'">${d}</label>`;
+                  }).join('')}
+                </div>
+              </div>
+              <div class="field"><label><i class="fa fa-clock" style="color:var(--brand)"></i> Horário de início</label><input id="f-vip-start" type="time" value="${s.vip_start_time||''}"></div>
+              <div class="field"><label><i class="fa fa-clock" style="color:var(--brand)"></i> Horário de término</label><input id="f-vip-end" type="time" value="${s.vip_end_time||''}"></div>
+            </div>
             <div class="field"><label>Observações VIP / Atendimento</label><textarea id="f-vip-notes">${s.vip_notes||''}</textarea></div>
           </div>
         </div>
@@ -954,6 +966,12 @@ async function studentForm(id){
   `);
 }
 
+function toggleVipSchedule(){
+  const tipo=$('f-student-type')?.value||'';
+  const el=$('vip-schedule-fields');
+  if(el) el.style.display=tipo.includes('VIP')?'':'none';
+}
+
 async function saveStudent(id){
   const fn=$('f-fn').value.trim();
   const ln=$('f-ln').value.trim();
@@ -963,7 +981,10 @@ async function saveStudent(id){
   const studentType=$('f-student-type').value||'Regular';
   const whatsapp=$('f-whatsapp').value.trim();
   if(studentType==='VIP Online'&&!whatsapp){showAlert('page-alert','WhatsApp é obrigatório para alunos VIP Online.','danger');return;}
-  const payload={first_name:fn,last_name:ln,gender:$('f-gender').value||null,date_birth:$('f-dob').value||null,date_joining:doj,mobile_number:mobile,parent_name:$('f-parent').value,parent_mobile:$('f-parent-m').value,address:$('f-address').value,class_id:$('f-class').value||null,school_id:$('f-school').value||null,level:$('f-level').value||null,note:$('f-note').value,status:$('f-status').value==='true',student_type:studentType,whatsapp:whatsapp||null,contact_preference:$('f-contact-pref').value||null,vip_status:$('f-vip-status').value||null,vip_notes:$('f-vip-notes').value||null};
+  const vipDays=studentType.includes('VIP')?[...document.querySelectorAll('#f-vip-days input:checked')].map(i=>i.value).join(','):'';
+  const vipStart=studentType.includes('VIP')?($('f-vip-start')?.value||null):null;
+  const vipEnd=studentType.includes('VIP')?($('f-vip-end')?.value||null):null;
+  const payload={first_name:fn,last_name:ln,gender:$('f-gender').value||null,date_birth:$('f-dob').value||null,date_joining:doj,mobile_number:mobile,parent_name:$('f-parent').value,parent_mobile:$('f-parent-m').value,address:$('f-address').value,class_id:$('f-class').value||null,school_id:$('f-school').value||null,level:$('f-level').value||null,note:$('f-note').value,status:$('f-status').value==='true',student_type:studentType,whatsapp:whatsapp||null,contact_preference:$('f-contact-pref').value||null,vip_status:$('f-vip-status').value||null,vip_notes:$('f-vip-notes').value||null,vip_class_days:vipDays||null,vip_start_time:vipStart,vip_end_time:vipEnd};
   let err;
   if(id){const r=await sb.from('students').update(payload).eq('id',id);err=r.error;}
   else{const r=await sb.from('students').insert(payload);err=r.error;}
@@ -1646,7 +1667,7 @@ pages.vip=async function({view,studentId}={}){
   if(view==='historico') return vipHistorico(studentId);
 
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const{data:alunos=[]}=await sb.from('students').select('*,class:classes(name)').in('student_type',['VIP Online','VIP Presencial']).eq('status',true).order('first_name');
+  const{data:alunos=[]}=await sb.from('students').select('*,class:classes(name,class_days,start_time,end_time)').in('student_type',['VIP Online','VIP Presencial']).eq('status',true).order('first_name');
 
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>VIP Online</span></div>
@@ -1660,13 +1681,17 @@ pages.vip=async function({view,studentId}={}){
     ${alunos.length?`<div class="panel">
       <div class="panel-head"><span class="panel-title">Alunos VIP</span></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Aluno</th><th>Tipo</th><th>WhatsApp</th><th>Turma</th><th>Status</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Aluno</th><th>Tipo</th><th>WhatsApp</th><th>Dias</th><th>Horário</th><th>Turma</th><th>Status</th><th>Ações</th></tr></thead>
         <tbody>${alunos.map(a=>{
           const statusClass={'Ativo':'vip-status-ativo','Pausado':'vip-status-pausado','Em risco':'vip-status-em-risco','Cancelado':'vip-status-cancelado'};
+          const dias=a.vip_class_days||(a.class?.class_days)||'—';
+          const horario=a.vip_start_time&&a.vip_end_time?a.vip_start_time+'–'+a.vip_end_time:(a.class?.start_time&&a.class?.end_time?a.class.start_time+'–'+a.class.end_time:'—');
           return `<tr>
             <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${a.first_name} ${a.last_name}</strong></div></td>
             <td><span class="badge badge-vip">${a.student_type}</span></td>
             <td>${a.whatsapp||a.mobile_number||'—'}</td>
+            <td>${dias}</td>
+            <td><i class="fa fa-clock" style="color:var(--brand)"></i> ${horario}</td>
             <td>${a.class?.name||'—'}</td>
             <td><span class="${statusClass[a.vip_status]||''}">${a.vip_status||'—'}</span></td>
             <td style="white-space:nowrap">
@@ -1690,7 +1715,7 @@ async function vipContato(studentId){
   if(numero&&!numero.startsWith('55'))numero='55'+numero;
   const escolaNome=s.class?.school?.name||'Connect Inglês VIP';
   const profNome=s.class?.teacher?s.class.teacher.first_name+' '+s.class.teacher.last_name:'';
-  const horarioTxt=s.class?.start_time&&s.class?.end_time?' às '+s.class.start_time+'–'+s.class.end_time:'';
+  const horarioTxt=s.vip_start_time&&s.vip_end_time?' às '+s.vip_start_time+'–'+s.vip_end_time:(s.class?.start_time&&s.class?.end_time?' às '+s.class.start_time+'–'+s.class.end_time:'');
   _vipCtx={nome,escolaNome,profNome,horarioTxt};
 
   setContent(`

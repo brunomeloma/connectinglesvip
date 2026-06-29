@@ -10,6 +10,9 @@ ALTER TABLE students ADD COLUMN IF NOT EXISTS contact_preference text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS whatsapp text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS vip_status text;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS vip_notes text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS vip_class_days text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS vip_start_time text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS vip_end_time text;
 
 -- 2. Novos campos na tabela classes (horários estruturados)
 ALTER TABLE classes ADD COLUMN IF NOT EXISTS class_days text;
