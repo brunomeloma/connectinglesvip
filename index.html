@@ -217,6 +217,69 @@ tr:hover td{background:#fdf9f0}
 .banner-vencidos-text span{font-size:12px;color:#9b4a4a}
 .banner-vencidos-actions{display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap}
 .btn-success{background:linear-gradient(135deg,#1e7e47,#2e9e5b);color:#fff;box-shadow:0 2px 8px rgba(46,158,91,.3)}
+
+/* VIP */
+.vip-card{background:var(--white);border:1px solid var(--gray-200);border-radius:8px;padding:16px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.vip-card-header{display:flex;align-items:center;gap:10px}
+.vip-card-name{font-weight:600;font-size:14px}
+.vip-card-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.vip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-bottom:20px}
+.vip-status-ativo{color:var(--success);font-weight:600}
+.vip-status-pausado{color:var(--warning);font-weight:600}
+.vip-status-em_risco,.vip-status-em-risco{color:var(--danger);font-weight:600}
+.vip-status-cancelado{color:var(--gray-500);font-weight:600}
+.badge-vip{background:linear-gradient(135deg,#D4A017,#f5c842);color:#111;font-weight:700}
+.msg-template{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);cursor:pointer;font-size:13px;transition:all .15s}
+.msg-template:hover{background:var(--gray-50);border-color:var(--brand)}
+.msg-template i{color:#25D366;font-size:16px}
+.contact-log{font-size:12px;color:var(--gray-700);padding:8px 12px;border-bottom:1px solid var(--gray-200)}
+.contact-log:last-child{border-bottom:none}
+.contact-log-date{color:var(--gray-500);font-size:11px}
+.hidden{display:none!important}
+
+/* MOBILE TOGGLE */
+.mobile-toggle{display:none;background:none;border:none;font-size:20px;color:var(--brand);cursor:pointer;padding:4px 8px}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:998}
+
+/* RESPONSIVE */
+@media(max-width:768px){
+  .mobile-toggle{display:block}
+  .sidebar{position:fixed;left:-260px;top:0;bottom:0;z-index:999;width:250px;transition:left .25s ease}
+  .sidebar.open{left:0}
+  .sidebar-overlay.open{display:block}
+  .stat-grid,.fin-summary-grid{grid-template-columns:1fr 1fr!important}
+  .two-col,.form-grid{grid-template-columns:1fr!important}
+  .vip-grid{grid-template-columns:1fr!important}
+  .form-row{flex-direction:column}
+  .form-col{min-width:100%!important}
+  .topbar{padding:0 12px}
+  .content{padding:14px}
+  .page-title{font-size:17px}
+  .panel-head{flex-direction:column;gap:8px;align-items:flex-start}
+  .fin-filter-bar{flex-direction:column}
+  .fin-filter-bar .form-col{max-width:100%!important}
+  .confirm-box{width:95vw}
+  .pgto-box{width:95vw}
+  .login-box{width:92vw;max-width:380px}
+  table{font-size:12px}
+  th,td{padding:7px 8px}
+  .btn{padding:6px 10px;font-size:12px}
+  .sb-brand{padding:16px 14px 12px}
+  .banner-vencidos{flex-direction:column;align-items:flex-start;gap:10px}
+  .banner-vencidos-actions{width:100%}
+  .msg-template{font-size:12px;padding:6px 10px}
+  .contact-log{padding:6px 10px}
+}
+@media(max-width:480px){
+  .stat-grid,.fin-summary-grid{grid-template-columns:1fr!important}
+  .stat-card,.fin-card{padding:14px}
+  .stat-num,.fin-card-num{font-size:20px}
+  .stat-icon,.fin-card-icon{font-size:22px}
+  .page-title{font-size:15px}
+  .content{padding:10px}
+  .vip-card-actions{flex-direction:column}
+  .vip-card-actions .btn{width:100%;justify-content:center}
+}
 </style>
 </head>
 <body>
@@ -253,8 +316,10 @@ let currentUser = null;
 <div id="app">
 <div class="app-wrap">
 
+  <!-- SIDEBAR OVERLAY -->
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
   <!-- SIDEBAR -->
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
     <div class="sb-brand" onclick="nav('dashboard')">
       <div class="sb-brand-tag">Connect Inglês</div>
       <div class="sb-brand-name"><span>VIP</span> Gestão</div>
@@ -274,6 +339,7 @@ let currentUser = null;
     <div class="sb-item" data-page="students" onclick="nav('students')"><i class="fa fa-user-graduate"></i> Aluno</div>
     <div class="sb-item" data-page="classes" onclick="nav('classes')"><i class="fa fa-layer-group"></i> Turmas</div>
     <div class="sb-item" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
+    <div class="sb-item" data-page="vip" onclick="nav('vip')"><i class="fa fa-star"></i> VIP Online</div>
     <div class="sb-logout">
       <div class="sb-item" onclick="doLogout()"><i class="fa fa-sign-out-alt"></i> Sair</div>
     </div>
@@ -282,7 +348,7 @@ let currentUser = null;
   <!-- MAIN -->
   <div class="main">
     <div class="topbar">
-      <div class="topbar-left"><i class="fa fa-bars"></i> Connect Inglês VIP — Gestão Escolar</div>
+      <div class="topbar-left"><button class="mobile-toggle" onclick="toggleSidebar()"><i class="fa fa-bars"></i></button> Connect Inglês VIP — Gestão Escolar</div>
       <div class="topbar-right" id="topbar-user"></div>
     </div>
     <div class="content" id="content"></div>
@@ -346,10 +412,14 @@ let currentUser = null;
 // ============================
 function $(id){return document.getElementById(id)}
 function role_badge(role){
-  const map={super_admin:'badge-purple',admin:'badge-secondary',escola:'badge-warning',escola_admin:'badge-info',professor:'badge-primary'};
-  const label={super_admin:'Super Admin',admin:'Admin',escola:'Escola',escola_admin:'Escola Admin',professor:'Professor'};
+  const map={super_admin:'badge-purple',admin:'badge-secondary',direcao:'badge-purple',financeiro:'badge-info',secretaria:'badge-gold',escola:'badge-warning',escola_admin:'badge-info',professor:'badge-primary'};
+  const label={super_admin:'Super Admin',admin:'Admin',direcao:'Direção',financeiro:'Financeiro',secretaria:'Secretaria',escola:'Escola',escola_admin:'Escola Admin',professor:'Professor'};
   return `<span class="badge ${map[role]||'badge-secondary'}">${label[role]||role}</span>`;
 }
+function isAdmin(){return ['super_admin','admin','direcao'].includes(currentUser?.role);}
+function isFinanceiro(){return isAdmin()||currentUser?.role==='financeiro';}
+function isSecretaria(){return currentUser?.role==='secretaria';}
+function canSeeFinanceiroGlobal(){return isFinanceiro();}
 function status_badge(s){return s?'<span class="badge badge-success">Ativo</span>':'<span class="badge badge-warning">Inativo</span>';}
 function level_badge(l){if(!l)return '—';const m={Básico:'badge-basico',Intermediário:'badge-intermediario',Avançado:'badge-avancado'};return `<span class="badge ${m[l]||'badge-secondary'}">${l}</span>`;}
 function fdate(d){if(!d)return '—';return new Date(d).toLocaleDateString('pt-BR');}
@@ -368,6 +438,19 @@ function setActive(page){
 function nav(page, params={}){
   setActive(page);
   pages[page]&&pages[page](params);
+  closeSidebar();
+}
+function toggleSidebar(){
+  const sb=document.getElementById('sidebar');
+  const ov=document.getElementById('sidebar-overlay');
+  sb.classList.toggle('open');
+  ov.classList.toggle('open');
+}
+function closeSidebar(){
+  const sb=document.getElementById('sidebar');
+  const ov=document.getElementById('sidebar-overlay');
+  if(sb)sb.classList.remove('open');
+  if(ov)ov.classList.remove('open');
 }
 
 // ============================
@@ -391,10 +474,10 @@ function startApp(){
   $('app').style.display='block';
   $('sb-name').textContent=currentUser.name;
   $('sb-avatar').textContent=avatar(currentUser.name);
-  const roles={super_admin:'Super Admin',admin:'Admin',escola:'Escola',escola_admin:'Escola Admin',professor:'Professor'};
+  const roles={super_admin:'Super Admin',admin:'Admin',direcao:'Direção',financeiro:'Financeiro',secretaria:'Secretaria',escola:'Escola',escola_admin:'Escola Admin',professor:'Professor'};
   $('sb-role').textContent=roles[currentUser.role]||currentUser.role;
   $('topbar-user').innerHTML=`<i class="fa fa-user-circle" style="color:var(--brand);font-size:18px"></i> &nbsp;${currentUser.name}`;
-  if(!['super_admin','admin'].includes(currentUser.role)){
+  if(!isAdmin()){
     document.querySelectorAll('.admin-only').forEach(el=>el.style.display='none');
   }
   nav('dashboard');
@@ -601,7 +684,7 @@ async function adminForm(id){
           </div>
           <div>
             <div class="field"><label>Endereço</label><textarea id="f-address">${user.address||''}</textarea></div>
-            <div class="field"><label>Permissão</label><select id="f-role"><option value="admin" ${user.role==='admin'?'selected':''}>Admin</option><option value="super_admin" ${user.role==='super_admin'?'selected':''}>Super Admin</option></select></div>
+            <div class="field"><label>Permissão</label><select id="f-role"><option value="admin" ${user.role==='admin'?'selected':''}>Admin</option><option value="super_admin" ${user.role==='super_admin'?'selected':''}>Super Admin</option><option value="direcao" ${user.role==='direcao'?'selected':''}>Direção</option><option value="financeiro" ${user.role==='financeiro'?'selected':''}>Financeiro</option><option value="secretaria" ${user.role==='secretaria'?'selected':''}>Secretaria</option></select></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${user.status!==false?'selected':''}>Ativo</option><option value="false" ${user.status===false?'selected':''}>Inativo</option></select></div>
           </div>
         </div>
@@ -763,11 +846,12 @@ pages.students=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Lista de alunos</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="2">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="2">Ações</th></tr></thead>
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
               <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(s.first_name)}</div><strong>${s.first_name} ${s.last_name}</strong></div></td>
+              <td>${s.student_type&&s.student_type!=='Regular'?`<span class="badge badge-vip">${s.student_type}</span>`:'<span class="badge badge-secondary">Regular</span>'}</td>
               <td>${s.mobile_number||'—'}</td>
               <td>${s.class?.name||'—'}</td>
               <td>${level_badge(s.level)}</td>
@@ -775,7 +859,7 @@ pages.students=async function({view,id}={}){
               <td>${fdate(s.date_joining)}</td>
               <td><button class="btn-icon" onclick="nav('students',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
               <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('students','${s.id}','students')"><i class="fa fa-trash"></i></button></td>
-            </tr>`).join(''):`<tr><td colspan="9"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
+            </tr>`).join(''):`<tr><td colspan="10"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -817,6 +901,22 @@ async function studentForm(id){
           </div>
         </div>
       </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-star" style="color:var(--brand)"></i> Dados VIP / Acompanhamento</span></div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div>
+            <div class="field"><label>Tipo de aluno</label><select id="f-student-type"><option value="Regular" ${s.student_type==='Regular'||!s.student_type?'selected':''}>Regular</option><option value="VIP Online" ${s.student_type==='VIP Online'?'selected':''}>VIP Online</option><option value="VIP Presencial" ${s.student_type==='VIP Presencial'?'selected':''}>VIP Presencial</option></select></div>
+            <div class="field"><label>WhatsApp</label><input id="f-whatsapp" value="${s.whatsapp||''}" placeholder="5511999999999"></div>
+            <div class="field"><label>Preferência de contato</label><select id="f-contact-pref"><option value="">Selecione</option><option value="WhatsApp" ${s.contact_preference==='WhatsApp'?'selected':''}>WhatsApp</option><option value="E-mail" ${s.contact_preference==='E-mail'?'selected':''}>E-mail</option><option value="Telefone" ${s.contact_preference==='Telefone'?'selected':''}>Telefone</option></select></div>
+          </div>
+          <div>
+            <div class="field"><label>Status de acompanhamento</label><select id="f-vip-status"><option value="">Selecione</option><option value="Ativo" ${s.vip_status==='Ativo'?'selected':''}>Ativo</option><option value="Pausado" ${s.vip_status==='Pausado'?'selected':''}>Pausado</option><option value="Em risco" ${s.vip_status==='Em risco'?'selected':''}>Em risco</option><option value="Cancelado" ${s.vip_status==='Cancelado'?'selected':''}>Cancelado</option></select></div>
+            <div class="field"><label>Observações VIP / Atendimento</label><textarea id="f-vip-notes">${s.vip_notes||''}</textarea></div>
+          </div>
+        </div>
+      </div>
       <div class="panel-footer">
         <button class="btn btn-default" onclick="nav('students')">Cancelar</button>
         <button class="btn btn-primary" onclick="saveStudent('${id||''}')"><i class="fa fa-save"></i> ${id?'Atualizar':'Adicionar'}</button>
@@ -831,7 +931,10 @@ async function saveStudent(id){
   const doj=$('f-doj').value;
   const mobile=$('f-mobile').value.trim();
   if(!fn||!ln||!doj||!mobile){showAlert('page-alert','Preencha os campos obrigatórios.','danger');return;}
-  const payload={first_name:fn,last_name:ln,gender:$('f-gender').value||null,date_birth:$('f-dob').value||null,date_joining:doj,mobile_number:mobile,parent_name:$('f-parent').value,parent_mobile:$('f-parent-m').value,address:$('f-address').value,class_id:$('f-class').value||null,school_id:$('f-school').value||null,level:$('f-level').value||null,note:$('f-note').value,status:$('f-status').value==='true'};
+  const studentType=$('f-student-type').value||'Regular';
+  const whatsapp=$('f-whatsapp').value.trim();
+  if(studentType==='VIP Online'&&!whatsapp){showAlert('page-alert','WhatsApp é obrigatório para alunos VIP Online.','danger');return;}
+  const payload={first_name:fn,last_name:ln,gender:$('f-gender').value||null,date_birth:$('f-dob').value||null,date_joining:doj,mobile_number:mobile,parent_name:$('f-parent').value,parent_mobile:$('f-parent-m').value,address:$('f-address').value,class_id:$('f-class').value||null,school_id:$('f-school').value||null,level:$('f-level').value||null,note:$('f-note').value,status:$('f-status').value==='true',student_type:studentType,whatsapp:whatsapp||null,contact_preference:$('f-contact-pref').value||null,vip_status:$('f-vip-status').value||null,vip_notes:$('f-vip-notes').value||null};
   let err;
   if(id){const r=await sb.from('students').update(payload).eq('id',id);err=r.error;}
   else{const r=await sb.from('students').insert(payload);err=r.error;}
@@ -965,11 +1068,11 @@ pages.financeiro=async function({view,studentId}={}){
     <div class="breadcrumb"><span>Home</span> › <span>Financeiro</span></div>
     <div class="page-title"><i class="fa fa-dollar-sign"></i> Controle Financeiro</div>
     <div id="page-alert" class="alert"></div>
-    <div class="fin-summary-grid">
+    ${canSeeFinanceiroGlobal()?`<div class="fin-summary-grid">
       <div class="fin-card c-gold"><i class="fa fa-check-circle fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalPago)}</div><div class="fin-card-label">Total Pago (arrecadado)</div></div></div>
       <div class="fin-card c-orange"><i class="fa fa-clock fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalAberto)}</div><div class="fin-card-label">Total em Aberto</div></div></div>
       <div class="fin-card c-dark"><i class="fa fa-users fin-card-icon"></i><div><div class="fin-card-num">${inadimplentes}</div><div class="fin-card-label">Alunos com boleto em aberto</div></div></div>
-    </div>
+    </div>`:''}
     <div class="panel" style="margin-bottom:14px">
       <div class="panel-head"><span class="panel-title"><i class="fa fa-plus-circle" style="color:var(--brand)"></i> Lançar boletos para um aluno</span></div>
       <div class="panel-body">
@@ -997,15 +1100,15 @@ pages.financeiro=async function({view,studentId}={}){
       <div class="panel-head"><span class="panel-title">Boletos por aluno — ${fAno}</span><span style="font-size:12px;color:var(--gray-500)">${alunos.length} aluno(s)</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Aluno</th><th>Pago</th><th>Em aberto</th><th>Situação</th><th>Ações</th></tr></thead>
+          <thead><tr><th>Aluno</th>${canSeeFinanceiroGlobal()?'<th>Pago</th><th>Em aberto</th>':''}<th>Situação</th><th>Ações</th></tr></thead>
           <tbody>${alunos.length?alunos.map(a=>`
             <tr>
               <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${a.first_name} ${a.last_name}</strong></div></td>
-              <td style="color:#1a6b3a;font-weight:600">${fmtBRL(a.totalPago)}</td>
-              <td style="color:#8a5c00;font-weight:600">${fmtBRL(a.totalAberto)}</td>
+              ${canSeeFinanceiroGlobal()?`<td style="color:#1a6b3a;font-weight:600">${fmtBRL(a.totalPago)}</td>
+              <td style="color:#8a5c00;font-weight:600">${fmtBRL(a.totalAberto)}</td>`:''}
               <td>${a.totalAberto>0?'<span class="badge badge-warning"><i class="fa fa-exclamation-triangle"></i> Em aberto</span>':'<span class="badge badge-success"><i class="fa fa-check"></i> Em dia</span>'}</td>
               <td><button class="btn btn-primary btn-sm" onclick="nav('financeiro',{view:'aluno',studentId:'${a.id}'})"><i class="fa fa-list"></i> Ver boletos</button></td>
-            </tr>`).join(''):`<tr><td colspan="5"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto encontrado com os filtros selecionados.</div></td></tr>`}
+            </tr>`).join(''):`<tr><td colspan="${canSeeFinanceiroGlobal()?5:3}"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto encontrado com os filtros selecionados.</div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -1390,6 +1493,178 @@ async function marcarVencidosComoPago(studentId, ids){
     box.querySelector('#confirm-yes').textContent=`✓ Confirmar`;
     box.querySelector('#confirm-yes').className='btn btn-success';
   }
+}
+
+// ============================
+// VIP ONLINE
+// ============================
+const MSG_TEMPLATES={
+  confirmar_presenca:{label:'Confirmar presença',icon:'fa-check-circle',text:'Olá, {nome}! Tudo bem? Passando para confirmar sua presença na aula de inglês VIP online de hoje. Você consegue participar?'},
+  lembrar_aula:{label:'Lembrar aula de hoje',icon:'fa-bell',text:'Olá, {nome}! Lembrando que hoje você tem aula de inglês VIP online. Te esperamos!'},
+  avisar_atraso:{label:'Avisar atraso',icon:'fa-clock',text:'Olá, {nome}! Informamos que a aula de hoje terá um pequeno atraso. Pedimos desculpas pelo inconveniente.'},
+  reagendar:{label:'Reagendar aula',icon:'fa-calendar-alt',text:'Olá, {nome}! Precisamos reagendar sua aula de inglês VIP online. Qual horário fica melhor para você?'},
+  cobranca:{label:'Cobrança amigável',icon:'fa-hand-holding-usd',text:'Olá, {nome}! Tudo bem? Gostaríamos de lembrar que há uma mensalidade em aberto. Poderia verificar, por favor?'},
+  boleto_vencido:{label:'Boleto vencido',icon:'fa-exclamation-triangle',text:'Olá, {nome}! Identificamos que seu boleto está vencido. Por favor, regularize o quanto antes para evitar interrupção nas aulas.'},
+};
+
+pages.vip=async function({view,studentId}={}){
+  if(view==='contato') return vipContato(studentId);
+  if(view==='historico') return vipHistorico(studentId);
+
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const{data:alunos=[]}=await sb.from('students').select('*,class:classes(name)').in('student_type',['VIP Online','VIP Presencial']).eq('status',true).order('first_name');
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>VIP Online</span></div>
+    <div class="page-title"><i class="fa fa-star"></i> Acompanhamento VIP</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
+      <div class="stat-card c-gold"><i class="fa fa-star stat-icon"></i><div><div class="stat-num">${alunos.filter(a=>a.vip_status==='Ativo').length}</div><div class="stat-label">VIP Ativos</div></div></div>
+      <div class="stat-card c-orange"><i class="fa fa-exclamation-triangle stat-icon"></i><div><div class="stat-num">${alunos.filter(a=>a.vip_status==='Em risco').length}</div><div class="stat-label">Em risco</div></div></div>
+      <div class="stat-card c-dark"><i class="fa fa-users stat-icon"></i><div><div class="stat-num">${alunos.length}</div><div class="stat-label">Total VIP</div></div></div>
+    </div>
+    ${alunos.length?`<div class="panel">
+      <div class="panel-head"><span class="panel-title">Alunos VIP</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Aluno</th><th>Tipo</th><th>WhatsApp</th><th>Turma</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody>${alunos.map(a=>{
+          const statusClass={'Ativo':'vip-status-ativo','Pausado':'vip-status-pausado','Em risco':'vip-status-em-risco','Cancelado':'vip-status-cancelado'};
+          return `<tr>
+            <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${a.first_name} ${a.last_name}</strong></div></td>
+            <td><span class="badge badge-vip">${a.student_type}</span></td>
+            <td>${a.whatsapp||a.mobile_number||'—'}</td>
+            <td>${a.class?.name||'—'}</td>
+            <td><span class="${statusClass[a.vip_status]||''}">${a.vip_status||'—'}</span></td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-primary btn-sm" onclick="nav('vip',{view:'contato',studentId:'${a.id}'})" title="Enviar mensagem"><i class="fab fa-whatsapp"></i> Contato</button>
+              <button class="btn btn-default btn-sm" onclick="nav('vip',{view:'historico',studentId:'${a.id}'})" title="Histórico"><i class="fa fa-history"></i></button>
+              <button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${a.id}'})" title="Editar"><i class="fa fa-pencil-alt"></i></button>
+            </td>
+          </tr>`}).join('')}
+        </tbody>
+      </table></div>
+    </div>`:`<div class="empty-state"><i class="fa fa-star"></i>Nenhum aluno VIP cadastrado.<br><br><button class="btn btn-primary" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Cadastrar aluno VIP</button></div>`}
+  `);
+};
+
+async function vipContato(studentId){
+  const{data:s}=await sb.from('students').select('*').eq('id',studentId).single();
+  if(!s){nav('vip');return;}
+  const nome=s.first_name;
+  const numero=(s.whatsapp||s.mobile_number||'').replace(/\D/g,'');
+
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('vip')">VIP Online</a> › <span>${s.first_name} ${s.last_name}</span> › Contato</div>
+    <div class="page-title"><i class="fab fa-whatsapp" style="color:#25D366"></i> Contato — ${s.first_name} ${s.last_name}</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Mensagens rápidas</span></div>
+        <div class="panel-body" style="padding:8px">
+          ${Object.entries(MSG_TEMPLATES).map(([k,t])=>`
+            <div class="msg-template" onclick="preencherMsg('${k}','${nome}')">
+              <i class="fa ${t.icon}"></i> ${t.label}
+            </div>`).join('')}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Enviar mensagem</span></div>
+        <div class="panel-body">
+          <div class="field"><label>Tipo de mensagem</label><select id="vip-msg-type"><option value="">Personalizada</option>${Object.entries(MSG_TEMPLATES).map(([k,t])=>`<option value="${k}">${t.label}</option>`).join('')}</select></div>
+          <div class="field"><label>Mensagem <span class="required">*</span></label><textarea id="vip-msg-text" style="height:120px" placeholder="Digite a mensagem..."></textarea></div>
+          <div class="field"><label>Observação interna (opcional)</label><input id="vip-msg-notes" placeholder="Nota visível apenas no sistema"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-success" onclick="enviarWhatsApp('${studentId}','${numero}')"><i class="fab fa-whatsapp"></i> Enviar via WhatsApp</button>
+            <button class="btn btn-default" onclick="registrarContato('${studentId}','manual')"><i class="fa fa-save"></i> Apenas registrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <div class="panel-head"><span class="panel-title">Últimos contatos</span><button class="btn btn-default btn-sm" onclick="nav('vip',{view:'historico',studentId:'${studentId}'})"><i class="fa fa-history"></i> Ver todos</button></div>
+      <div class="panel-body" style="padding:0" id="vip-ultimos-contatos"><div class="loading"><i class="fa fa-spinner"></i></div></div>
+    </div>
+  `);
+  carregarUltimosContatos(studentId,5);
+}
+
+function preencherMsg(tipo,nome){
+  const t=MSG_TEMPLATES[tipo];
+  if(!t) return;
+  const sel=$('vip-msg-type');if(sel)sel.value=tipo;
+  const ta=$('vip-msg-text');if(ta)ta.value=t.text.replace(/\{nome\}/g,nome);
+}
+
+async function enviarWhatsApp(studentId,numero){
+  const texto=$('vip-msg-text')?.value?.trim();
+  if(!texto){showAlert('page-alert','Digite uma mensagem.','danger');return;}
+  if(!numero){showAlert('page-alert','Aluno sem número de WhatsApp cadastrado.','danger');return;}
+  const encoded=encodeURIComponent(texto);
+  window.open(`https://wa.me/${numero}?text=${encoded}`,'_blank');
+  await registrarContato(studentId,'whatsapp');
+}
+
+async function registrarContato(studentId,channel){
+  const tipo=$('vip-msg-type')?.value||'personalizada';
+  const texto=$('vip-msg-text')?.value?.trim();
+  const notes=$('vip-msg-notes')?.value?.trim();
+  if(!texto){showAlert('page-alert','Digite uma mensagem para registrar.','danger');return;}
+  const{error}=await sb.from('student_contacts').insert({student_id:studentId,user_id:currentUser.id,contact_type:tipo,message:texto,channel,notes:notes||null});
+  if(error){showAlert('page-alert','Erro ao registrar: '+error.message,'danger');return;}
+  showAlert('page-alert','Contato registrado com sucesso!','success');
+  $('vip-msg-text').value='';
+  $('vip-msg-notes').value='';
+  carregarUltimosContatos(studentId,5);
+}
+
+async function carregarUltimosContatos(studentId,limit){
+  const{data=[]}=await sb.from('student_contacts').select('*,user:users(name)').eq('student_id',studentId).order('created_at',{ascending:false}).limit(limit);
+  const el=$('vip-ultimos-contatos');
+  if(!el) return;
+  if(!data.length){el.innerHTML='<div class="empty-state" style="padding:20px"><i class="fa fa-comment-slash"></i>Nenhum contato registrado</div>';return;}
+  el.innerHTML=data.map(c=>{
+    const label=MSG_TEMPLATES[c.contact_type]?.label||c.contact_type||'Personalizada';
+    const channelIcon=c.channel==='whatsapp'?'<i class="fab fa-whatsapp" style="color:#25D366"></i>':'<i class="fa fa-comment" style="color:var(--gray-500)"></i>';
+    return `<div class="contact-log">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>${channelIcon} <strong>${label}</strong> <span class="badge badge-secondary">${c.channel}</span></div>
+        <span class="contact-log-date">${new Date(c.created_at).toLocaleString('pt-BR')}</span>
+      </div>
+      <div style="margin-top:4px;color:var(--gray-700)">${c.message}</div>
+      ${c.notes?`<div style="margin-top:3px;font-style:italic;color:var(--gray-500)">Nota: ${c.notes}</div>`:''}
+      <div style="margin-top:3px;font-size:11px;color:var(--gray-500)">por ${c.user?.name||'—'}</div>
+    </div>`}).join('');
+}
+
+async function vipHistorico(studentId){
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const[{data:s},{data:contatos=[]}]=await Promise.all([
+    sb.from('students').select('id,first_name,last_name').eq('id',studentId).single(),
+    sb.from('student_contacts').select('*,user:users(name)').eq('student_id',studentId).order('created_at',{ascending:false}),
+  ]);
+  if(!s){nav('vip');return;}
+
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('vip')">VIP Online</a> › <span>${s.first_name} ${s.last_name}</span> › Histórico</div>
+    <div class="page-title"><i class="fa fa-history"></i> Histórico de contatos — ${s.first_name} ${s.last_name}</div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">${contatos.length} registro(s)</span><button class="btn btn-primary btn-sm" onclick="nav('vip',{view:'contato',studentId:'${studentId}'})"><i class="fab fa-whatsapp"></i> Novo contato</button></div>
+      <div class="panel-body" style="padding:0">
+        ${contatos.length?contatos.map(c=>{
+          const label=MSG_TEMPLATES[c.contact_type]?.label||c.contact_type||'Personalizada';
+          const channelIcon=c.channel==='whatsapp'?'<i class="fab fa-whatsapp" style="color:#25D366"></i>':'<i class="fa fa-comment" style="color:var(--gray-500)"></i>';
+          return `<div class="contact-log">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>${channelIcon} <strong>${label}</strong> <span class="badge badge-secondary">${c.channel}</span></div>
+              <span class="contact-log-date">${new Date(c.created_at).toLocaleString('pt-BR')}</span>
+            </div>
+            <div style="margin-top:4px;color:var(--gray-700)">${c.message}</div>
+            ${c.notes?`<div style="margin-top:3px;font-style:italic;color:var(--gray-500)">Nota: ${c.notes}</div>`:''}
+            <div style="margin-top:3px;font-size:11px;color:var(--gray-500)">por ${c.user?.name||'—'}</div>
+          </div>`}).join(''):'<div class="empty-state" style="padding:20px"><i class="fa fa-comment-slash"></i>Nenhum contato registrado</div>'}
+      </div>
+    </div>
+  `);
 }
 
 // ============================
