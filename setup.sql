@@ -147,12 +147,36 @@ END; $$;
 -- 6. RPCs FINANCEIRO
 -- #####################################################################
 
--- Boletos de UM aluno (secretaria pode usar)
+-- Boletos de UM aluno — direção/financeiro vê tudo
 CREATE OR REPLACE FUNCTION get_boletos_aluno(p_student_id uuid, p_ano int)
 RETURNS SETOF boletos LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
-  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
   RETURN QUERY SELECT * FROM boletos WHERE student_id=p_student_id AND ano_referencia=p_ano ORDER BY mes_referencia;
+END; $$;
+
+-- Boletos de UM aluno — secretaria: SEM valor, SEM comprovante_url
+-- Retorna apenas o necessário para operar cobrança
+-- LIMITAÇÃO CONHECIDA: a secretaria vê status por boleto.
+-- Se ela anotar "pago" de cada mês, pode inferir quanto o aluno paga.
+-- Isso é inevitável se ela precisa cobrar. O que ela NÃO pode ver
+-- é o valor da mensalidade nem totais agregados.
+CREATE OR REPLACE FUNCTION get_boletos_aluno_secretaria(p_student_id uuid, p_ano int)
+RETURNS TABLE(
+  id uuid, mes_referencia int, ano_referencia int,
+  data_vencimento date, status text, data_pagamento date,
+  observacao text, url_boleto text, codigo_boleto text,
+  tem_comprovante boolean
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT b.id, b.mes_referencia, b.ano_referencia,
+      b.data_vencimento, b.status, b.data_pagamento,
+      b.observacao, b.url_boleto, b.codigo_boleto,
+      (b.comprovante_path IS NOT NULL OR b.comprovante_url IS NOT NULL)
+    FROM boletos b WHERE b.student_id=p_student_id AND b.ano_referencia=p_ano
+    ORDER BY b.mes_referencia;
 END; $$;
 
 -- Listagem com nome do aluno — SOMENTE direção/financeiro
@@ -365,9 +389,13 @@ CREATE POLICY "attendance_insert" ON attendance FOR INSERT WITH CHECK (has_role(
 CREATE POLICY "attendance_update" ON attendance FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','secretaria','professor']));
 CREATE POLICY "attendance_delete" ON attendance FOR DELETE USING (is_admin());
 
--- users (legada — bloquear)
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "anon_all_users" ON users;
+-- users (legada — bloquear, só se existir)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users') THEN
+    ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+    EXECUTE 'DROP POLICY IF EXISTS "anon_all_users" ON users';
+  END IF;
+END $$;
 
 -- storage comprovantes
 INSERT INTO storage.buckets (id, name, public) VALUES ('comprovantes', 'comprovantes', false)

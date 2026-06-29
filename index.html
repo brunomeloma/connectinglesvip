@@ -410,7 +410,8 @@ let currentUser = null;
 // UTILS
 // ============================
 function $(id){return document.getElementById(id)}
-function escapeHtml(s){if(!s)return '';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML;}
+function escapeHtml(s){if(s==null)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+const esc=escapeHtml;
 function role_badge(role){
   const map={super_admin:'badge-purple',admin:'badge-secondary',direcao:'badge-purple',financeiro:'badge-info',secretaria:'badge-gold',escola:'badge-warning',escola_admin:'badge-info',professor:'badge-primary'};
   const label={super_admin:'Super Admin',admin:'Admin',direcao:'Direção',financeiro:'Financeiro',secretaria:'Secretaria',escola:'Escola',escola_admin:'Escola Admin',professor:'Professor'};
@@ -520,7 +521,7 @@ function startApp(){
   $('sb-avatar').textContent=avatar(currentUser.name);
   const roles={super_admin:'Super Admin',direcao:'Direção',financeiro:'Financeiro',secretaria:'Secretaria',professor:'Professor'};
   $('sb-role').textContent=roles[currentUser.role]||currentUser.role;
-  $('topbar-user').innerHTML=`<i class="fa fa-user-circle" style="color:var(--brand);font-size:18px"></i> &nbsp;${currentUser.name}`;
+  $('topbar-user').innerHTML=`<i class="fa fa-user-circle" style="color:var(--brand);font-size:18px"></i> &nbsp;${escapeHtml(currentUser.name)}`;
   document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isAdmin()?'':'none');
   nav('dashboard');
 }
@@ -593,10 +594,10 @@ async function carregarAulasHoje(){
     <div class="table-wrap"><table>
       <thead><tr><th>Turma</th><th>Horário</th><th>Professor</th><th>Escola</th><th>Nível</th><th>Ações</th></tr></thead>
       <tbody>${aulasHoje.map(c=>`<tr>
-        <td><strong>${c.name}</strong></td>
-        <td><i class="fa fa-clock" style="color:var(--brand)"></i> ${c.start_time||''}–${c.end_time||''}</td>
-        <td>${c.teacher?c.teacher.first_name+' '+c.teacher.last_name:'—'}</td>
-        <td>${c.school?.name||'—'}</td>
+        <td><strong>${esc(c.name)}</strong></td>
+        <td><i class="fa fa-clock" style="color:var(--brand)"></i> ${esc(c.start_time)}–${esc(c.end_time)}</td>
+        <td>${c.teacher?esc(c.teacher.first_name)+' '+esc(c.teacher.last_name):'—'}</td>
+        <td>${esc(c.school?.name)||'—'}</td>
         <td>${level_badge(c.level)}</td>
         <td><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}'})"><i class="fa fa-clipboard-check"></i> Chamada</button></td>
       </tr>`).join('')}</tbody>
@@ -623,7 +624,7 @@ pages.schools=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Busca</span></div>
       <div class="panel-body">
         <div class="form-row">
-          <div class="form-col"><label>Nome</label><input id="sch-name" placeholder="Nome da escola" value="${name}"></div>
+          <div class="form-col"><label>Nome</label><input id="sch-name" placeholder="Nome da escola" value="${esc(name)}"></div>
           <div class="form-col"><label>Status</label><select id="sch-status"><option value="">Todos</option><option value="1" ${status==='1'?'selected':''}>Ativo</option><option value="0" ${status==='0'?'selected':''}>Inativo</option></select></div>
         </div>
         <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="nav('schools')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['sch-name','sch-status']);nav('schools')">Limpa</button></div>
@@ -637,9 +638,9 @@ pages.schools=async function({view,id}={}){
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
-              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(s.name)}</div><strong>${s.name}</strong></div></td>
-              <td>${s.email||'—'}</td>
-              <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.address||'—'}</td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(s.name)}</div><strong>${esc(s.name)}</strong></div></td>
+              <td>${esc(s.email)||'—'}</td>
+              <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.address)||'—'}</td>
               <td>${status_badge(s.status)}</td>
               <td>${fdate(s.created_at)}</td>
               <td><button class="btn-icon" onclick="nav('schools',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
@@ -664,11 +665,11 @@ async function schoolForm(id){
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Nome <span class="required">*</span></label><input id="f-name" value="${school.name||''}"></div>
-            <div class="field"><label>E-mail <span class="required">*</span></label><input id="f-email" type="email" value="${school.email||''}"></div>
+            <div class="field"><label>Nome <span class="required">*</span></label><input id="f-name" value="${esc(school.name)}"></div>
+            <div class="field"><label>E-mail <span class="required">*</span></label><input id="f-email" type="email" value="${esc(school.email)}"></div>
           </div>
           <div>
-            <div class="field"><label>Endereço</label><textarea id="f-address">${school.address||''}</textarea></div>
+            <div class="field"><label>Endereço</label><textarea id="f-address">${esc(school.address)}</textarea></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${school.status!==false?'selected':''}>Ativo</option><option value="false" ${school.status===false?'selected':''}>Inativo</option></select></div>
           </div>
         </div>
@@ -732,15 +733,15 @@ pages.admins=async function({view,id}={}){
           <tbody>${data.length?data.map((u,i)=>`
             <tr>
               <td>${i+1}</td>
-              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(u.name)}</div><strong>${u.name}</strong></div></td>
-              <td>${u.email}</td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(u.name)}</div><strong>${esc(u.name)}</strong></div></td>
+              <td>${esc(u.email)}</td>
               <td>${role_badge(u.role)}</td>
               <td>${status_badge(u.status)}</td>
               <td>${fdate(u.created_at)}</td>
               <td style="white-space:nowrap">
                 <button class="btn btn-default btn-sm" onclick="nav('admins',{view:'form',id:'${u.id}'})"><i class="fa fa-pencil-alt"></i> Editar</button>
                 <button class="btn btn-default btn-sm" onclick="nav('admins',{view:'reset',id:'${u.id}'})"><i class="fa fa-key"></i> Senha</button>
-                ${u.id!==currentUser.id?`<button class="btn-icon" style="color:var(--danger)" onclick="desativarUsuario('${u.id}','${u.name}',${u.status})" title="${u.status?'Desativar':'Ativar'}"><i class="fa fa-${u.status?'ban':'check-circle'}"></i></button>`:''}
+                ${u.id!==currentUser.id?`<button class="btn-icon" style="color:var(--danger)" onclick="desativarUsuario('${u.id}','${esc(u.name)}',${u.status})" title="${u.status?'Desativar':'Ativar'}"><i class="fa fa-${u.status?'ban':'check-circle'}"></i></button>`:''}
               </td>
             </tr>`).join(''):`<tr><td colspan="7"><div class="empty-state"><i class="fa fa-user-tie"></i>Nenhum usuário cadastrado</div></td></tr>`}
           </tbody>
@@ -760,12 +761,12 @@ async function adminForm(id){
     <div class="page-title"><i class="fa fa-user-tie"></i> ${isNew?'Criar':'Editar'} usuário</div>
     <div id="page-alert" class="alert"></div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">${isNew?'Novo usuário':'Editar '+user.name}</span></div>
+      <div class="panel-head"><span class="panel-title">${isNew?'Novo usuário':'Editar '+esc(user.name)}</span></div>
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Nome completo <span class="required">*</span></label><input id="f-name" value="${user.name||''}"></div>
-            <div class="field"><label>E-mail <span class="required">*</span></label><input id="f-email" type="email" value="${user.email||''}" ${isNew?'':'disabled style="opacity:.6"'}></div>
+            <div class="field"><label>Nome completo <span class="required">*</span></label><input id="f-name" value="${esc(user.name)}"></div>
+            <div class="field"><label>E-mail <span class="required">*</span></label><input id="f-email" type="email" value="${esc(user.email)}" ${isNew?'':'disabled style="opacity:.6"'}></div>
             ${isNew?'<div class="field"><label>Senha temporária <span class="required">*</span></label><input id="f-pass" type="password" placeholder="Mínimo 6 caracteres"></div>':''}
           </div>
           <div>
@@ -777,7 +778,7 @@ async function adminForm(id){
               <option value="super_admin" ${user.role==='super_admin'?'selected':''}>Super Admin</option>
             </select></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${user.status!==false?'selected':''}>Ativo</option><option value="false" ${user.status===false?'selected':''}>Inativo</option></select></div>
-            <div class="field"><label>Endereço</label><textarea id="f-address">${user.address||''}</textarea></div>
+            <div class="field"><label>Endereço</label><textarea id="f-address">${esc(user.address)}</textarea></div>
           </div>
         </div>
       </div>
@@ -824,10 +825,10 @@ async function adminResetSenha(userId){
   if(!user){nav('admins');return;}
   setContent(`
     <div class="breadcrumb"><a onclick="nav('admins')">Usuários</a> › <span>Resetar senha</span></div>
-    <div class="page-title"><i class="fa fa-key"></i> Resetar senha — ${user.name}</div>
+    <div class="page-title"><i class="fa fa-key"></i> Resetar senha — ${esc(user.name)}</div>
     <div id="page-alert" class="alert"></div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">Nova senha para ${user.email}</span></div>
+      <div class="panel-head"><span class="panel-title">Nova senha para ${esc(user.email)}</span></div>
       <div class="panel-body">
         <div class="field"><label>Nova senha <span class="required">*</span></label><input id="f-new-pass" type="password" placeholder="Mínimo 6 caracteres"></div>
         <div class="field"><label>Confirmar senha <span class="required">*</span></label><input id="f-new-pass2" type="password" placeholder="Repita a senha"></div>
@@ -894,7 +895,7 @@ pages.teachers=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Busca</span></div>
       <div class="panel-body">
         <div class="form-row">
-          <div class="form-col"><label>Nome</label><input id="tc-name" placeholder="Nome" value="${name}"></div>
+          <div class="form-col"><label>Nome</label><input id="tc-name" placeholder="Nome" value="${esc(name)}"></div>
           <div class="form-col"><label>Status</label><select id="tc-status"><option value="">Todos</option><option value="1" ${status==='1'?'selected':''}>Ativo</option><option value="0" ${status==='0'?'selected':''}>Inativo</option></select></div>
         </div>
         <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="nav('teachers')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['tc-name','tc-status']);nav('teachers')">Limpa</button></div>
@@ -908,9 +909,9 @@ pages.teachers=async function({view,id}={}){
           <tbody>${data.length?data.map((t,i)=>`
             <tr>
               <td>${i+1}</td>
-              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(t.first_name)}</div><strong>${t.first_name} ${t.last_name}</strong></div></td>
-              <td>${t.mobile_number||'—'}</td>
-              <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.qualification||'—'}</td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(t.first_name)}</div><strong>${esc(t.first_name)} ${esc(t.last_name)}</strong></div></td>
+              <td>${esc(t.mobile_number)||'—'}</td>
+              <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.qualification)||'—'}</td>
               <td>${fdate(t.date_joining)}</td>
               <td>${status_badge(t.status)}</td>
               <td><button class="btn-icon" onclick="nav('teachers',{view:'form',id:'${t.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
@@ -935,18 +936,18 @@ async function teacherForm(id){
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Primeiro nome <span class="required">*</span></label><input id="f-fn" value="${t.first_name||''}"></div>
-            <div class="field"><label>Sobrenome <span class="required">*</span></label><input id="f-ln" value="${t.last_name||''}"></div>
+            <div class="field"><label>Primeiro nome <span class="required">*</span></label><input id="f-fn" value="${esc(t.first_name)}"></div>
+            <div class="field"><label>Sobrenome <span class="required">*</span></label><input id="f-ln" value="${esc(t.last_name)}"></div>
             <div class="field"><label>Gênero <span class="required">*</span></label><select id="f-gender"><option value="">Selecione</option><option value="male" ${t.gender==='male'?'selected':''}>Masculino</option><option value="female" ${t.gender==='female'?'selected':''}>Feminino</option></select></div>
             <div class="field"><label>Nascimento</label><input id="f-dob" type="date" value="${t.date_birth||''}"></div>
             <div class="field"><label>Data de adesão <span class="required">*</span></label><input id="f-doj" type="date" value="${t.date_joining||''}"></div>
-            <div class="field"><label>Celular <span class="required">*</span></label><input id="f-mobile" value="${t.mobile_number||''}"></div>
+            <div class="field"><label>Celular <span class="required">*</span></label><input id="f-mobile" value="${esc(t.mobile_number)}"></div>
           </div>
           <div>
-            <div class="field"><label>Estado civil</label><input id="f-marital" value="${t.marital_status||''}"></div>
-            <div class="field"><label>Qualificação <span class="required">*</span></label><textarea id="f-qual">${t.qualification||''}</textarea></div>
-            <div class="field"><label>Experiência</label><textarea id="f-exp">${t.work_experience||''}</textarea></div>
-            <div class="field"><label>Observação</label><input id="f-note" value="${t.note||''}"></div>
+            <div class="field"><label>Estado civil</label><input id="f-marital" value="${esc(t.marital_status)}"></div>
+            <div class="field"><label>Qualificação <span class="required">*</span></label><textarea id="f-qual">${esc(t.qualification)}</textarea></div>
+            <div class="field"><label>Experiência</label><textarea id="f-exp">${esc(t.work_experience)}</textarea></div>
+            <div class="field"><label>Observação</label><input id="f-note" value="${esc(t.note)}"></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${t.status!==false?'selected':''}>Ativo</option><option value="false" ${t.status===false?'selected':''}>Inativo</option></select></div>
           </div>
         </div>
@@ -996,8 +997,8 @@ pages.students=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Busca</span></div>
       <div class="panel-body">
         <div class="form-row">
-          <div class="form-col"><label>Nome</label><input id="st-name" placeholder="Nome" value="${name}"></div>
-          <div class="form-col"><label>Turma</label><select id="st-class"><option value="">Todas</option>${classes.map(c=>`<option value="${c.id}" ${classId===c.id?'selected':''}>${c.name}</option>`).join('')}</select></div>
+          <div class="form-col"><label>Nome</label><input id="st-name" placeholder="Nome" value="${esc(name)}"></div>
+          <div class="form-col"><label>Turma</label><select id="st-class"><option value="">Todas</option>${classes.map(c=>`<option value="${c.id}" ${classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
           <div class="form-col"><label>Status</label><select id="st-status"><option value="">Todos</option><option value="1" ${status==='1'?'selected':''}>Ativo</option><option value="0" ${status==='0'?'selected':''}>Inativo</option></select></div>
         </div>
         <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="nav('students')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['st-name','st-class','st-status']);nav('students')">Limpa</button></div>
@@ -1011,10 +1012,10 @@ pages.students=async function({view,id}={}){
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
-              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(s.first_name)}</div><strong>${s.first_name} ${s.last_name}</strong></div></td>
-              <td>${s.student_type&&s.student_type!=='Regular'?`<span class="badge badge-vip">${s.student_type}</span>`:'<span class="badge badge-secondary">Regular</span>'}</td>
-              <td>${s.mobile_number||'—'}</td>
-              <td>${s.class?.name||'—'}</td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(s.first_name)}</div><strong>${esc(s.first_name)} ${esc(s.last_name)}</strong></div></td>
+              <td>${s.student_type&&s.student_type!=='Regular'?`<span class="badge badge-vip">${esc(s.student_type)}</span>`:'<span class="badge badge-secondary">Regular</span>'}</td>
+              <td>${esc(s.mobile_number)||'—'}</td>
+              <td>${esc(s.class?.name)||'—'}</td>
               <td>${level_badge(s.level)}</td>
               <td>${status_badge(s.status)}</td>
               <td>${fdate(s.date_joining)}</td>
@@ -1032,8 +1033,8 @@ async function studentForm(id){
   const[{data:classes=[]},{data:schools=[]},{data:teachers=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true),sb.from('teachers').select('id,first_name,last_name').eq('status',true)]);
   let s={};
   if(id){const{data}=await sb.from('students').select('*').eq('id',id).single();s=data||{};}
-  const classOpts=classes.map(c=>`<option value="${c.id}" ${s.class_id===c.id?'selected':''}>${c.name}</option>`).join('');
-  const schoolOpts=schools.map(c=>`<option value="${c.id}" ${s.school_id===c.id?'selected':''}>${c.name}</option>`).join('');
+  const classOpts=classes.map(c=>`<option value="${c.id}" ${s.class_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
+  const schoolOpts=schools.map(c=>`<option value="${c.id}" ${s.school_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   setContent(`
     <div class="breadcrumb"><a onclick="nav('students')">Aluno</a> › <span>${id?'Editar':'Adicionar'}</span></div>
     <div class="page-title"><i class="fa fa-user-graduate"></i> ${id?'Editar':'Adicionar'} aluno</div>
@@ -1043,21 +1044,21 @@ async function studentForm(id){
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Primeiro nome <span class="required">*</span></label><input id="f-fn" value="${s.first_name||''}"></div>
-            <div class="field"><label>Sobrenome <span class="required">*</span></label><input id="f-ln" value="${s.last_name||''}"></div>
+            <div class="field"><label>Primeiro nome <span class="required">*</span></label><input id="f-fn" value="${esc(s.first_name)}"></div>
+            <div class="field"><label>Sobrenome <span class="required">*</span></label><input id="f-ln" value="${esc(s.last_name)}"></div>
             <div class="field"><label>Gênero</label><select id="f-gender"><option value="">Selecione</option><option value="male" ${s.gender==='male'?'selected':''}>Masculino</option><option value="female" ${s.gender==='female'?'selected':''}>Feminino</option></select></div>
             <div class="field"><label>Nascimento</label><input id="f-dob" type="date" value="${s.date_birth||''}"></div>
             <div class="field"><label>Data matrícula <span class="required">*</span></label><input id="f-doj" type="date" value="${s.date_joining||''}"></div>
-            <div class="field"><label>Celular <span class="required">*</span></label><input id="f-mobile" value="${s.mobile_number||''}"></div>
-            <div class="field"><label>Endereço</label><textarea id="f-address">${s.address||''}</textarea></div>
+            <div class="field"><label>Celular <span class="required">*</span></label><input id="f-mobile" value="${esc(s.mobile_number)}"></div>
+            <div class="field"><label>Endereço</label><textarea id="f-address">${esc(s.address)}</textarea></div>
           </div>
           <div>
-            <div class="field"><label>Nome do responsável</label><input id="f-parent" value="${s.parent_name||''}"></div>
-            <div class="field"><label>Celular do responsável</label><input id="f-parent-m" value="${s.parent_mobile||''}"></div>
+            <div class="field"><label>Nome do responsável</label><input id="f-parent" value="${esc(s.parent_name)}"></div>
+            <div class="field"><label>Celular do responsável</label><input id="f-parent-m" value="${esc(s.parent_mobile)}"></div>
             <div class="field"><label>Turma</label><select id="f-class"><option value="">Nenhuma</option>${classOpts}</select></div>
             <div class="field"><label>Escola</label><select id="f-school"><option value="">Nenhuma</option>${schoolOpts}</select></div>
             <div class="field"><label>Nível</label><select id="f-level"><option value="">Selecione</option><option value="Básico" ${s.level==='Básico'?'selected':''}>Básico</option><option value="Intermediário" ${s.level==='Intermediário'?'selected':''}>Intermediário</option><option value="Avançado" ${s.level==='Avançado'?'selected':''}>Avançado</option></select></div>
-            <div class="field"><label>Observação</label><textarea id="f-note">${s.note||''}</textarea></div>
+            <div class="field"><label>Observação</label><textarea id="f-note">${esc(s.note)}</textarea></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${s.status!==false?'selected':''}>Ativo</option><option value="false" ${s.status===false?'selected':''}>Inativo</option></select></div>
           </div>
         </div>
@@ -1069,7 +1070,7 @@ async function studentForm(id){
         <div class="form-grid">
           <div>
             <div class="field"><label>Tipo de aluno</label><select id="f-student-type" onchange="toggleVipSchedule()"><option value="Regular" ${s.student_type==='Regular'||!s.student_type?'selected':''}>Regular</option><option value="VIP Online" ${s.student_type==='VIP Online'?'selected':''}>VIP Online</option><option value="VIP Presencial" ${s.student_type==='VIP Presencial'?'selected':''}>VIP Presencial</option></select></div>
-            <div class="field"><label>WhatsApp</label><input id="f-whatsapp" value="${s.whatsapp||''}" placeholder="5511999999999"></div>
+            <div class="field"><label>WhatsApp</label><input id="f-whatsapp" value="${esc(s.whatsapp)}" placeholder="5511999999999"></div>
             <div class="field"><label>Preferência de contato</label><select id="f-contact-pref"><option value="">Selecione</option><option value="WhatsApp" ${s.contact_preference==='WhatsApp'?'selected':''}>WhatsApp</option><option value="E-mail" ${s.contact_preference==='E-mail'?'selected':''}>E-mail</option><option value="Telefone" ${s.contact_preference==='Telefone'?'selected':''}>Telefone</option></select></div>
             <div class="field"><label>Status de acompanhamento</label><select id="f-vip-status"><option value="">Selecione</option><option value="Ativo" ${s.vip_status==='Ativo'?'selected':''}>Ativo</option><option value="Pausado" ${s.vip_status==='Pausado'?'selected':''}>Pausado</option><option value="Em risco" ${s.vip_status==='Em risco'?'selected':''}>Em risco</option><option value="Cancelado" ${s.vip_status==='Cancelado'?'selected':''}>Cancelado</option></select></div>
           </div>
@@ -1086,7 +1087,7 @@ async function studentForm(id){
               <div class="field"><label><i class="fa fa-clock" style="color:var(--brand)"></i> Horário de início</label><input id="f-vip-start" type="time" value="${s.vip_start_time||''}"></div>
               <div class="field"><label><i class="fa fa-clock" style="color:var(--brand)"></i> Horário de término</label><input id="f-vip-end" type="time" value="${s.vip_end_time||''}"></div>
             </div>
-            <div class="field"><label>Observações VIP / Atendimento</label><textarea id="f-vip-notes">${s.vip_notes||''}</textarea></div>
+            <div class="field"><label>Observações VIP / Atendimento</label><textarea id="f-vip-notes">${esc(s.vip_notes)}</textarea></div>
           </div>
         </div>
       </div>
@@ -1145,10 +1146,10 @@ pages.classes=async function({view,id}={}){
           <tbody>${data.length?data.map((c,i)=>`
             <tr>
               <td>${i+1}</td>
-              <td><strong>${c.name}</strong></td>
-              <td>${c.teacher?c.teacher.first_name+' '+c.teacher.last_name:'—'}</td>
-              <td>${c.school?.name||'—'}</td>
-              <td>${c.schedule||'—'}</td>
+              <td><strong>${esc(c.name)}</strong></td>
+              <td>${c.teacher?esc(c.teacher.first_name)+' '+esc(c.teacher.last_name):'—'}</td>
+              <td>${esc(c.school?.name)||'—'}</td>
+              <td>${esc(c.schedule)||'—'}</td>
               <td>${level_badge(c.level)}</td>
               <td><span class="badge badge-info">${counts[c.id]}</span></td>
               <td>${status_badge(c.status)}</td>
@@ -1169,8 +1170,8 @@ async function classForm(id){
   const[{data:teachers=[]},{data:schools=[]}]=await Promise.all([sb.from('teachers').select('id,first_name,last_name').eq('status',true),sb.from('schools').select('id,name').eq('status',true)]);
   let c={};
   if(id){const{data}=await sb.from('classes').select('*').eq('id',id).single();c=data||{};}
-  const tOpts=teachers.map(t=>`<option value="${t.id}" ${c.teacher_id===t.id?'selected':''}>${t.first_name} ${t.last_name}</option>`).join('');
-  const sOpts=schools.map(s=>`<option value="${s.id}" ${c.school_id===s.id?'selected':''}>${s.name}</option>`).join('');
+  const tOpts=teachers.map(t=>`<option value="${t.id}" ${c.teacher_id===t.id?'selected':''}>${esc(t.first_name)} ${esc(t.last_name)}</option>`).join('');
+  const sOpts=schools.map(s=>`<option value="${s.id}" ${c.school_id===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
   setContent(`
     <div class="breadcrumb"><a onclick="nav('classes')">Turmas</a> › <span>${id?'Editar':'Criar'}</span></div>
     <div class="page-title"><i class="fa fa-layer-group"></i> ${id?'Editar':'Criar'} turma</div>
@@ -1180,7 +1181,7 @@ async function classForm(id){
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Nome da turma <span class="required">*</span></label><input id="f-name" value="${c.name||''}" placeholder="Ex: Turma A — Básico"></div>
+            <div class="field"><label>Nome da turma <span class="required">*</span></label><input id="f-name" value="${esc(c.name)}" placeholder="Ex: Turma A — Básico"></div>
             <div class="field"><label>Professor</label><select id="f-teacher"><option value="">Nenhum</option>${tOpts}</select></div>
             <div class="field"><label>Escola</label><select id="f-school"><option value="">Nenhuma</option>${sOpts}</select></div>
             <div class="field"><label>Nível</label><select id="f-level"><option value="">Selecione</option><option value="Básico" ${c.level==='Básico'?'selected':''}>Básico</option><option value="Intermediário" ${c.level==='Intermediário'?'selected':''}>Intermediário</option><option value="Avançado" ${c.level==='Avançado'?'selected':''}>Avançado</option></select></div>
@@ -1197,7 +1198,7 @@ async function classForm(id){
             </div>
             <div class="field"><label>Horário de início <span class="required">*</span></label><input id="f-start-time" type="time" value="${c.start_time||''}"></div>
             <div class="field"><label>Horário de término <span class="required">*</span></label><input id="f-end-time" type="time" value="${c.end_time||''}"></div>
-            <div class="field"><label>Descrição do horário (resumo)</label><input id="f-schedule" value="${c.schedule||''}" placeholder="Gerado automaticamente se vazio"></div>
+            <div class="field"><label>Descrição do horário (resumo)</label><input id="f-schedule" value="${esc(c.schedule)}" placeholder="Gerado automaticamente se vazio"></div>
           </div>
         </div>
       </div>
@@ -1245,8 +1246,8 @@ async function classDetail(classId){
   const temAulaHoje=(c.class_days||'').includes(diasHoje);
 
   setContent(`
-    <div class="breadcrumb"><a onclick="nav('classes')">Turmas</a> › <span>${c.name}</span></div>
-    <div class="page-title"><i class="fa fa-layer-group"></i> ${c.name}</div>
+    <div class="breadcrumb"><a onclick="nav('classes')">Turmas</a> › <span>${esc(c.name)}</span></div>
+    <div class="page-title"><i class="fa fa-layer-group"></i> ${esc(c.name)}</div>
     <div id="page-alert" class="alert"></div>
     <div class="stat-grid" style="grid-template-columns:repeat(4,1fr)">
       <div class="stat-card c-gold"><i class="fa fa-calendar stat-icon"></i><div><div class="stat-num" style="font-size:16px">${diasTxt||'—'}</div><div class="stat-label">Dias da semana</div></div></div>
@@ -1258,9 +1259,9 @@ async function classDetail(classId){
       <div class="panel">
         <div class="panel-head"><span class="panel-title">Informações</span><button class="btn btn-default btn-sm" onclick="nav('classes',{view:'form',id:'${classId}'})"><i class="fa fa-pencil-alt"></i> Editar</button></div>
         <div class="panel-body">
-          <p><strong>Professor:</strong> ${c.teacher?c.teacher.first_name+' '+c.teacher.last_name:'Não definido'}</p>
-          <p style="margin-top:6px"><strong>Escola:</strong> ${c.school?.name||'Não definida'}</p>
-          <p style="margin-top:6px"><strong>Nível:</strong> ${c.level||'—'}</p>
+          <p><strong>Professor:</strong> ${c.teacher?esc(c.teacher.first_name)+' '+esc(c.teacher.last_name):'Não definido'}</p>
+          <p style="margin-top:6px"><strong>Escola:</strong> ${esc(c.school?.name)||'Não definida'}</p>
+          <p style="margin-top:6px"><strong>Nível:</strong> ${esc(c.level)||'—'}</p>
           <p style="margin-top:6px"><strong>Status:</strong> ${status_badge(c.status)}</p>
         </div>
       </div>
@@ -1273,7 +1274,7 @@ async function classDetail(classId){
             const status=p?.status||'pendente';
             const confirmed=p?.confirmed;
             return `<tr>
-              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div>${a.first_name} ${a.last_name}</div></td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div>${esc(a.first_name)} ${esc(a.last_name)}</div></td>
               <td>
                 <select onchange="marcarPresenca('${classId}','${a.id}',this.value)" style="padding:4px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px">
                   <option value="pendente" ${status==='pendente'?'selected':''}>Pendente</option>
@@ -1292,10 +1293,10 @@ async function classDetail(classId){
       <div class="table-wrap"><table>
         <thead><tr><th>Aluno</th><th>Tipo</th><th>Celular</th><th>WhatsApp</th><th>Nível</th><th>Ações</th></tr></thead>
         <tbody>${alunos.length?alunos.map(a=>`<tr>
-          <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${a.first_name} ${a.last_name}</strong></div></td>
-          <td>${a.student_type&&a.student_type!=='Regular'?`<span class="badge badge-vip">${a.student_type}</span>`:'<span class="badge badge-secondary">Regular</span>'}</td>
-          <td>${a.mobile_number||'—'}</td>
-          <td>${a.whatsapp||'—'}</td>
+          <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${esc(a.first_name)} ${esc(a.last_name)}</strong></div></td>
+          <td>${a.student_type&&a.student_type!=='Regular'?`<span class="badge badge-vip">${esc(a.student_type)}</span>`:'<span class="badge badge-secondary">Regular</span>'}</td>
+          <td>${esc(a.mobile_number)||'—'}</td>
+          <td>${esc(a.whatsapp)||'—'}</td>
           <td>${level_badge(a.level)}</td>
           <td><button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${a.id}'})"><i class="fa fa-pencil-alt"></i> Editar</button></td>
         </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno matriculado</div></td></tr>'}
@@ -1369,7 +1370,7 @@ pages.financeiro=async function({view,studentId}={}){
         <div class="form-row" style="align-items:flex-end">
           <div class="form-col" style="max-width:320px">
             <label>Selecione o aluno</label>
-            <select id="fin-select-aluno"><option value="">— escolha um aluno —</option>${todosAlunos.map(a=>`<option value="${a.id}">${a.first_name} ${a.last_name}</option>`).join('')}</select>
+            <select id="fin-select-aluno"><option value="">— escolha um aluno —</option>${todosAlunos.map(a=>`<option value="${a.id}">${esc(a.first_name)} ${esc(a.last_name)}</option>`).join('')}</select>
           </div>
           <div><button class="btn btn-primary" onclick="finGoLancar()"><i class="fa fa-file-invoice-dollar"></i> Lançar boletos do ano</button></div>
         </div>
@@ -1379,7 +1380,7 @@ pages.financeiro=async function({view,studentId}={}){
       <div class="panel-head"><span class="panel-title">Filtros</span></div>
       <div class="panel-body">
         <div class="fin-filter-bar">
-          <div class="form-col"><label>Nome do aluno</label><input id="fin-nome" value="${fNome}" placeholder="Buscar por nome…"></div>
+          <div class="form-col"><label>Nome do aluno</label><input id="fin-nome" value="${esc(fNome)}" placeholder="Buscar por nome…"></div>
           <div class="form-col" style="max-width:160px"><label>Status</label><select id="fin-status"><option value="">Todos</option><option value="aberto" ${fStatus==='aberto'?'selected':''}>Em aberto</option><option value="pago" ${fStatus==='pago'?'selected':''}>Pago</option></select></div>
           <div class="form-col" style="max-width:120px"><label>Ano</label><select id="fin-ano">${anosOpts}</select></div>
           <div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="nav('financeiro')"><i class="fa fa-search"></i> Filtrar</button><button class="btn btn-danger" onclick="clearFilters(['fin-nome','fin-status','fin-ano']);nav('financeiro')">Limpar</button></div>
@@ -1393,7 +1394,7 @@ pages.financeiro=async function({view,studentId}={}){
           <thead><tr><th>Aluno</th>${canSeeFinanceiroGlobal()?'<th>Pago</th><th>Em aberto</th>':''}<th>Situação</th><th>Ações</th></tr></thead>
           <tbody>${alunos.length?alunos.map(a=>`
             <tr>
-              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${a.first_name} ${a.last_name}</strong></div></td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${esc(a.first_name)} ${esc(a.last_name)}</strong></div></td>
               ${canSeeFinanceiroGlobal()?`<td style="color:#1a6b3a;font-weight:600">${fmtBRL(a.totalPago)}</td>
               <td style="color:#8a5c00;font-weight:600">${fmtBRL(a.totalAberto)}</td>`:''}
               <td>${a.totalAberto>0?'<span class="badge badge-warning"><i class="fa fa-exclamation-triangle"></i> Em aberto</span>':'<span class="badge badge-success"><i class="fa fa-check"></i> Em dia</span>'}</td>
@@ -1409,9 +1410,10 @@ pages.financeiro=async function({view,studentId}={}){
 async function finAluno(studentId){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const fAno=getFilter('fin-ano')||new Date().getFullYear().toString();
+  const rpcName=isSecretaria()?'get_boletos_aluno_secretaria':'get_boletos_aluno';
   const[{data:student},{data:boletos=[]}]=await Promise.all([
     sb.from('students').select('id,first_name,last_name').eq('id',studentId).single(),
-    sb.rpc('get_boletos_aluno',{p_student_id:studentId,p_ano:parseInt(fAno)}),
+    sb.rpc(rpcName,{p_student_id:studentId,p_ano:parseInt(fAno)}),
   ]);
   if(!student){nav('financeiro');return;}
 
@@ -1420,8 +1422,8 @@ async function finAluno(studentId){
   const totalAberto=boletos.filter(b=>b.status==='aberto').reduce((s,b)=>s+parseFloat(b.valor),0);
 
   setContent(`
-    <div class="breadcrumb"><a onclick="nav('financeiro')">Financeiro</a> › <span>${student.first_name} ${student.last_name}</span></div>
-    <div class="page-title"><i class="fa fa-file-invoice-dollar"></i> Boletos — ${student.first_name} ${student.last_name}</div>
+    <div class="breadcrumb"><a onclick="nav('financeiro')">Financeiro</a> › <span>${esc(student.first_name)} ${esc(student.last_name)}</span></div>
+    <div class="page-title"><i class="fa fa-file-invoice-dollar"></i> Boletos — ${esc(student.first_name)} ${esc(student.last_name)}</div>
     <div id="page-alert" class="alert"></div>
     ${canSeeFinanceiroGlobal()?`<div class="fin-summary-grid" style="grid-template-columns:1fr 1fr 1fr">
       <div class="fin-card c-gold"><i class="fa fa-check-circle fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalPago)}</div><div class="fin-card-label">Total Pago</div></div></div>
@@ -1451,23 +1453,24 @@ async function finAluno(studentId){
       <div class="panel-head"><span class="panel-title">Boletos ${fAno}</span><button class="btn btn-primary btn-sm" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar / Reeditar boletos</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pgto.</th><th>Observação</th><th>Boleto</th><th></th></tr></thead>
-          <tbody>${boletos.length?boletos.map(b=>`
-            <tr id="row-${b.id}" data-vencimento="${b.data_vencimento||''}" style="${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'background:#fff5f5;border-left:3px solid var(--danger)':''}">
-              <td><strong>${meses[(b.mes_referencia-1)]} / ${b.ano_referencia}</strong>${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'<span class="badge badge-danger" style="margin-left:6px">Vencido</span>':''}</td>
-              <td style="${b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date()?'color:var(--danger);font-weight:600':''}">${fdate(b.data_vencimento)}</td>
-              <td>${fmtBRL(b.valor)}</td>
+          <thead><tr><th>Mês</th><th>Vencimento</th>${!isSecretaria()?'<th>Valor</th>':''}<th>Status</th><th>Data Pgto.</th><th>Observação</th><th>Boleto</th>${!isSecretaria()?'<th></th>':''}</tr></thead>
+          <tbody>${boletos.length?boletos.map(b=>{
+            const vencido=b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date();
+            return `<tr id="row-${b.id}" data-vencimento="${b.data_vencimento||''}" style="${vencido?'background:#fff5f5;border-left:3px solid var(--danger)':''}">
+              <td><strong>${meses[(b.mes_referencia-1)]} / ${b.ano_referencia}</strong>${vencido?'<span class="badge badge-danger" style="margin-left:6px">Vencido</span>':''}</td>
+              <td style="${vencido?'color:var(--danger);font-weight:600':''}">${fdate(b.data_vencimento)}</td>
+              ${!isSecretaria()?`<td>${fmtBRL(b.valor)}</td>`:''}
               <td><button class="boleto-status-toggle ${b.status==='pago'?'boleto-pago':'boleto-aberto'}" onclick="abrirPgtoModal('${b.id}','${b.status}','${student.id}','${meses[(b.mes_referencia-1)]} / ${b.ano_referencia}')"><i class="fa ${b.status==='pago'?'fa-check-circle':'fa-clock'}"></i> ${b.status==='pago'?'Pago':'Em aberto'}</button></td>
               <td>${b.data_pagamento?fdate(b.data_pagamento):'—'}</td>
-              <td style="font-size:12px;color:var(--gray-500)">${b.observacao||'—'}</td>
+              <td style="font-size:12px;color:var(--gray-500)">${esc(b.observacao)||'—'}</td>
               <td style="white-space:nowrap">
-                ${b.comprovante_path?`<a href="#" onclick="abrirComprovante('${escapeHtml(b.comprovante_path)}','path');return false" class="comprovante-icon" style="margin-right:6px"><i class="fa fa-image"></i> Comprovante</a>`:b.comprovante_url?`<a href="${escapeHtml(b.comprovante_url)}" target="_blank" class="comprovante-icon" style="margin-right:6px"><i class="fa fa-image"></i> Comprovante</a>`:''}
-                ${b.url_boleto?`<a href="${b.url_boleto}" target="_blank" class="btn btn-primary btn-sm" style="margin-right:4px"><i class="fa fa-external-link-alt"></i> Abrir</a>`:''}
-                ${b.codigo_boleto?`<button class="btn btn-default btn-sm" onclick="copiarCodigo('${b.id}','${b.codigo_boleto}')" title="Copiar código"><i class="fa fa-copy"></i> <span id="copy-label-${b.id}">Copiar código</span></button>`:''}
-                ${!b.comprovante_url&&!b.url_boleto&&!b.codigo_boleto?'<span style="color:var(--gray-500);font-size:12px">—</span>':''}
+                ${b.comprovante_path?`<a href="#" onclick="abrirComprovante('${esc(b.comprovante_path)}','path');return false" class="comprovante-icon" style="margin-right:6px"><i class="fa fa-image"></i> Comprovante</a>`:b.comprovante_url?`<a href="${esc(b.comprovante_url)}" target="_blank" class="comprovante-icon" style="margin-right:6px"><i class="fa fa-image"></i> Comprovante</a>`:b.tem_comprovante?'<span class="comprovante-icon"><i class="fa fa-check-circle"></i> Sim</span>':''}
+                ${b.url_boleto?`<a href="${esc(b.url_boleto)}" target="_blank" class="btn btn-primary btn-sm" style="margin-right:4px"><i class="fa fa-external-link-alt"></i> Abrir</a>`:''}
+                ${b.codigo_boleto?`<button class="btn btn-default btn-sm" onclick="copiarCodigo('${b.id}','${esc(b.codigo_boleto)}')" title="Copiar código"><i class="fa fa-copy"></i> <span id="copy-label-${b.id}">Copiar código</span></button>`:''}
+                ${!b.comprovante_url&&!b.comprovante_path&&!b.tem_comprovante&&!b.url_boleto&&!b.codigo_boleto?'<span style="color:var(--gray-500);font-size:12px">—</span>':''}
               </td>
-              <td><button class="btn btn-icon" title="Excluir boleto" onclick="deletarBoleto('${b.id}','${student.id}')"><i class="fa fa-trash" style="color:var(--danger)"></i></button></td>
-            </tr>`).join(''):`<tr><td colspan="8"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto lançado para ${fAno}.<br><br><button class="btn btn-primary" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar boletos agora</button></div></td></tr>`}
+              ${!isSecretaria()?`<td><button class="btn btn-icon" title="Excluir boleto" onclick="deletarBoleto('${b.id}','${student.id}')"><i class="fa fa-trash" style="color:var(--danger)"></i></button></td>`:''}
+            </tr>`}).join(''):`<tr><td colspan="${isSecretaria()?6:8}"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto lançado para ${fAno}.<br><br><button class="btn btn-primary" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar boletos agora</button></div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -1481,7 +1484,8 @@ async function finLancarBoletos(studentId){
 
   const ano=new Date().getFullYear();
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const{data:existentes=[]}=await sb.rpc('get_boletos_aluno',{p_student_id:studentId,p_ano:ano});
+  const rpcLancar=isSecretaria()?'get_boletos_aluno_secretaria':'get_boletos_aluno';
+  const{data:existentes=[]}=await sb.rpc(rpcLancar,{p_student_id:studentId,p_ano:ano});
   const existMap={};
   for(const b of existentes) existMap[b.mes_referencia]=b;
 
@@ -1497,16 +1501,16 @@ async function finLancarBoletos(studentId){
         <td><span class="${ex?(ex.status==='pago'?'badge badge-success':'badge badge-warning'):'badge badge-secondary'}">${ex?(ex.status==='pago'?'Pago':'Em aberto'):'Novo'}</span></td>
         <td>
           <div style="display:flex;flex-direction:column;gap:4px">
-            <input type="url" id="url-${mes}" value="${ex?.url_boleto||''}" placeholder="🔗 Link do boleto" style="width:220px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px">
-            <input type="text" id="codigo-${mes}" value="${ex?.codigo_boleto||''}" placeholder="# Código de barras" style="width:220px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;font-family:monospace">
+            <input type="url" id="url-${mes}" value="${esc(ex?.url_boleto)}" placeholder="🔗 Link do boleto" style="width:220px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px">
+            <input type="text" id="codigo-${mes}" value="${esc(ex?.codigo_boleto)}" placeholder="# Código de barras" style="width:220px;padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;font-family:monospace">
           </div>
         </td>
       </tr>`;
   }).join('');
 
   setContent(`
-    <div class="breadcrumb"><a onclick="nav('financeiro')">Financeiro</a> › <a onclick="nav('financeiro',{view:'aluno',studentId:'${student.id}'})">${student.first_name} ${student.last_name}</a> › Lançar boletos</div>
-    <div class="page-title"><i class="fa fa-file-invoice-dollar"></i> Lançar boletos — ${student.first_name} ${student.last_name} (${ano})</div>
+    <div class="breadcrumb"><a onclick="nav('financeiro')">Financeiro</a> › <a onclick="nav('financeiro',{view:'aluno',studentId:'${student.id}'})">${esc(student.first_name)} ${esc(student.last_name)}</a> › Lançar boletos</div>
+    <div class="page-title"><i class="fa fa-file-invoice-dollar"></i> Lançar boletos — ${esc(student.first_name)} ${esc(student.last_name)} (${ano})</div>
     <div id="page-alert" class="alert"></div>
     <div class="panel">
       <div class="panel-head">
@@ -1713,13 +1717,13 @@ pages.vip=async function({view,studentId}={}){
           const dias=a.vip_class_days||(a.class?.class_days)||'—';
           const horario=a.vip_start_time&&a.vip_end_time?a.vip_start_time+'–'+a.vip_end_time:(a.class?.start_time&&a.class?.end_time?a.class.start_time+'–'+a.class.end_time:'—');
           return `<tr>
-            <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${a.first_name} ${a.last_name}</strong></div></td>
-            <td><span class="badge badge-vip">${a.student_type}</span></td>
-            <td>${a.whatsapp||a.mobile_number||'—'}</td>
+            <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${esc(a.first_name)} ${esc(a.last_name)}</strong></div></td>
+            <td><span class="badge badge-vip">${esc(a.student_type)}</span></td>
+            <td>${esc(a.whatsapp)||esc(a.mobile_number)||'—'}</td>
             <td>${dias}</td>
             <td><i class="fa fa-clock" style="color:var(--brand)"></i> ${horario}</td>
-            <td>${a.class?.name||'—'}</td>
-            <td><span class="${statusClass[a.vip_status]||''}">${a.vip_status||'—'}</span></td>
+            <td>${esc(a.class?.name)||'—'}</td>
+            <td><span class="${statusClass[a.vip_status]||''}">${esc(a.vip_status)||'—'}</span></td>
             <td style="white-space:nowrap">
               <button class="btn btn-primary btn-sm" onclick="nav('vip',{view:'contato',studentId:'${a.id}'})" title="Enviar mensagem"><i class="fab fa-whatsapp"></i> Contato</button>
               <button class="btn btn-default btn-sm" onclick="nav('vip',{view:'historico',studentId:'${a.id}'})" title="Histórico"><i class="fa fa-history"></i></button>
@@ -1745,8 +1749,8 @@ async function vipContato(studentId){
   _vipCtx={nome,escolaNome,profNome,horarioTxt};
 
   setContent(`
-    <div class="breadcrumb"><a onclick="nav('vip')">VIP Online</a> › <span>${s.first_name} ${s.last_name}</span> › Contato</div>
-    <div class="page-title"><i class="fab fa-whatsapp" style="color:#25D366"></i> Contato — ${s.first_name} ${s.last_name}</div>
+    <div class="breadcrumb"><a onclick="nav('vip')">VIP Online</a> › <span>${esc(s.first_name)} ${esc(s.last_name)}</span> › Contato</div>
+    <div class="page-title"><i class="fab fa-whatsapp" style="color:#25D366"></i> Contato — ${esc(s.first_name)} ${esc(s.last_name)}</div>
     <div id="page-alert" class="alert"></div>
     <div class="two-col">
       <div class="panel">
@@ -1817,17 +1821,17 @@ async function carregarUltimosContatos(studentId,limit){
   if(!el) return;
   if(!data.length){el.innerHTML='<div class="empty-state" style="padding:20px"><i class="fa fa-comment-slash"></i>Nenhum contato registrado</div>';return;}
   el.innerHTML=data.map(c=>{
-    const label=MSG_TEMPLATES[c.contact_type]?.label||c.contact_type||'Personalizada';
+    const label=MSG_TEMPLATES[c.contact_type]?.label||esc(c.contact_type)||'Personalizada';
     const channelIcon=c.channel==='whatsapp'?'<i class="fab fa-whatsapp" style="color:#25D366"></i>':'<i class="fa fa-comment" style="color:var(--gray-500)"></i>';
     const delBtn=isAdmin()?` <button class="btn-icon" style="color:var(--danger);float:right" onclick="deletarContato('${c.id}','${studentId}')" title="Excluir"><i class="fa fa-trash"></i></button>`:'';
     return `<div class="contact-log">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <div>${channelIcon} <strong>${label}</strong> <span class="badge badge-secondary">${c.channel}</span></div>
+        <div>${channelIcon} <strong>${label}</strong> <span class="badge badge-secondary">${esc(c.channel)}</span></div>
         <div>${delBtn} <span class="contact-log-date">${new Date(c.created_at).toLocaleString('pt-BR')}</span></div>
       </div>
-      <div style="margin-top:4px;color:var(--gray-700)">${c.message}</div>
-      ${c.notes?`<div style="margin-top:3px;font-style:italic;color:var(--gray-500)">Nota: ${c.notes}</div>`:''}
-      <div style="margin-top:3px;font-size:11px;color:var(--gray-500)">por ${c.user?.name||'—'}</div>
+      <div style="margin-top:4px;color:var(--gray-700)">${esc(c.message)}</div>
+      ${c.notes?`<div style="margin-top:3px;font-style:italic;color:var(--gray-500)">Nota: ${esc(c.notes)}</div>`:''}
+      <div style="margin-top:3px;font-size:11px;color:var(--gray-500)">por ${esc(c.user?.name)||'—'}</div>
     </div>`}).join('');
 }
 
@@ -1840,23 +1844,23 @@ async function vipHistorico(studentId){
   if(!s){nav('vip');return;}
 
   setContent(`
-    <div class="breadcrumb"><a onclick="nav('vip')">VIP Online</a> › <span>${s.first_name} ${s.last_name}</span> › Histórico</div>
-    <div class="page-title"><i class="fa fa-history"></i> Histórico de contatos — ${s.first_name} ${s.last_name}</div>
+    <div class="breadcrumb"><a onclick="nav('vip')">VIP Online</a> › <span>${esc(s.first_name)} ${esc(s.last_name)}</span> › Histórico</div>
+    <div class="page-title"><i class="fa fa-history"></i> Histórico de contatos — ${esc(s.first_name)} ${esc(s.last_name)}</div>
     <div class="panel">
       <div class="panel-head"><span class="panel-title">${contatos.length} registro(s)</span><button class="btn btn-primary btn-sm" onclick="nav('vip',{view:'contato',studentId:'${studentId}'})"><i class="fab fa-whatsapp"></i> Novo contato</button></div>
       <div class="panel-body" style="padding:0">
         ${contatos.length?contatos.map(c=>{
-          const label=MSG_TEMPLATES[c.contact_type]?.label||c.contact_type||'Personalizada';
+          const label=MSG_TEMPLATES[c.contact_type]?.label||esc(c.contact_type)||'Personalizada';
           const channelIcon=c.channel==='whatsapp'?'<i class="fab fa-whatsapp" style="color:#25D366"></i>':'<i class="fa fa-comment" style="color:var(--gray-500)"></i>';
           const delBtn=isAdmin()?` <button class="btn-icon" style="color:var(--danger)" onclick="deletarContato('${c.id}','${studentId}')" title="Excluir"><i class="fa fa-trash"></i></button>`:'';
           return `<div class="contact-log">
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <div>${channelIcon} <strong>${label}</strong> <span class="badge badge-secondary">${c.channel}</span></div>
+              <div>${channelIcon} <strong>${label}</strong> <span class="badge badge-secondary">${esc(c.channel)}</span></div>
               <div>${delBtn} <span class="contact-log-date">${new Date(c.created_at).toLocaleString('pt-BR')}</span></div>
             </div>
-            <div style="margin-top:4px;color:var(--gray-700)">${c.message}</div>
-            ${c.notes?`<div style="margin-top:3px;font-style:italic;color:var(--gray-500)">Nota: ${c.notes}</div>`:''}
-            <div style="margin-top:3px;font-size:11px;color:var(--gray-500)">por ${c.user?.name||'—'}</div>
+            <div style="margin-top:4px;color:var(--gray-700)">${esc(c.message)}</div>
+            ${c.notes?`<div style="margin-top:3px;font-style:italic;color:var(--gray-500)">Nota: ${esc(c.notes)}</div>`:''}
+            <div style="margin-top:3px;font-size:11px;color:var(--gray-500)">por ${esc(c.user?.name)||'—'}</div>
           </div>`}).join(''):'<div class="empty-state" style="padding:20px"><i class="fa fa-comment-slash"></i>Nenhum contato registrado</div>'}
       </div>
     </div>
