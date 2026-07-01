@@ -478,6 +478,217 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- #####################################################################
+-- 8. CONTROLE DE PROFESSORES — teacher_lessons
+-- #####################################################################
+
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS valor_hora numeric(8,2) DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS teacher_lessons (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  class_id uuid REFERENCES classes(id) ON DELETE SET NULL,
+  teacher_id uuid REFERENCES teachers(id) ON DELETE CASCADE,
+  actual_teacher_id uuid REFERENCES teachers(id) ON DELETE CASCADE,
+  lesson_date date NOT NULL,
+  lesson_type text NOT NULL DEFAULT 'aula_normal',
+  status text NOT NULL DEFAULT 'realizada',
+  hours numeric(4,2) NOT NULL DEFAULT 1,
+  notes text,
+  paid boolean DEFAULT false,
+  paid_at date,
+  paid_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='tl_type_check') THEN
+    ALTER TABLE teacher_lessons ADD CONSTRAINT tl_type_check CHECK (lesson_type IN ('aula_normal','substituicao','reuniao','evento','outro'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='tl_status_check') THEN
+    ALTER TABLE teacher_lessons ADD CONSTRAINT tl_status_check CHECK (status IN ('realizada','nao_realizada','cancelada','falta','justificada'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='tl_hours_check') THEN
+    ALTER TABLE teacher_lessons ADD CONSTRAINT tl_hours_check CHECK (hours > 0 AND hours <= 24);
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_tl_date ON teacher_lessons(lesson_date DESC);
+CREATE INDEX IF NOT EXISTS idx_tl_actual_teacher ON teacher_lessons(actual_teacher_id);
+CREATE INDEX IF NOT EXISTS idx_tl_class ON teacher_lessons(class_id);
+
+ALTER TABLE teacher_lessons ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tl_select" ON teacher_lessons;
+DROP POLICY IF EXISTS "tl_insert" ON teacher_lessons;
+DROP POLICY IF EXISTS "tl_update" ON teacher_lessons;
+DROP POLICY IF EXISTS "tl_delete" ON teacher_lessons;
+CREATE POLICY "tl_select" ON teacher_lessons FOR SELECT USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "tl_insert" ON teacher_lessons FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "tl_update" ON teacher_lessons FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "tl_delete" ON teacher_lessons FOR DELETE USING (is_admin());
+
+-- Lançar aula (secretaria + admin)
+CREATE OR REPLACE FUNCTION lancar_aula_professor(
+  p_class_id uuid DEFAULT NULL,
+  p_teacher_id uuid DEFAULT NULL,
+  p_actual_teacher_id uuid DEFAULT NULL,
+  p_lesson_date date DEFAULT CURRENT_DATE,
+  p_lesson_type text DEFAULT 'aula_normal',
+  p_status text DEFAULT 'realizada',
+  p_hours numeric DEFAULT 1,
+  p_notes text DEFAULT NULL
+) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_id uuid; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  INSERT INTO teacher_lessons(class_id, teacher_id, actual_teacher_id, lesson_date, lesson_type, status, hours, notes, created_by)
+  VALUES (p_class_id, p_teacher_id, COALESCE(p_actual_teacher_id, p_teacher_id), p_lesson_date, p_lesson_type, p_status, p_hours, p_notes, auth.uid())
+  RETURNING id INTO v_id;
+  RETURN v_id;
+END; $$;
+
+-- Atualizar aula (secretaria + admin)
+CREATE OR REPLACE FUNCTION atualizar_aula_professor(
+  p_id uuid,
+  p_class_id uuid DEFAULT NULL,
+  p_teacher_id uuid DEFAULT NULL,
+  p_actual_teacher_id uuid DEFAULT NULL,
+  p_lesson_date date DEFAULT NULL,
+  p_lesson_type text DEFAULT NULL,
+  p_status text DEFAULT NULL,
+  p_hours numeric DEFAULT NULL,
+  p_notes text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  UPDATE teacher_lessons SET
+    class_id = COALESCE(p_class_id, class_id),
+    teacher_id = COALESCE(p_teacher_id, teacher_id),
+    actual_teacher_id = COALESCE(p_actual_teacher_id, actual_teacher_id),
+    lesson_date = COALESCE(p_lesson_date, lesson_date),
+    lesson_type = COALESCE(p_lesson_type, lesson_type),
+    status = COALESCE(p_status, status),
+    hours = COALESCE(p_hours, hours),
+    notes = COALESCE(p_notes, notes)
+  WHERE id = p_id;
+END; $$;
+
+-- Deletar aula (só admin)
+CREATE OR REPLACE FUNCTION deletar_aula_professor(p_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  DELETE FROM teacher_lessons WHERE id = p_id;
+END; $$;
+
+-- Listar aulas — admin/financeiro (com valor_hora)
+CREATE OR REPLACE FUNCTION get_aulas_mes(p_mes int, p_ano int, p_teacher_id uuid DEFAULT NULL)
+RETURNS TABLE(
+  id uuid, class_id uuid, class_name text,
+  teacher_id uuid, teacher_name text,
+  actual_teacher_id uuid, actual_teacher_name text,
+  lesson_date date, lesson_type text, status text,
+  hours numeric, valor_hora numeric, notes text,
+  paid boolean, paid_at date, created_at timestamptz
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT tl.id,
+      tl.class_id, c.name::text,
+      tl.teacher_id, (tr.first_name||' '||tr.last_name)::text,
+      tl.actual_teacher_id, (at2.first_name||' '||at2.last_name)::text,
+      tl.lesson_date, tl.lesson_type, tl.status,
+      tl.hours, COALESCE(at2.valor_hora, 0)::numeric, tl.notes,
+      tl.paid, tl.paid_at, tl.created_at
+    FROM teacher_lessons tl
+    LEFT JOIN classes c ON c.id = tl.class_id
+    LEFT JOIN teachers tr ON tr.id = tl.teacher_id
+    LEFT JOIN teachers at2 ON at2.id = tl.actual_teacher_id
+    WHERE EXTRACT(MONTH FROM tl.lesson_date)::int = p_mes
+      AND EXTRACT(YEAR FROM tl.lesson_date)::int = p_ano
+      AND (p_teacher_id IS NULL OR tl.actual_teacher_id = p_teacher_id)
+    ORDER BY tl.lesson_date DESC;
+END; $$;
+
+-- Listar aulas — secretaria (SEM valor_hora)
+CREATE OR REPLACE FUNCTION get_aulas_mes_secretaria(p_mes int, p_ano int, p_teacher_id uuid DEFAULT NULL)
+RETURNS TABLE(
+  id uuid, class_id uuid, class_name text,
+  teacher_id uuid, teacher_name text,
+  actual_teacher_id uuid, actual_teacher_name text,
+  lesson_date date, lesson_type text, status text,
+  hours numeric, notes text, paid boolean, created_at timestamptz
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT tl.id,
+      tl.class_id, c.name::text,
+      tl.teacher_id, (tr.first_name||' '||tr.last_name)::text,
+      tl.actual_teacher_id, (at2.first_name||' '||at2.last_name)::text,
+      tl.lesson_date, tl.lesson_type, tl.status,
+      tl.hours, tl.notes, tl.paid, tl.created_at
+    FROM teacher_lessons tl
+    LEFT JOIN classes c ON c.id = tl.class_id
+    LEFT JOIN teachers tr ON tr.id = tl.teacher_id
+    LEFT JOIN teachers at2 ON at2.id = tl.actual_teacher_id
+    WHERE EXTRACT(MONTH FROM tl.lesson_date)::int = p_mes
+      AND EXTRACT(YEAR FROM tl.lesson_date)::int = p_ano
+      AND (p_teacher_id IS NULL OR tl.actual_teacher_id = p_teacher_id)
+    ORDER BY tl.lesson_date DESC;
+END; $$;
+
+-- Relatório financeiro de professores — só admin/direção
+CREATE OR REPLACE FUNCTION get_relatorio_pagamento_professor(p_mes int, p_ano int)
+RETURNS TABLE(
+  teacher_id uuid, teacher_name text, valor_hora numeric,
+  total_aulas bigint, total_horas numeric, total_substituicoes bigint,
+  aulas_nao_realizadas bigint, total_a_pagar numeric, todos_pagos boolean
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT
+      t.id,
+      (t.first_name||' '||t.last_name)::text,
+      COALESCE(t.valor_hora, 0)::numeric,
+      COUNT(tl.id) FILTER (WHERE tl.status='realizada'),
+      COALESCE(SUM(tl.hours) FILTER (WHERE tl.status='realizada'), 0)::numeric,
+      COUNT(tl.id) FILTER (WHERE tl.lesson_type='substituicao' AND tl.status='realizada'),
+      COUNT(tl.id) FILTER (WHERE tl.status IN ('cancelada','nao_realizada','falta')),
+      COALESCE(SUM(tl.hours) FILTER (WHERE tl.status='realizada'), 0) * COALESCE(t.valor_hora, 0),
+      COALESCE(bool_and(tl.paid) FILTER (WHERE tl.status='realizada'), false)
+    FROM teachers t
+    LEFT JOIN teacher_lessons tl ON tl.actual_teacher_id = t.id
+      AND EXTRACT(MONTH FROM tl.lesson_date)::int = p_mes
+      AND EXTRACT(YEAR FROM tl.lesson_date)::int = p_ano
+    WHERE t.status = true
+    GROUP BY t.id, t.first_name, t.last_name, t.valor_hora
+    HAVING COUNT(tl.id) > 0
+    ORDER BY t.first_name;
+END; $$;
+
+-- Marcar aulas do professor como pagas (admin/direção)
+CREATE OR REPLACE FUNCTION marcar_pago_professor(p_teacher_id uuid, p_mes int, p_ano int)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  UPDATE teacher_lessons SET paid=true, paid_at=CURRENT_DATE, paid_by=auth.uid()
+  WHERE actual_teacher_id=p_teacher_id
+    AND EXTRACT(MONTH FROM lesson_date)::int=p_mes
+    AND EXTRACT(YEAR FROM lesson_date)::int=p_ano
+    AND status='realizada';
+END; $$;
+
+-- Atualizar valor_hora do professor (admin/direção)
+CREATE OR REPLACE FUNCTION atualizar_valor_hora(p_teacher_id uuid, p_valor_hora numeric)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  UPDATE teachers SET valor_hora = p_valor_hora WHERE id = p_teacher_id;
+END; $$;
+
+
 -- storage comprovantes
 INSERT INTO storage.buckets (id, name, public) VALUES ('comprovantes', 'comprovantes', false)
 ON CONFLICT (id) DO UPDATE SET public = false;

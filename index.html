@@ -237,6 +237,29 @@ tr:hover td{background:#fdf9f0}
 .contact-log-date{color:var(--gray-500);font-size:11px}
 .hidden{display:none!important}
 
+/* CONTROLE DE PROFESSORES */
+.tab-bar{display:flex;gap:4px;margin-bottom:18px;border-bottom:2px solid var(--gray-200);padding-bottom:0}
+.tab-btn{padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;color:var(--gray-500);border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;font-family:'Inter',sans-serif;display:flex;align-items:center;gap:6px}
+.tab-btn:hover{color:var(--gray-900)}
+.tab-btn.active{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+.status-badge-realizada{background:#d4f0e0;color:#1a6b3a}
+.status-badge-nao_realizada{background:#fde0de;color:#8b1a1a}
+.status-badge-cancelada{background:#ebebeb;color:#444}
+.status-badge-falta{background:#fef3d0;color:#8a5c00}
+.status-badge-justificada{background:#d5ebf8;color:#0f4f7a}
+.tipo-badge-aula_normal{background:#d4f0e0;color:#1a6b3a}
+.tipo-badge-substituicao{background:#fef3d0;color:#8a5c00}
+.tipo-badge-reuniao{background:#d5ebf8;color:#0f4f7a}
+.tipo-badge-evento{background:#ede0fd;color:#4a1f8a}
+.tipo-badge-outro{background:#ebebeb;color:#444}
+.prof-pay-card{background:var(--white);border:1px solid var(--gray-200);border-radius:8px;padding:18px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:10px}
+.prof-pay-card.pago{border-left:4px solid var(--success)}
+.prof-pay-card.pendente{border-left:4px solid var(--warning)}
+.prof-pay-info{flex:1}
+.prof-pay-nome{font-weight:700;font-size:14px;margin-bottom:4px}
+.prof-pay-stats{font-size:12px;color:var(--gray-500);display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}
+.prof-pay-total{font-size:18px;font-weight:700;color:var(--gray-900);white-space:nowrap}
+
 /* MOBILE TOGGLE */
 .mobile-toggle{display:none;background:none;border:none;font-size:20px;color:var(--brand);cursor:pointer;padding:4px 8px}
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:998}
@@ -338,6 +361,7 @@ let currentUser = null;
     <div class="sb-item" data-page="students" onclick="nav('students')"><i class="fa fa-user-graduate"></i> Aluno</div>
     <div class="sb-item" data-page="classes" onclick="nav('classes')"><i class="fa fa-layer-group"></i> Turmas</div>
     <div class="sb-item" data-page="cobrancas" onclick="nav('cobrancas')"><i class="fa fa-calendar-check"></i> Cobranças</div>
+    <div class="sb-item no-professor" data-page="professores" onclick="nav('professores')"><i class="fa fa-user-clock"></i> Prof. — Horas</div>
     <div class="sb-item" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
     <div class="sb-item" data-page="vip" onclick="nav('vip')"><i class="fa fa-star"></i> VIP Online</div>
     <div class="sb-logout">
@@ -524,6 +548,7 @@ function startApp(){
   $('sb-role').textContent=roles[currentUser.role]||currentUser.role;
   $('topbar-user').innerHTML=`<i class="fa fa-user-circle" style="color:var(--brand);font-size:18px"></i> &nbsp;${escapeHtml(currentUser.name)}`;
   document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isAdmin()?'':'none');
+  document.querySelectorAll('.no-professor').forEach(el=>el.style.display=currentUser?.role==='professor'?'none':'');
   nav('dashboard');
 }
 
@@ -950,6 +975,7 @@ async function teacherForm(id){
             <div class="field"><label>Experiência</label><textarea id="f-exp">${esc(t.work_experience)}</textarea></div>
             <div class="field"><label>Observação</label><input id="f-note" value="${esc(t.note)}"></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${t.status!==false?'selected':''}>Ativo</option><option value="false" ${t.status===false?'selected':''}>Inativo</option></select></div>
+            ${isAdmin()?`<div class="field"><label>Valor por hora (R$) <span style="font-size:11px;color:var(--gray-500)">(visível só para admin)</span></label><input id="f-valor-hora" type="number" min="0" step="0.01" value="${t.valor_hora||0}" placeholder="Ex: 50.00"></div>`:''}
           </div>
         </div>
       </div>
@@ -968,7 +994,8 @@ async function saveTeacher(id){
   const mobile=$('f-mobile').value.trim();
   const qual=$('f-qual').value.trim();
   if(!fn||!ln||!doj||!mobile||!qual){showAlert('page-alert','Preencha os campos obrigatórios.','danger');return;}
-  const payload={first_name:fn,last_name:ln,gender:$('f-gender').value,date_birth:$('f-dob').value||null,date_joining:doj,mobile_number:mobile,marital_status:$('f-marital').value,qualification:qual,work_experience:$('f-exp').value,note:$('f-note').value,status:$('f-status').value==='true'};
+  const valorHoraEl=$('f-valor-hora');
+  const payload={first_name:fn,last_name:ln,gender:$('f-gender').value,date_birth:$('f-dob').value||null,date_joining:doj,mobile_number:mobile,marital_status:$('f-marital').value,qualification:qual,work_experience:$('f-exp').value,note:$('f-note').value,status:$('f-status').value==='true',...(valorHoraEl&&isAdmin()?{valor_hora:parseFloat(valorHoraEl.value)||0}:{})};
   let err;
   if(id){const r=await sb.from('teachers').update(payload).eq('id',id);err=r.error;}
   else{const r=await sb.from('teachers').insert(payload);err=r.error;}
@@ -1402,6 +1429,371 @@ function enviarCobrancaWpp(studentId,nome,numero,tipo,dataVenc,boletoInfo){
   const url='https://wa.me/'+numero+'?text='+encodeURIComponent(texto);
   window.open(url,'_blank');
   sb.rpc('registrar_cobranca_boleto',{p_student_id:studentId,p_contact_type:tpl.type,p_message:texto,p_channel:'whatsapp'});
+}
+
+// ============================
+// CONTROLE DE PROFESSORES
+// ============================
+
+const LESSON_STATUS_LABELS={realizada:'Realizada',nao_realizada:'Não realizada',cancelada:'Cancelada',falta:'Falta',justificada:'Justificada'};
+const LESSON_TYPE_LABELS={aula_normal:'Aula normal',substituicao:'Substituição',reuniao:'Reunião',evento:'Evento',outro:'Outro'};
+
+let _profTab='lancar';
+
+pages.professores=async function({tab}={}){
+  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
+  if(tab) _profTab=tab;
+  const tabs=[
+    {id:'lancar',label:'Lançar Aula',icon:'fa-plus-circle'},
+    {id:'historico',label:'Histórico',icon:'fa-list'},
+    ...(isAdmin()?[{id:'pagamento',label:'Pagamento',icon:'fa-money-bill-wave'}]:[]),
+  ];
+  const tabBar=`<div class="tab-bar">${tabs.map(t=>`<button class="tab-btn${_profTab===t.id?' active':''}" onclick="nav('professores',{tab:'${t.id}'})"><i class="fa ${t.icon}"></i> ${t.label}</button>`).join('')}</div>`;
+
+  if(_profTab==='lancar') return profLancar(tabBar);
+  if(_profTab==='historico') return profHistorico(tabBar);
+  if(_profTab==='pagamento'&&isAdmin()) return profPagamento(tabBar);
+  _profTab='lancar'; profLancar(tabBar);
+};
+
+async function profLancar(tabBar){
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const [{data:teachers=[]},{data:classes=[]}]=await Promise.all([
+    sb.from('teachers').select('id,first_name,last_name').eq('status',true).order('first_name'),
+    sb.from('classes').select('id,name,teacher_id,teacher:teachers(id,first_name,last_name)').eq('status',true).order('name'),
+  ]);
+  const hoje=new Date().toISOString().split('T')[0];
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Controle de Professores</span></div>
+    <div class="page-title"><i class="fa fa-user-clock"></i> Controle de Professores</div>
+    ${tabBar}
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-plus-circle" style="color:var(--brand)"></i> Lançar Aula</span></div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div>
+            <div class="field"><label>Data da aula <span class="required">*</span></label><input id="pl-data" type="date" value="${hoje}"></div>
+            <div class="field"><label>Turma</label>
+              <select id="pl-class" onchange="profPreencherProfResponsavel(this.value,${JSON.stringify(classes.map(c=>({id:c.id,teacher_id:c.teacher_id,teacher:c.teacher})))})">
+                <option value="">— Nenhuma (fora de turma) —</option>
+                ${classes.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field"><label>Professor responsável da turma</label>
+              <select id="pl-teacher">
+                <option value="">— Selecione —</option>
+                ${teachers.map(t=>`<option value="${t.id}">${esc(t.first_name)} ${esc(t.last_name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field"><label>Professor que deu a aula <span class="required">*</span></label>
+              <select id="pl-actual-teacher">
+                <option value="">— Selecione —</option>
+                ${teachers.map(t=>`<option value="${t.id}">${esc(t.first_name)} ${esc(t.last_name)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div>
+            <div class="field"><label>Tipo de aula <span class="required">*</span></label>
+              <select id="pl-type">
+                <option value="aula_normal">Aula normal</option>
+                <option value="substituicao">Substituição</option>
+                <option value="reuniao">Reunião</option>
+                <option value="evento">Evento</option>
+                <option value="outro">Outro</option>
+              </select>
+            </div>
+            <div class="field"><label>Status da aula <span class="required">*</span></label>
+              <select id="pl-status">
+                <option value="realizada">Realizada</option>
+                <option value="nao_realizada">Não realizada</option>
+                <option value="cancelada">Cancelada</option>
+                <option value="falta">Falta do professor</option>
+                <option value="justificada">Falta justificada</option>
+              </select>
+            </div>
+            <div class="field"><label>Horas trabalhadas <span class="required">*</span></label><input id="pl-hours" type="number" min="0.5" max="24" step="0.5" value="1" placeholder="Ex: 1.5"></div>
+            <div class="field"><label>Observação</label><textarea id="pl-notes" placeholder="Informações adicionais..."></textarea></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel-footer">
+        <button class="btn btn-default" onclick="nav('professores',{tab:'historico'})">Cancelar</button>
+        <button class="btn btn-primary" id="btn-lancar-aula" onclick="salvarAula()"><i class="fa fa-save"></i> Lançar aula</button>
+      </div>
+    </div>
+  `);
+}
+
+function profPreencherProfResponsavel(classId, classes){
+  if(!classId) return;
+  const cl=classes.find(c=>c.id===classId);
+  if(cl?.teacher){
+    const sel=$('pl-teacher');
+    if(sel) sel.value=cl.teacher.id||'';
+    const sel2=$('pl-actual-teacher');
+    if(sel2&&!sel2.value) sel2.value=cl.teacher.id||'';
+  }
+}
+
+async function salvarAula(){
+  const data=$('pl-data')?.value;
+  const actualTeacherId=$('pl-actual-teacher')?.value;
+  const hours=parseFloat($('pl-hours')?.value||0);
+  if(!data){showAlert('page-alert','Informe a data da aula.','danger');return;}
+  if(!actualTeacherId){showAlert('page-alert','Informe o professor que deu a aula.','danger');return;}
+  if(!hours||hours<=0){showAlert('page-alert','Informe a quantidade de horas.','danger');return;}
+  const btn=$('btn-lancar-aula');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Salvando...';}
+  const{error}=await sb.rpc('lancar_aula_professor',{
+    p_class_id:$('pl-class')?.value||null,
+    p_teacher_id:$('pl-teacher')?.value||null,
+    p_actual_teacher_id:actualTeacherId,
+    p_lesson_date:data,
+    p_lesson_type:$('pl-type')?.value||'aula_normal',
+    p_status:$('pl-status')?.value||'realizada',
+    p_hours:hours,
+    p_notes:$('pl-notes')?.value||null,
+  });
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="fa fa-save"></i> Lançar aula';}
+  if(error){showAlert('page-alert','Erro: '+error.message,'danger');return;}
+  showAlert('page-alert','Aula lançada com sucesso!','success');
+  setTimeout(()=>nav('professores',{tab:'historico'}),800);
+}
+
+async function profHistorico(tabBar){
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const now=new Date();
+  const mes=parseInt(getFilter('ph-mes')||now.getMonth()+1);
+  const ano=parseInt(getFilter('ph-ano')||now.getFullYear());
+  const teacherFil=getFilter('ph-teacher')||'';
+
+  const [{data:teachers=[]},{data:aulas=[]}]=await Promise.all([
+    sb.from('teachers').select('id,first_name,last_name').eq('status',true).order('first_name'),
+    isSecretaria()
+      ? sb.rpc('get_aulas_mes_secretaria',{p_mes:mes,p_ano:ano,...(teacherFil?{p_teacher_id:teacherFil}:{})})
+      : sb.rpc('get_aulas_mes',{p_mes:mes,p_ano:ano,...(teacherFil?{p_teacher_id:teacherFil}:{})}),
+  ]);
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const totalHoras=aulas.filter(a=>a.status==='realizada').reduce((s,a)=>s+parseFloat(a.hours||0),0);
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Controle de Professores</span></div>
+    <div class="page-title"><i class="fa fa-user-clock"></i> Controle de Professores</div>
+    ${tabBar}
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Filtros</span></div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-col"><label>Mês</label><select id="ph-mes">
+            ${meses.map((m,i)=>`<option value="${i+1}" ${mes===i+1?'selected':''}>${m}</option>`).join('')}
+          </select></div>
+          <div class="form-col"><label>Ano</label><input id="ph-ano" type="number" value="${ano}" min="2020" max="2099"></div>
+          <div class="form-col"><label>Professor</label><select id="ph-teacher">
+            <option value="">Todos</option>
+            ${teachers.map(t=>`<option value="${t.id}" ${teacherFil===t.id?'selected':''}>${esc(t.first_name)} ${esc(t.last_name)}</option>`).join('')}
+          </select></div>
+          <div class="form-col" style="display:flex;align-items:flex-end;gap:6px">
+            <button class="btn btn-primary" onclick="_filters['ph-mes']=$('ph-mes').value;_filters['ph-ano']=$('ph-ano').value;_filters['ph-teacher']=$('ph-teacher').value;nav('professores',{tab:'historico'})"><i class="fa fa-search"></i> Filtrar</button>
+            <button class="btn btn-danger" onclick="clearFilters(['ph-mes','ph-ano','ph-teacher']);nav('professores',{tab:'historico'})">Limpar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
+      <div class="stat-card c-gold"><i class="fa fa-chalkboard-teacher stat-icon"></i><div><div class="stat-num">${aulas.length}</div><div class="stat-label">Total de lançamentos</div></div></div>
+      <div class="stat-card c-dark"><i class="fa fa-clock stat-icon"></i><div><div class="stat-num">${totalHoras.toFixed(1)}h</div><div class="stat-label">Horas realizadas</div></div></div>
+      <div class="stat-card c-orange"><i class="fa fa-check-circle stat-icon"></i><div><div class="stat-num">${aulas.filter(a=>a.status==='realizada').length}</div><div class="stat-label">Aulas realizadas</div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Histórico de aulas — ${meses[mes-1]}/${ano}</span>
+        <button class="btn btn-primary btn-sm" onclick="nav('professores',{tab:'lancar'})"><i class="fa fa-plus"></i> Lançar aula</button>
+      </div>
+      ${aulas.length?`<div class="table-wrap"><table>
+        <thead><tr><th>Data</th><th>Turma</th><th>Prof. Responsável</th><th>Prof. que deu aula</th><th>Tipo</th><th>Status</th><th>Horas</th>${!isSecretaria()?'<th>Valor/h</th>':''}<th>Pago?</th><th>Ações</th></tr></thead>
+        <tbody>${aulas.map(a=>`<tr>
+          <td>${fdate(a.lesson_date)}</td>
+          <td>${esc(a.class_name)||'<span style="color:var(--gray-500)">—</span>'}</td>
+          <td style="font-size:12px">${esc(a.teacher_name)||'—'}</td>
+          <td><strong>${esc(a.actual_teacher_name)||'—'}</strong></td>
+          <td><span class="badge tipo-badge-${a.lesson_type}">${LESSON_TYPE_LABELS[a.lesson_type]||a.lesson_type}</span></td>
+          <td><span class="badge status-badge-${a.status}">${LESSON_STATUS_LABELS[a.status]||a.status}</span></td>
+          <td style="font-weight:600">${parseFloat(a.hours||0).toFixed(1)}h</td>
+          ${!isSecretaria()?`<td style="font-size:12px;color:var(--gray-500)">${fmtBRL(a.valor_hora)}</td>`:''}
+          <td>${a.paid?'<span class="badge badge-success">Pago</span>':'<span class="badge badge-secondary">Pendente</span>'}</td>
+          <td style="white-space:nowrap">
+            <button class="btn-icon" onclick="profEditarAula('${a.id}')" title="Editar"><i class="fa fa-pencil-alt"></i></button>
+            ${isAdmin()?`<button class="btn-icon" style="color:var(--danger)" onclick="profDeletarAula('${a.id}')" title="Excluir"><i class="fa fa-trash"></i></button>`:''}
+          </td>
+        </tr>`).join('')}</tbody>
+      </table></div>`:`<div class="empty-state"><i class="fa fa-chalkboard-teacher"></i>Nenhuma aula lançada para este período.<br><br><button class="btn btn-primary" onclick="nav('professores',{tab:'lancar'})"><i class="fa fa-plus"></i> Lançar primeira aula</button></div>`}
+    </div>
+  `);
+}
+
+async function profEditarAula(id){
+  const {data:aula}=await sb.from('teacher_lessons').select('*').eq('id',id).single();
+  if(!aula){alert('Aula não encontrada.');return;}
+  const [{data:teachers=[]},{data:classes=[]}]=await Promise.all([
+    sb.from('teachers').select('id,first_name,last_name').eq('status',true).order('first_name'),
+    sb.from('classes').select('id,name').eq('status',true).order('name'),
+  ]);
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const d=new Date(aula.lesson_date);
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('professores',{tab:'historico'})">Histórico</a> › <span>Editar lançamento</span></div>
+    <div class="page-title"><i class="fa fa-pencil-alt"></i> Editar lançamento</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Editar aula — ${fdate(aula.lesson_date)}</span></div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div>
+            <div class="field"><label>Data da aula <span class="required">*</span></label><input id="pe-data" type="date" value="${aula.lesson_date}"></div>
+            <div class="field"><label>Turma</label><select id="pe-class">
+              <option value="">— Nenhuma —</option>
+              ${classes.map(c=>`<option value="${c.id}" ${aula.class_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
+            </select></div>
+            <div class="field"><label>Professor responsável</label><select id="pe-teacher">
+              <option value="">— Selecione —</option>
+              ${teachers.map(t=>`<option value="${t.id}" ${aula.teacher_id===t.id?'selected':''}>${esc(t.first_name)} ${esc(t.last_name)}</option>`).join('')}
+            </select></div>
+            <div class="field"><label>Professor que deu a aula <span class="required">*</span></label><select id="pe-actual-teacher">
+              <option value="">— Selecione —</option>
+              ${teachers.map(t=>`<option value="${t.id}" ${aula.actual_teacher_id===t.id?'selected':''}>${esc(t.first_name)} ${esc(t.last_name)}</option>`).join('')}
+            </select></div>
+          </div>
+          <div>
+            <div class="field"><label>Tipo de aula</label><select id="pe-type">
+              ${Object.entries(LESSON_TYPE_LABELS).map(([v,l])=>`<option value="${v}" ${aula.lesson_type===v?'selected':''}>${l}</option>`).join('')}
+            </select></div>
+            <div class="field"><label>Status</label><select id="pe-status">
+              ${Object.entries(LESSON_STATUS_LABELS).map(([v,l])=>`<option value="${v}" ${aula.status===v?'selected':''}>${l}</option>`).join('')}
+            </select></div>
+            <div class="field"><label>Horas <span class="required">*</span></label><input id="pe-hours" type="number" min="0.5" max="24" step="0.5" value="${aula.hours}"></div>
+            <div class="field"><label>Observação</label><textarea id="pe-notes">${esc(aula.notes)}</textarea></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel-footer">
+        <button class="btn btn-default" onclick="nav('professores',{tab:'historico'})">Cancelar</button>
+        <button class="btn btn-primary" id="btn-salvar-edicao" onclick="salvarEdicaoAula('${id}')"><i class="fa fa-save"></i> Salvar</button>
+      </div>
+    </div>
+  `);
+}
+
+async function salvarEdicaoAula(id){
+  const actualTeacherId=$('pe-actual-teacher')?.value;
+  const hours=parseFloat($('pe-hours')?.value||0);
+  if(!actualTeacherId){showAlert('page-alert','Informe o professor que deu a aula.','danger');return;}
+  if(!hours||hours<=0){showAlert('page-alert','Informe a quantidade de horas.','danger');return;}
+  const btn=$('btn-salvar-edicao');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Salvando...';}
+  const{error}=await sb.rpc('atualizar_aula_professor',{
+    p_id:id,
+    p_class_id:$('pe-class')?.value||null,
+    p_teacher_id:$('pe-teacher')?.value||null,
+    p_actual_teacher_id:actualTeacherId,
+    p_lesson_date:$('pe-data')?.value,
+    p_lesson_type:$('pe-type')?.value,
+    p_status:$('pe-status')?.value,
+    p_hours:hours,
+    p_notes:$('pe-notes')?.value||null,
+  });
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="fa fa-save"></i> Salvar';}
+  if(error){showAlert('page-alert','Erro: '+error.message,'danger');return;}
+  nav('professores',{tab:'historico'});
+}
+
+async function profDeletarAula(id){
+  if(!isAdmin()) return;
+  showConfirm(async()=>{
+    const{error}=await sb.rpc('deletar_aula_professor',{p_id:id});
+    if(error){alert('Erro: '+error.message);return;}
+    nav('professores',{tab:'historico'});
+  });
+}
+
+async function profPagamento(tabBar){
+  if(!isAdmin()){nav('professores',{tab:'historico'});return;}
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const now=new Date();
+  const mes=parseInt(getFilter('pp-mes')||now.getMonth()+1);
+  const ano=parseInt(getFilter('pp-ano')||now.getFullYear());
+  const{data:relatorio=[]}=await sb.rpc('get_relatorio_pagamento_professor',{p_mes:mes,p_ano:ano});
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const totalGeral=relatorio.reduce((s,r)=>s+parseFloat(r.total_a_pagar||0),0);
+  const totalHoras=relatorio.reduce((s,r)=>s+parseFloat(r.total_horas||0),0);
+  const totalPago=relatorio.filter(r=>r.todos_pagos).reduce((s,r)=>s+parseFloat(r.total_a_pagar||0),0);
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Controle de Professores</span></div>
+    <div class="page-title"><i class="fa fa-user-clock"></i> Controle de Professores</div>
+    ${tabBar}
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Filtros</span></div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-col"><label>Mês</label><select id="pp-mes">
+            ${meses.map((m,i)=>`<option value="${i+1}" ${mes===i+1?'selected':''}>${m}</option>`).join('')}
+          </select></div>
+          <div class="form-col"><label>Ano</label><input id="pp-ano" type="number" value="${ano}" min="2020" max="2099"></div>
+          <div class="form-col" style="display:flex;align-items:flex-end;gap:6px">
+            <button class="btn btn-primary" onclick="_filters['pp-mes']=$('pp-mes').value;_filters['pp-ano']=$('pp-ano').value;nav('professores',{tab:'pagamento'})"><i class="fa fa-search"></i> Filtrar</button>
+            <button class="btn btn-danger" onclick="clearFilters(['pp-mes','pp-ano']);nav('professores',{tab:'pagamento'})">Limpar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
+      <div class="stat-card c-gold"><i class="fa fa-clock stat-icon"></i><div><div class="stat-num">${totalHoras.toFixed(1)}h</div><div class="stat-label">Horas no mês</div></div></div>
+      <div class="stat-card c-dark"><i class="fa fa-money-bill-wave stat-icon"></i><div><div class="stat-num">${fmtBRL(totalGeral)}</div><div class="stat-label">Total a pagar</div></div></div>
+      <div class="stat-card c-orange"><i class="fa fa-check-double stat-icon"></i><div><div class="stat-num">${fmtBRL(totalPago)}</div><div class="stat-label">Já pago</div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-money-bill-wave" style="color:var(--brand)"></i> Pagamento de Professores — ${meses[mes-1]}/${ano}</span></div>
+      <div class="panel-body" style="padding:12px">
+        ${relatorio.length?relatorio.map(r=>`
+          <div class="prof-pay-card ${r.todos_pagos?'pago':'pendente'}">
+            <div class="prof-pay-info">
+              <div class="prof-pay-nome"><i class="fa fa-chalkboard-teacher" style="color:var(--brand)"></i> ${esc(r.teacher_name)}</div>
+              <div class="prof-pay-stats">
+                <span><i class="fa fa-check-circle" style="color:var(--success)"></i> ${r.total_aulas} aula${r.total_aulas!==1?'s':''}</span>
+                <span><i class="fa fa-clock" style="color:var(--brand)"></i> ${parseFloat(r.total_horas||0).toFixed(1)}h trabalhada${parseFloat(r.total_horas)!==1?'s':''}</span>
+                <span><i class="fa fa-exchange-alt" style="color:var(--warning)"></i> ${r.total_substituicoes} substituição${r.total_substituicoes!==1?'ões':''}</span>
+                ${parseFloat(r.aulas_nao_realizadas)>0?`<span><i class="fa fa-times-circle" style="color:var(--danger)"></i> ${r.aulas_nao_realizadas} não realizada${r.aulas_nao_realizadas!==1?'s':''}</span>`:''}
+                <span style="color:var(--gray-700)"><i class="fa fa-dollar-sign"></i> ${fmtBRL(r.valor_hora)}/h</span>
+              </div>
+              <div style="margin-top:6px">${r.todos_pagos?'<span class="badge badge-success"><i class="fa fa-check"></i> Pago</span>':'<span class="badge badge-warning"><i class="fa fa-clock"></i> Aguardando pagamento</span>'}</div>
+            </div>
+            <div style="text-align:right">
+              <div class="prof-pay-total">${fmtBRL(r.total_a_pagar)}</div>
+              ${!r.todos_pagos?`<button class="btn btn-success btn-sm" style="margin-top:8px" onclick="profMarcarPago('${r.teacher_id}','${esc(r.teacher_name)}',${mes},${ano})"><i class="fa fa-check"></i> Marcar pago</button>`:'<div style="margin-top:8px;font-size:11px;color:var(--success)"><i class="fa fa-check-double"></i> Pago neste mês</div>'}
+              <button class="btn btn-default btn-sm" style="margin-top:4px" onclick="_filters['ph-teacher']='${r.teacher_id}';_filters['ph-mes']=${mes};_filters['ph-ano']=${ano};nav('professores',{tab:'historico'})"><i class="fa fa-list"></i> Ver aulas</button>
+            </div>
+          </div>`).join(''):`<div class="empty-state"><i class="fa fa-money-bill-wave"></i>Nenhum professor com aulas neste período.</div>`}
+      </div>
+    </div>
+  `);
+}
+
+async function profMarcarPago(teacherId,nome,mes,ano){
+  showConfirm(async()=>{
+    const{error}=await sb.rpc('marcar_pago_professor',{p_teacher_id:teacherId,p_mes:mes,p_ano:ano});
+    if(error){alert('Erro: '+error.message);return;}
+    nav('professores',{tab:'pagamento'});
+  });
+  const box=document.querySelector('.confirm-box');
+  if(box){
+    box.querySelector('h4').textContent='Confirmar pagamento';
+    box.querySelector('p').textContent=`Marcar todas as aulas realizadas de ${nome} como pagas neste mês?`;
+    box.querySelector('#confirm-yes').textContent='✓ Confirmar pagamento';
+    box.querySelector('#confirm-yes').className='btn btn-success';
+  }
 }
 
 // ============================
