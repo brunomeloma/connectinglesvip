@@ -1542,12 +1542,11 @@ function profAtualizarContaPagamento(tipo, selectId){
 function profPreencherProfResponsavel(classId, classes){
   if(!classId) return;
   const cl=classes.find(c=>c.id===classId);
-  if(cl?.teacher){
-    const sel=$('pl-teacher');
-    if(sel) sel.value=cl.teacher.id||'';
-    const sel2=$('pl-actual-teacher');
-    if(sel2&&!sel2.value) sel2.value=cl.teacher.id||'';
-  }
+  const profId=cl?.teacher?.id||'';
+  const sel=$('pl-teacher');
+  if(sel) sel.value=profId;
+  const sel2=$('pl-actual-teacher');
+  if(sel2) sel2.value=profId;
 }
 
 async function salvarAula(){
