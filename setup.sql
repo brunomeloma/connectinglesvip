@@ -494,6 +494,7 @@ CREATE TABLE IF NOT EXISTS teacher_lessons (
   status text NOT NULL DEFAULT 'realizada',
   hours numeric(4,2) NOT NULL DEFAULT 1,
   notes text,
+  counts_for_payment boolean DEFAULT true,
   paid boolean DEFAULT false,
   paid_at date,
   paid_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
@@ -501,10 +502,13 @@ CREATE TABLE IF NOT EXISTS teacher_lessons (
   created_at timestamptz DEFAULT now()
 );
 
+ALTER TABLE teacher_lessons ADD COLUMN IF NOT EXISTS counts_for_payment boolean DEFAULT true;
+
+-- Recriar constraints para garantir tipos atualizados (incluindo treinamento)
+ALTER TABLE teacher_lessons DROP CONSTRAINT IF EXISTS tl_type_check;
+ALTER TABLE teacher_lessons ADD CONSTRAINT tl_type_check CHECK (lesson_type IN ('aula_normal','substituicao','reuniao','evento','treinamento','outro'));
+
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='tl_type_check') THEN
-    ALTER TABLE teacher_lessons ADD CONSTRAINT tl_type_check CHECK (lesson_type IN ('aula_normal','substituicao','reuniao','evento','outro'));
-  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='tl_status_check') THEN
     ALTER TABLE teacher_lessons ADD CONSTRAINT tl_status_check CHECK (status IN ('realizada','nao_realizada','cancelada','falta','justificada'));
   END IF;
@@ -536,12 +540,13 @@ CREATE OR REPLACE FUNCTION lancar_aula_professor(
   p_lesson_type text DEFAULT 'aula_normal',
   p_status text DEFAULT 'realizada',
   p_hours numeric DEFAULT 1,
-  p_notes text DEFAULT NULL
+  p_notes text DEFAULT NULL,
+  p_counts_for_payment boolean DEFAULT true
 ) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$ DECLARE v_id uuid; BEGIN
   IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
-  INSERT INTO teacher_lessons(class_id, teacher_id, actual_teacher_id, lesson_date, lesson_type, status, hours, notes, created_by)
-  VALUES (p_class_id, p_teacher_id, COALESCE(p_actual_teacher_id, p_teacher_id), p_lesson_date, p_lesson_type, p_status, p_hours, p_notes, auth.uid())
+  INSERT INTO teacher_lessons(class_id, teacher_id, actual_teacher_id, lesson_date, lesson_type, status, hours, notes, counts_for_payment, created_by)
+  VALUES (p_class_id, p_teacher_id, COALESCE(p_actual_teacher_id, p_teacher_id), p_lesson_date, p_lesson_type, p_status, p_hours, p_notes, p_counts_for_payment, auth.uid())
   RETURNING id INTO v_id;
   RETURN v_id;
 END; $$;
@@ -556,7 +561,8 @@ CREATE OR REPLACE FUNCTION atualizar_aula_professor(
   p_lesson_type text DEFAULT NULL,
   p_status text DEFAULT NULL,
   p_hours numeric DEFAULT NULL,
-  p_notes text DEFAULT NULL
+  p_notes text DEFAULT NULL,
+  p_counts_for_payment boolean DEFAULT NULL
 ) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
   IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
@@ -568,7 +574,8 @@ AS $$ BEGIN
     lesson_type = COALESCE(p_lesson_type, lesson_type),
     status = COALESCE(p_status, status),
     hours = COALESCE(p_hours, hours),
-    notes = COALESCE(p_notes, notes)
+    notes = COALESCE(p_notes, notes),
+    counts_for_payment = COALESCE(p_counts_for_payment, counts_for_payment)
   WHERE id = p_id;
 END; $$;
 
@@ -580,7 +587,7 @@ AS $$ BEGIN
   DELETE FROM teacher_lessons WHERE id = p_id;
 END; $$;
 
--- Listar aulas — admin/financeiro (com valor_hora)
+-- Listar aulas — admin/financeiro (com valor_hora e counts_for_payment)
 CREATE OR REPLACE FUNCTION get_aulas_mes(p_mes int, p_ano int, p_teacher_id uuid DEFAULT NULL)
 RETURNS TABLE(
   id uuid, class_id uuid, class_name text,
@@ -588,7 +595,7 @@ RETURNS TABLE(
   actual_teacher_id uuid, actual_teacher_name text,
   lesson_date date, lesson_type text, status text,
   hours numeric, valor_hora numeric, notes text,
-  paid boolean, paid_at date, created_at timestamptz
+  counts_for_payment boolean, paid boolean, paid_at date, created_at timestamptz
 ) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
   IF NOT has_role(ARRAY['super_admin','direcao','financeiro']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
@@ -599,7 +606,7 @@ AS $$ BEGIN
       tl.actual_teacher_id, (at2.first_name||' '||at2.last_name)::text,
       tl.lesson_date, tl.lesson_type, tl.status,
       tl.hours, COALESCE(at2.valor_hora, 0)::numeric, tl.notes,
-      tl.paid, tl.paid_at, tl.created_at
+      tl.counts_for_payment, tl.paid, tl.paid_at, tl.created_at
     FROM teacher_lessons tl
     LEFT JOIN classes c ON c.id = tl.class_id
     LEFT JOIN teachers tr ON tr.id = tl.teacher_id
@@ -610,14 +617,14 @@ AS $$ BEGIN
     ORDER BY tl.lesson_date DESC;
 END; $$;
 
--- Listar aulas — secretaria (SEM valor_hora)
+-- Listar aulas — secretaria (SEM valor_hora, COM counts_for_payment)
 CREATE OR REPLACE FUNCTION get_aulas_mes_secretaria(p_mes int, p_ano int, p_teacher_id uuid DEFAULT NULL)
 RETURNS TABLE(
   id uuid, class_id uuid, class_name text,
   teacher_id uuid, teacher_name text,
   actual_teacher_id uuid, actual_teacher_name text,
   lesson_date date, lesson_type text, status text,
-  hours numeric, notes text, paid boolean, created_at timestamptz
+  hours numeric, notes text, counts_for_payment boolean, paid boolean, created_at timestamptz
 ) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
   IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
@@ -627,7 +634,7 @@ AS $$ BEGIN
       tl.teacher_id, (tr.first_name||' '||tr.last_name)::text,
       tl.actual_teacher_id, (at2.first_name||' '||at2.last_name)::text,
       tl.lesson_date, tl.lesson_type, tl.status,
-      tl.hours, tl.notes, tl.paid, tl.created_at
+      tl.hours, tl.notes, tl.counts_for_payment, tl.paid, tl.created_at
     FROM teacher_lessons tl
     LEFT JOIN classes c ON c.id = tl.class_id
     LEFT JOIN teachers tr ON tr.id = tl.teacher_id
@@ -639,11 +646,13 @@ AS $$ BEGIN
 END; $$;
 
 -- Relatório financeiro de professores — só admin/direção
+-- Pagamento baseado em: actual_teacher_id + counts_for_payment=true + status=realizada
 CREATE OR REPLACE FUNCTION get_relatorio_pagamento_professor(p_mes int, p_ano int)
 RETURNS TABLE(
   teacher_id uuid, teacher_name text, valor_hora numeric,
-  total_aulas bigint, total_horas numeric, total_substituicoes bigint,
-  aulas_nao_realizadas bigint, total_a_pagar numeric, todos_pagos boolean
+  total_atividades bigint, total_horas_pagas numeric, total_horas_registradas numeric,
+  total_substituicoes bigint, atividades_nao_pagas bigint,
+  total_a_pagar numeric, todos_pagos boolean
 ) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
   IF NOT is_admin() THEN RAISE EXCEPTION 'Permissão negada'; END IF;
@@ -652,12 +661,20 @@ AS $$ BEGIN
       t.id,
       (t.first_name||' '||t.last_name)::text,
       COALESCE(t.valor_hora, 0)::numeric,
-      COUNT(tl.id) FILTER (WHERE tl.status='realizada'),
+      -- total de atividades lançadas (qualquer status)
+      COUNT(tl.id),
+      -- horas que contam para pagamento (realizada + counts_for_payment)
+      COALESCE(SUM(tl.hours) FILTER (WHERE tl.status='realizada' AND tl.counts_for_payment=true), 0)::numeric,
+      -- horas totais realizadas (incluindo não pagas)
       COALESCE(SUM(tl.hours) FILTER (WHERE tl.status='realizada'), 0)::numeric,
-      COUNT(tl.id) FILTER (WHERE tl.lesson_type='substituicao' AND tl.status='realizada'),
-      COUNT(tl.id) FILTER (WHERE tl.status IN ('cancelada','nao_realizada','falta')),
-      COALESCE(SUM(tl.hours) FILTER (WHERE tl.status='realizada'), 0) * COALESCE(t.valor_hora, 0),
-      COALESCE(bool_and(tl.paid) FILTER (WHERE tl.status='realizada'), false)
+      -- substituições realizadas que contam
+      COUNT(tl.id) FILTER (WHERE tl.lesson_type='substituicao' AND tl.status='realizada' AND tl.counts_for_payment=true),
+      -- atividades que não geram pagamento
+      COUNT(tl.id) FILTER (WHERE tl.counts_for_payment=false OR tl.status IN ('cancelada','nao_realizada','falta')),
+      -- valor a pagar = horas pagas × valor/hora do professor que realizou
+      COALESCE(SUM(tl.hours) FILTER (WHERE tl.status='realizada' AND tl.counts_for_payment=true), 0) * COALESCE(t.valor_hora, 0),
+      -- todos pagos = todas as atividades que contam já foram marcadas como pagas
+      COALESCE(bool_and(tl.paid) FILTER (WHERE tl.status='realizada' AND tl.counts_for_payment=true), false)
     FROM teachers t
     LEFT JOIN teacher_lessons tl ON tl.actual_teacher_id = t.id
       AND EXTRACT(MONTH FROM tl.lesson_date)::int = p_mes
@@ -677,7 +694,8 @@ AS $$ BEGIN
   WHERE actual_teacher_id=p_teacher_id
     AND EXTRACT(MONTH FROM lesson_date)::int=p_mes
     AND EXTRACT(YEAR FROM lesson_date)::int=p_ano
-    AND status='realizada';
+    AND status='realizada'
+    AND counts_for_payment=true;
 END; $$;
 
 -- Atualizar valor_hora do professor (admin/direção)

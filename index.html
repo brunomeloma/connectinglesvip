@@ -251,6 +251,7 @@ tr:hover td{background:#fdf9f0}
 .tipo-badge-substituicao{background:#fef3d0;color:#8a5c00}
 .tipo-badge-reuniao{background:#d5ebf8;color:#0f4f7a}
 .tipo-badge-evento{background:#ede0fd;color:#4a1f8a}
+.tipo-badge-treinamento{background:#e0f0fd;color:#0a3d6b}
 .tipo-badge-outro{background:#ebebeb;color:#444}
 .prof-pay-card{background:var(--white);border:1px solid var(--gray-200);border-radius:8px;padding:18px;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:10px}
 .prof-pay-card.pago{border-left:4px solid var(--success)}
@@ -1436,7 +1437,7 @@ function enviarCobrancaWpp(studentId,nome,numero,tipo,dataVenc,boletoInfo){
 // ============================
 
 const LESSON_STATUS_LABELS={realizada:'Realizada',nao_realizada:'Não realizada',cancelada:'Cancelada',falta:'Falta',justificada:'Justificada'};
-const LESSON_TYPE_LABELS={aula_normal:'Aula normal',substituicao:'Substituição',reuniao:'Reunião',evento:'Evento',outro:'Outro'};
+const LESSON_TYPE_LABELS={aula_normal:'Aula normal',substituicao:'Substituição',reuniao:'Reunião',evento:'Evento',treinamento:'Treinamento',outro:'Outro'};
 
 let _profTab='lancar';
 
@@ -1494,12 +1495,13 @@ async function profLancar(tabBar){
             </div>
           </div>
           <div>
-            <div class="field"><label>Tipo de aula <span class="required">*</span></label>
-              <select id="pl-type">
+            <div class="field"><label>Tipo de atividade <span class="required">*</span></label>
+              <select id="pl-type" onchange="profAtualizarContaPagamento(this.value,'pl-counts')">
                 <option value="aula_normal">Aula normal</option>
                 <option value="substituicao">Substituição</option>
                 <option value="reuniao">Reunião</option>
                 <option value="evento">Evento</option>
+                <option value="treinamento">Treinamento</option>
                 <option value="outro">Outro</option>
               </select>
             </div>
@@ -1512,7 +1514,15 @@ async function profLancar(tabBar){
                 <option value="justificada">Falta justificada</option>
               </select>
             </div>
-            <div class="field"><label>Horas trabalhadas <span class="required">*</span></label><input id="pl-hours" type="number" min="0.5" max="24" step="0.5" value="1" placeholder="Ex: 1.5"></div>
+            <div class="field"><label>Horas <span class="required">*</span></label><input id="pl-hours" type="number" min="0.5" max="24" step="0.5" value="1" placeholder="Ex: 1.5"></div>
+            <div class="field">
+              <label>Conta para pagamento?</label>
+              <select id="pl-counts">
+                <option value="true">✅ Sim — entra no cálculo do pagamento</option>
+                <option value="false">🚫 Não — apenas registro histórico</option>
+              </select>
+              <div class="help-text" id="pl-counts-hint">Atividades que contam para pagamento são somadas no relatório mensal do professor.</div>
+            </div>
             <div class="field"><label>Observação</label><textarea id="pl-notes" placeholder="Informações adicionais..."></textarea></div>
           </div>
         </div>
@@ -1523,6 +1533,14 @@ async function profLancar(tabBar){
       </div>
     </div>
   `);
+}
+
+function profAtualizarContaPagamento(tipo, selectId){
+  const sel=$(selectId);
+  if(!sel) return;
+  // reuniao, evento, treinamento: sugerir "não conta" por padrão, mas deixar o usuário mudar
+  const naoContaPorPadrao=['reuniao','evento'];
+  sel.value=naoContaPorPadrao.includes(tipo)?'false':'true';
 }
 
 function profPreencherProfResponsavel(classId, classes){
@@ -1554,6 +1572,7 @@ async function salvarAula(){
     p_status:$('pl-status')?.value||'realizada',
     p_hours:hours,
     p_notes:$('pl-notes')?.value||null,
+    p_counts_for_payment:$('pl-counts')?.value!=='false',
   });
   if(btn){btn.disabled=false;btn.innerHTML='<i class="fa fa-save"></i> Lançar aula';}
   if(error){showAlert('page-alert','Erro: '+error.message,'danger');return;}
@@ -1575,7 +1594,7 @@ async function profHistorico(tabBar){
       : sb.rpc('get_aulas_mes',{p_mes:mes,p_ano:ano,...(teacherFil?{p_teacher_id:teacherFil}:{})}),
   ]);
   const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  const totalHoras=aulas.filter(a=>a.status==='realizada').reduce((s,a)=>s+parseFloat(a.hours||0),0);
+  const totalHoras=aulas.filter(a=>a.status==='realizada'&&a.counts_for_payment).reduce((s,a)=>s+parseFloat(a.hours||0),0);
 
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>Controle de Professores</span></div>
@@ -1602,9 +1621,9 @@ async function profHistorico(tabBar){
       </div>
     </div>
     <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
-      <div class="stat-card c-gold"><i class="fa fa-chalkboard-teacher stat-icon"></i><div><div class="stat-num">${aulas.length}</div><div class="stat-label">Total de lançamentos</div></div></div>
-      <div class="stat-card c-dark"><i class="fa fa-clock stat-icon"></i><div><div class="stat-num">${totalHoras.toFixed(1)}h</div><div class="stat-label">Horas realizadas</div></div></div>
-      <div class="stat-card c-orange"><i class="fa fa-check-circle stat-icon"></i><div><div class="stat-num">${aulas.filter(a=>a.status==='realizada').length}</div><div class="stat-label">Aulas realizadas</div></div></div>
+      <div class="stat-card c-gold"><i class="fa fa-chalkboard-teacher stat-icon"></i><div><div class="stat-num">${aulas.length}</div><div class="stat-label">Lançamentos</div></div></div>
+      <div class="stat-card c-dark"><i class="fa fa-clock stat-icon"></i><div><div class="stat-num">${totalHoras.toFixed(1)}h</div><div class="stat-label">Horas p/ pagamento</div></div></div>
+      <div class="stat-card c-orange"><i class="fa fa-check-circle stat-icon"></i><div><div class="stat-num">${aulas.filter(a=>a.status==='realizada'&&a.counts_for_payment).length}</div><div class="stat-label">Atividades que contam</div></div></div>
     </div>
     <div class="panel">
       <div class="panel-head">
@@ -1612,15 +1631,16 @@ async function profHistorico(tabBar){
         <button class="btn btn-primary btn-sm" onclick="nav('professores',{tab:'lancar'})"><i class="fa fa-plus"></i> Lançar aula</button>
       </div>
       ${aulas.length?`<div class="table-wrap"><table>
-        <thead><tr><th>Data</th><th>Turma</th><th>Prof. Responsável</th><th>Prof. que deu aula</th><th>Tipo</th><th>Status</th><th>Horas</th>${!isSecretaria()?'<th>Valor/h</th>':''}<th>Pago?</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Data</th><th>Turma</th><th>Prof. Responsável</th><th>Prof. que realizou</th><th>Tipo</th><th>Status</th><th>Horas</th><th>Pagamento</th>${!isSecretaria()?'<th>Valor/h</th>':''}<th>Pago?</th><th>Ações</th></tr></thead>
         <tbody>${aulas.map(a=>`<tr>
           <td>${fdate(a.lesson_date)}</td>
           <td>${esc(a.class_name)||'<span style="color:var(--gray-500)">—</span>'}</td>
-          <td style="font-size:12px">${esc(a.teacher_name)||'—'}</td>
+          <td style="font-size:12px;color:var(--gray-500)">${esc(a.teacher_name)||'—'}</td>
           <td><strong>${esc(a.actual_teacher_name)||'—'}</strong></td>
           <td><span class="badge tipo-badge-${a.lesson_type}">${LESSON_TYPE_LABELS[a.lesson_type]||a.lesson_type}</span></td>
           <td><span class="badge status-badge-${a.status}">${LESSON_STATUS_LABELS[a.status]||a.status}</span></td>
           <td style="font-weight:600">${parseFloat(a.hours||0).toFixed(1)}h</td>
+          <td>${a.counts_for_payment?'<span class="badge badge-success" title="Conta para pagamento">✓ Conta</span>':'<span class="badge badge-secondary" title="Não conta para pagamento">— Não conta</span>'}</td>
           ${!isSecretaria()?`<td style="font-size:12px;color:var(--gray-500)">${fmtBRL(a.valor_hora)}</td>`:''}
           <td>${a.paid?'<span class="badge badge-success">Pago</span>':'<span class="badge badge-secondary">Pendente</span>'}</td>
           <td style="white-space:nowrap">
@@ -1666,13 +1686,19 @@ async function profEditarAula(id){
             </select></div>
           </div>
           <div>
-            <div class="field"><label>Tipo de aula</label><select id="pe-type">
+            <div class="field"><label>Tipo de atividade</label><select id="pe-type">
               ${Object.entries(LESSON_TYPE_LABELS).map(([v,l])=>`<option value="${v}" ${aula.lesson_type===v?'selected':''}>${l}</option>`).join('')}
             </select></div>
             <div class="field"><label>Status</label><select id="pe-status">
               ${Object.entries(LESSON_STATUS_LABELS).map(([v,l])=>`<option value="${v}" ${aula.status===v?'selected':''}>${l}</option>`).join('')}
             </select></div>
             <div class="field"><label>Horas <span class="required">*</span></label><input id="pe-hours" type="number" min="0.5" max="24" step="0.5" value="${aula.hours}"></div>
+            <div class="field"><label>Conta para pagamento?</label>
+              <select id="pe-counts">
+                <option value="true" ${aula.counts_for_payment!==false?'selected':''}>✅ Sim — entra no cálculo do pagamento</option>
+                <option value="false" ${aula.counts_for_payment===false?'selected':''}>🚫 Não — apenas registro histórico</option>
+              </select>
+            </div>
             <div class="field"><label>Observação</label><textarea id="pe-notes">${esc(aula.notes)}</textarea></div>
           </div>
         </div>
@@ -1702,6 +1728,7 @@ async function salvarEdicaoAula(id){
     p_status:$('pe-status')?.value,
     p_hours:hours,
     p_notes:$('pe-notes')?.value||null,
+    p_counts_for_payment:$('pe-counts')?.value!=='false',
   });
   if(btn){btn.disabled=false;btn.innerHTML='<i class="fa fa-save"></i> Salvar';}
   if(error){showAlert('page-alert','Erro: '+error.message,'danger');return;}
@@ -1726,7 +1753,7 @@ async function profPagamento(tabBar){
   const{data:relatorio=[]}=await sb.rpc('get_relatorio_pagamento_professor',{p_mes:mes,p_ano:ano});
   const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const totalGeral=relatorio.reduce((s,r)=>s+parseFloat(r.total_a_pagar||0),0);
-  const totalHoras=relatorio.reduce((s,r)=>s+parseFloat(r.total_horas||0),0);
+  const totalHoras=relatorio.reduce((s,r)=>s+parseFloat(r.total_horas_pagas||0),0);
   const totalPago=relatorio.filter(r=>r.todos_pagos).reduce((s,r)=>s+parseFloat(r.total_a_pagar||0),0);
 
   setContent(`
@@ -1762,10 +1789,11 @@ async function profPagamento(tabBar){
             <div class="prof-pay-info">
               <div class="prof-pay-nome"><i class="fa fa-chalkboard-teacher" style="color:var(--brand)"></i> ${esc(r.teacher_name)}</div>
               <div class="prof-pay-stats">
-                <span><i class="fa fa-check-circle" style="color:var(--success)"></i> ${r.total_aulas} aula${r.total_aulas!==1?'s':''}</span>
-                <span><i class="fa fa-clock" style="color:var(--brand)"></i> ${parseFloat(r.total_horas||0).toFixed(1)}h trabalhada${parseFloat(r.total_horas)!==1?'s':''}</span>
-                <span><i class="fa fa-exchange-alt" style="color:var(--warning)"></i> ${r.total_substituicoes} substituição${r.total_substituicoes!==1?'ões':''}</span>
-                ${parseFloat(r.aulas_nao_realizadas)>0?`<span><i class="fa fa-times-circle" style="color:var(--danger)"></i> ${r.aulas_nao_realizadas} não realizada${r.aulas_nao_realizadas!==1?'s':''}</span>`:''}
+                <span><i class="fa fa-list" style="color:var(--brand)"></i> ${r.total_atividades} lançamento${r.total_atividades!==1?'s':''}</span>
+                <span><i class="fa fa-clock" style="color:var(--success)"></i> ${parseFloat(r.total_horas_pagas||0).toFixed(1)}h p/ pagamento</span>
+                ${parseFloat(r.total_horas_registradas||0)>parseFloat(r.total_horas_pagas||0)?`<span style="color:var(--gray-500)"><i class="fa fa-history"></i> ${parseFloat(r.total_horas_registradas||0).toFixed(1)}h registradas</span>`:''}
+                <span><i class="fa fa-exchange-alt" style="color:var(--warning)"></i> ${r.total_substituicoes} subst.</span>
+                ${parseFloat(r.atividades_nao_pagas||0)>0?`<span style="color:var(--gray-500)"><i class="fa fa-ban"></i> ${r.atividades_nao_pagas} sem pagamento</span>`:''}
                 <span style="color:var(--gray-700)"><i class="fa fa-dollar-sign"></i> ${fmtBRL(r.valor_hora)}/h</span>
               </div>
               <div style="margin-top:6px">${r.todos_pagos?'<span class="badge badge-success"><i class="fa fa-check"></i> Pago</span>':'<span class="badge badge-warning"><i class="fa fa-clock"></i> Aguardando pagamento</span>'}</div>
