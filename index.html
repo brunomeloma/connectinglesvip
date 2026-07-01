@@ -1536,11 +1536,7 @@ async function profLancar(tabBar){
 }
 
 function profAtualizarContaPagamento(tipo, selectId){
-  const sel=$(selectId);
-  if(!sel) return;
-  // reuniao, evento, treinamento: sugerir "não conta" por padrão, mas deixar o usuário mudar
-  const naoContaPorPadrao=['reuniao','evento'];
-  sel.value=naoContaPorPadrao.includes(tipo)?'false':'true';
+  // Todos os tipos contam por padrão — o usuário decide manualmente
 }
 
 function profPreencherProfResponsavel(classId, classes){
