@@ -1447,13 +1447,17 @@ pages.professores=async function({tab}={}){
   const tabs=[
     {id:'lancar',label:'Lançar Aula',icon:'fa-plus-circle'},
     {id:'historico',label:'Histórico',icon:'fa-list'},
-    ...(isAdmin()?[{id:'pagamento',label:'Pagamento',icon:'fa-money-bill-wave'}]:[]),
+    ...(isAdmin()?[
+      {id:'pagamento',label:'Pagamento',icon:'fa-money-bill-wave'},
+      {id:'config',label:'Configuração',icon:'fa-cog'},
+    ]:[]),
   ];
   const tabBar=`<div class="tab-bar">${tabs.map(t=>`<button class="tab-btn${_profTab===t.id?' active':''}" onclick="nav('professores',{tab:'${t.id}'})"><i class="fa ${t.icon}"></i> ${t.label}</button>`).join('')}</div>`;
 
   if(_profTab==='lancar') return profLancar(tabBar);
   if(_profTab==='historico') return profHistorico(tabBar);
   if(_profTab==='pagamento'&&isAdmin()) return profPagamento(tabBar);
+  if(_profTab==='config'&&isAdmin()) return profConfig(tabBar);
   _profTab='lancar'; profLancar(tabBar);
 };
 
@@ -1817,6 +1821,83 @@ async function profMarcarPago(teacherId,nome,mes,ano){
     box.querySelector('#confirm-yes').textContent='✓ Confirmar pagamento';
     box.querySelector('#confirm-yes').className='btn btn-success';
   }
+}
+
+async function profConfig(tabBar){
+  if(!isAdmin()){nav('professores',{tab:'lancar'});return;}
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const{data:teachers=[]}=await sb.from('teachers').select('id,first_name,last_name,valor_hora,status').eq('status',true).order('first_name');
+  const valorAtual=teachers.length?Math.max(...teachers.map(t=>parseFloat(t.valor_hora||0))):0;
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Controle de Professores</span></div>
+    <div class="page-title"><i class="fa fa-user-clock"></i> Controle de Professores</div>
+    ${tabBar}
+    <div id="page-alert" class="alert"></div>
+
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-globe" style="color:var(--brand)"></i> Valor hora/aula padrão — Aplicar para todos</span></div>
+      <div class="panel-body">
+        <p style="color:var(--gray-700);font-size:13px;margin-bottom:14px">Define um valor padrão e aplica para todos os professores ativos de uma vez. Depois é possível ajustar individualmente abaixo.</p>
+        <div class="form-row" style="align-items:flex-end">
+          <div class="form-col" style="max-width:220px">
+            <label style="font-size:12px;font-weight:500;color:var(--gray-700);display:block;margin-bottom:4px">Valor hora/aula padrão (R$)</label>
+            <input id="cfg-valor-global" type="number" min="0" step="0.01" placeholder="Ex: 50.00" value="${valorAtual||''}">
+          </div>
+          <div class="form-col" style="flex:0">
+            <button class="btn btn-primary" id="btn-aplicar-global" onclick="profAplicarGlobal()">
+              <i class="fa fa-check-double"></i> Aplicar para todos os professores ativos
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-list" style="color:var(--brand)"></i> Valor individual por professor</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Professor</th><th>Valor hora/aula atual</th><th>Novo valor (R$)</th><th>Ação</th></tr></thead>
+          <tbody>
+            ${teachers.map((t,i)=>`
+            <tr id="row-prof-${t.id}">
+              <td>${i+1}</td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(t.first_name)}</div><strong>${esc(t.first_name)} ${esc(t.last_name)}</strong></div></td>
+              <td id="valor-atual-${t.id}" style="font-weight:600;color:var(--gray-900)">${fmtBRL(t.valor_hora)}</td>
+              <td style="width:180px"><input type="number" min="0" step="0.01" id="valor-ind-${t.id}" value="${parseFloat(t.valor_hora||0).toFixed(2)}" placeholder="0.00" style="width:100%;padding:6px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px"></td>
+              <td>
+                <button class="btn btn-primary btn-sm" onclick="profSalvarIndividual('${t.id}','${esc(t.first_name)} ${esc(t.last_name)}')">
+                  <i class="fa fa-save"></i> Salvar
+                </button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+}
+
+async function profAplicarGlobal(){
+  const valor=parseFloat($('cfg-valor-global')?.value||0);
+  if(isNaN(valor)||valor<0){showAlert('page-alert','Informe um valor válido.','danger');return;}
+  const btn=$('btn-aplicar-global');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Aplicando...';}
+  const{data:count,error}=await sb.rpc('aplicar_valor_hora_global',{p_valor_hora:valor});
+  if(btn){btn.disabled=false;btn.innerHTML='<i class="fa fa-check-double"></i> Aplicar para todos os professores ativos';}
+  if(error){showAlert('page-alert','Erro: '+error.message,'danger');return;}
+  showAlert('page-alert',`${fmtBRL(valor)}/h aplicado para ${count} professor${count!==1?'es':''} com sucesso!`,'success');
+  setTimeout(()=>nav('professores',{tab:'config'}),900);
+}
+
+async function profSalvarIndividual(teacherId,nome){
+  const valor=parseFloat($(`valor-ind-${teacherId}`)?.value||0);
+  if(isNaN(valor)||valor<0){showAlert('page-alert','Informe um valor válido.','danger');return;}
+  const{error}=await sb.rpc('atualizar_valor_hora',{p_teacher_id:teacherId,p_valor_hora:valor});
+  if(error){showAlert('page-alert','Erro ao salvar '+nome+': '+error.message,'danger');return;}
+  const cell=$(`valor-atual-${teacherId}`);
+  if(cell) cell.textContent=fmtBRL(valor);
+  showAlert('page-alert',`${nome} — valor atualizado para ${fmtBRL(valor)}/h`,'success');
 }
 
 // ============================

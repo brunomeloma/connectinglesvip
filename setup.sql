@@ -698,12 +698,23 @@ AS $$ BEGIN
     AND counts_for_payment=true;
 END; $$;
 
--- Atualizar valor_hora do professor (admin/direção)
+-- Atualizar valor_hora de um professor específico (admin/direção)
 CREATE OR REPLACE FUNCTION atualizar_valor_hora(p_teacher_id uuid, p_valor_hora numeric)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
   IF NOT is_admin() THEN RAISE EXCEPTION 'Permissão negada'; END IF;
   UPDATE teachers SET valor_hora = p_valor_hora WHERE id = p_teacher_id;
+END; $$;
+
+-- Aplicar valor_hora global para todos os professores ativos (admin/direção)
+CREATE OR REPLACE FUNCTION aplicar_valor_hora_global(p_valor_hora numeric)
+RETURNS int LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_count int; BEGIN
+  IF NOT is_admin() THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF p_valor_hora < 0 THEN RAISE EXCEPTION 'Valor não pode ser negativo'; END IF;
+  UPDATE teachers SET valor_hora = p_valor_hora WHERE status = true;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
 END; $$;
 
 
