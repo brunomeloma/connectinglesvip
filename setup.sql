@@ -740,8 +740,6 @@ CREATE POLICY "comprovantes_delete" ON storage.objects FOR DELETE USING (bucket_
 -- O responsável NUNCA acessa a tabela diretamente — só via as 3 RPCs
 -- marcadas como "PÚBLICA" abaixo, validadas por token.
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE IF NOT EXISTS document_signatures (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   student_id uuid REFERENCES students(id) ON DELETE CASCADE,
@@ -792,7 +790,7 @@ RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$ DECLARE v_token text; BEGIN
   IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
   IF p_document_type NOT IN ('turma_infantil','adulto','vip','vip_premium') THEN RAISE EXCEPTION 'Tipo de documento inválido'; END IF;
-  v_token := encode(gen_random_bytes(32), 'hex');
+  v_token := replace(gen_random_uuid()::text,'-','') || replace(gen_random_uuid()::text,'-','');
   INSERT INTO document_signatures (student_id, document_type, token, created_by)
   VALUES (p_student_id, p_document_type, v_token, auth.uid());
   RETURN v_token;
