@@ -2818,13 +2818,15 @@ function buildContractHtml(type,studentName){
 
 // --- PÁGINA DA SECRETARIA: GERAR LINKS E VER AUDITORIA ---
 let _docsCache=[];
+let _docsAlunosCache=[];
 pages.documentos=async function(){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const[{data:alunos=[]},{data:docs=[]}]=await Promise.all([
-    sb.from('students').select('id,first_name,last_name').eq('status',true).order('first_name'),
+    sb.from('students').select('id,first_name,last_name,whatsapp,mobile_number').eq('status',true).order('first_name'),
     sb.rpc('listar_documentos_assinatura'),
   ]);
   _docsCache=docs;
+  _docsAlunosCache=alunos;
 
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>Documentos</span></div>
@@ -2895,14 +2897,19 @@ async function gerarLinkDocumento(){
   const{data:token,error}=await sb.rpc('gerar_link_assinatura',{p_student_id:studentId,p_document_type:docType});
   if(error){showAlert('page-alert','Erro ao gerar link: '+error.message,'danger');return;}
   const url=location.origin+location.pathname+'?assinar='+token;
+  const aluno=_docsAlunosCache.find(a=>a.id===studentId);
   const nomeAluno=esc($('doc-student').selectedOptions[0].textContent);
   const msg=encodeURIComponent(`Olá! Segue o link para leitura e assinatura do contrato de ${nomeAluno} na Connect Inglês VIP:\n${url}`);
+  let numero=(aluno?.whatsapp||aluno?.mobile_number||'').replace(/\D/g,'');
+  if(numero&&!numero.startsWith('55')) numero='55'+numero;
+  const waHref=numero?`https://wa.me/${numero}?text=${msg}`:`https://wa.me/?text=${msg}`;
   $('doc-link-result').innerHTML=`
     <div class="doc-link-box">
       <input type="text" id="doc-link-input" value="${url}" readonly>
       <button class="btn btn-default btn-sm" onclick="copiarLinkDocumento()"><i class="fa fa-copy"></i> <span id="doc-copy-label">Copiar</span></button>
-      <a class="btn btn-sm" style="background:#25D366;color:#fff" href="https://wa.me/?text=${msg}" target="_blank"><i class="fab fa-whatsapp"></i> Enviar</a>
+      <a class="btn btn-sm" style="background:#25D366;color:#fff" href="${waHref}" target="_blank"><i class="fab fa-whatsapp"></i> Enviar</a>
     </div>
+    ${numero?'':'<div class="help-text" style="color:var(--danger)">Aluno sem WhatsApp/celular cadastrado — o botão Enviar vai abrir a busca de contato no WhatsApp.</div>'}
     <div class="help-text">O link expira em 30 dias e só pode ser assinado uma vez.</div>
   `;
   showAlert('page-alert','Link gerado com sucesso!','success');
