@@ -261,6 +261,52 @@ tr:hover td{background:#fdf9f0}
 .prof-pay-stats{font-size:12px;color:var(--gray-500);display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}
 .prof-pay-total{font-size:18px;font-weight:700;color:var(--gray-900);white-space:nowrap}
 
+/* DOCUMENTOS — LEITURA E ASSINATURA */
+.doc-status-pendente{background:#ebebeb;color:#444}
+.doc-status-aberto{background:#d5ebf8;color:#0f4f7a}
+.doc-status-lido{background:#fef3d0;color:#8a5c00}
+.doc-status-assinado{background:#d4f0e0;color:#1a6b3a}
+.doc-status-revogado{background:#fde0de;color:#8b1a1a}
+.doc-link-box{display:flex;gap:8px;align-items:center;margin-top:10px}
+.doc-link-box input{flex:1;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px;background:var(--gray-50);color:var(--gray-700)}
+.doc-detail-row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--gray-200);font-size:13px}
+.doc-detail-row:last-child{border-bottom:none}
+.doc-detail-row span:first-child{color:var(--gray-500)}
+.doc-detail-row span:last-child{color:var(--gray-900);font-weight:500;text-align:right}
+
+/* PÁGINA PÚBLICA DE ASSINATURA */
+#sign-page{display:none;min-height:100vh;background:#f0ede8;padding:24px 14px}
+.sign-wrap{max-width:760px;margin:0 auto}
+.sign-header{text-align:center;padding:18px 0 22px}
+.sign-header .login-logo{font-size:12px;font-weight:600;letter-spacing:3px;color:var(--brand-dark);text-transform:uppercase}
+.sign-header .sign-brand{font-size:22px;font-weight:700;color:var(--gray-900)}
+.sign-header .sign-brand span{color:var(--brand-dark)}
+.sign-card{background:#fff;border-radius:10px;border:1px solid var(--gray-200);box-shadow:0 6px 24px rgba(0,0,0,.08);overflow:hidden}
+.sign-card-head{padding:16px 22px;border-bottom:1px solid var(--gray-200);background:var(--gray-50)}
+.sign-card-head h3{font-size:16px;color:var(--gray-900);margin-bottom:2px}
+.sign-card-head p{font-size:12px;color:var(--gray-500)}
+.sign-doc-box{max-height:52vh;overflow-y:auto;padding:22px 26px;border-bottom:1px solid var(--gray-200);font-size:13px;line-height:1.65;color:var(--gray-900);background:#fff}
+.sign-doc-box h4{font-size:14px;margin:18px 0 8px;color:var(--brand-dark)}
+.sign-doc-box h4:first-child{margin-top:0}
+.sign-doc-box p{margin-bottom:10px;text-align:justify}
+.sign-doc-box .sign-doc-title{font-size:15px;font-weight:700;text-align:center;margin-bottom:14px;color:var(--gray-900)}
+.sign-scroll-hint{padding:10px 22px;font-size:12px;color:var(--gray-500);background:var(--gray-50);border-bottom:1px solid var(--gray-200);display:flex;align-items:center;gap:8px}
+.sign-scroll-hint.done{color:var(--success)}
+.sign-actions{padding:20px 22px}
+.sign-checkbox-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;font-size:13px;color:var(--gray-700)}
+.sign-checkbox-row input{margin-top:3px;width:18px;height:18px;flex-shrink:0}
+.sign-checkbox-row input:disabled{opacity:.4}
+.sign-fields{display:none;gap:12px;margin-bottom:16px}
+.sign-fields.show{display:flex;flex-wrap:wrap}
+.sign-fields .field{flex:1;min-width:200px;margin-bottom:0}
+.sign-result{text-align:center;padding:50px 26px}
+.sign-result i{font-size:44px;margin-bottom:14px;display:block}
+.sign-result.ok i{color:var(--success)}
+.sign-result.err i{color:var(--danger)}
+.sign-result h3{font-size:17px;margin-bottom:8px;color:var(--gray-900)}
+.sign-result p{color:var(--gray-500);font-size:13px}
+.sign-footer{text-align:center;font-size:11px;color:var(--gray-500);padding:16px 0 4px}
+
 /* MOBILE TOGGLE */
 .mobile-toggle{display:none;background:none;border:none;font-size:20px;color:var(--brand);cursor:pointer;padding:4px 8px}
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:998}
@@ -365,6 +411,7 @@ let currentUser = null;
     <div class="sb-item no-professor" data-page="professores" onclick="nav('professores')"><i class="fa fa-user-clock"></i> Prof. — Horas</div>
     <div class="sb-item" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
     <div class="sb-item" data-page="vip" onclick="nav('vip')"><i class="fa fa-star"></i> VIP Online</div>
+    <div class="sb-item" data-page="documentos" onclick="nav('documentos')"><i class="fa fa-file-signature"></i> Documentos</div>
     <div class="sb-logout">
       <div class="sb-item" onclick="doLogout()"><i class="fa fa-sign-out-alt"></i> Sair</div>
     </div>
@@ -380,6 +427,18 @@ let currentUser = null;
   </div>
 
 </div>
+</div>
+
+<!-- ===== PÁGINA PÚBLICA — LEITURA E ASSINATURA DE DOCUMENTO ===== -->
+<div id="sign-page">
+  <div class="sign-wrap">
+    <div class="sign-header">
+      <div class="login-logo">Connect Inglês</div>
+      <div class="sign-brand"><span>VIP</span> — Documentos</div>
+    </div>
+    <div id="sign-content"></div>
+    <div class="sign-footer">Este acesso é individual e registrado para fins de segurança jurídica.</div>
+  </div>
 </div>
 
 <!-- CONFIRM DIALOG -->
@@ -427,6 +486,20 @@ let currentUser = null;
     <div class="pgto-footer">
       <button class="btn btn-default" onclick="closePgtoModal()">Cancelar</button>
       <button class="btn btn-success" id="pgto-confirmar" onclick="confirmarPagamentoModal()"><i class="fa fa-check"></i> Confirmar pagamento</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DETALHES DO DOCUMENTO (auditoria) -->
+<div class="pgto-overlay" id="doc-detail-overlay" style="display:none" onclick="if(event.target===this)closeDocDetailModal()">
+  <div class="pgto-box">
+    <div class="pgto-header">
+      <h4><i class="fa fa-file-signature" style="color:var(--brand)"></i> Detalhes do documento</h4>
+      <button class="pgto-close" onclick="closeDocDetailModal()">&#x2715;</button>
+    </div>
+    <div class="pgto-body" id="doc-detail-body"></div>
+    <div class="pgto-footer">
+      <button class="btn btn-default" onclick="closeDocDetailModal()">Fechar</button>
     </div>
   </div>
 </div>
@@ -2464,6 +2537,411 @@ async function deletarContato(contatoId,studentId){
 }
 
 // ============================
+// DOCUMENTOS — LEITURA E ASSINATURA ELETRÔNICA
+// ============================
+const DOCUMENT_LABELS={turma_infantil:'Contrato — Turma Infantil',adulto:'Contrato — Adulto',vip:'Contrato — VIP Individual',vip_premium:'Contrato — VIP Premium'};
+const DOC_STATUS_LABELS={pendente:'Pendente',aberto:'Aberto',lido:'Lido',assinado:'Assinado',revogado:'Revogado/Expirado'};
+
+function toRoman(num){
+  const map=[[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];
+  let res='';
+  for(const[v,s] of map){while(num>=v){res+=s;num-=v;}}
+  return res;
+}
+
+function renderContractBlocks(blocks){
+  let n=0;
+  return blocks.map(b=>{
+    if(b.type==='h4') return `<h4>${b.text}</h4>`;
+    if(b.type==='raw') return b.html;
+    n++;
+    return `<p><strong>${toRoman(n)}.</strong> ${b.text}</p>`;
+  }).join('');
+}
+
+function contractHeader(studentName,docLabel){
+  return `
+    <p class="sign-doc-title">CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS DE ENSINO DE IDIOMAS</p>
+    <p><strong>Aluno(a) beneficiário(a):</strong> ${esc(studentName)} &nbsp;•&nbsp; <strong>Módulo:</strong> ${esc(docLabel)}</p>
+    <p>Pelo presente instrumento particular de CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS – MÓDULO DO CURSO DE IDIOMA DA LÍNGUA INGLESA, A CONNECT INGLÊS VIP, inscrita sob o CNPJ nº 40.477.269/001-88, com sede na Rua Pernambuco, nº 978, Nova Imperatriz, Imperatriz – MA, representada neste ato pelo Diretor Executivo Nathan Barroso Pinheiro de Souza, portador da cédula de identidade nº 031072592006-2 SSP/MA, inscrito no CPF nº 017.459.223-00, neste ato denominada CONTRATADA, e o(a) CONTRATANTE, qualificado(a) no requerimento de matrícula, têm entre si, de livre e espontânea vontade, firmado o presente contrato de prestação de serviços, com as cláusulas e condições que seguem abaixo.</p>
+    <p>Os dados pessoais do aluno, dos pais ou responsáveis serão sigilosos e estarão protegidos nos termos da Lei nº 13.709/2018 (Lei Geral de Proteção de Dados Pessoais – LGPD). Os dados coletados somente serão utilizados pela Connect Inglês Vip para fins educacionais ou para eventuais cobranças extrajudiciais e judiciais por inadimplemento, bem como para facilitar a comunicação entre a instituição e os responsáveis, sempre visando o desenvolvimento pedagógico do aluno. Para qualquer outra finalidade, a Connect Inglês Vip deverá obter autorização expressa e por escrito dos pais ou responsáveis.</p>
+    <h4>Qualificação da empresa contratada</h4>
+    <p>CONNECT INGLÊS VIP — Rua Pernambuco, nº 978, Nova Imperatriz, Imperatriz – MA — Telefone (99) 99116-2110 e (99) 99184-5500 — CNPJ nº 40.477.269/001-88.</p>
+    <p class="help-text">A qualificação completa do(a) CONTRATANTE e do(a) aluno(a) (dados pessoais, endereço, filiação etc.) consta no requerimento de matrícula preenchido na secretaria da escola, parte integrante deste contrato.</p>
+  `;
+}
+
+function distribuicaoTurmasHtml(){
+  return `
+    <ul style="margin:0 0 10px 18px;padding:0">
+      <li>Módulo Infantil (4 a 9 anos) — mensalidade R$ 130,00</li>
+      <li>Módulo Regular (a partir de 10 anos) — mensalidade R$ 150,00</li>
+      <li>Módulo VIP individual — mensalidade R$ 350,00</li>
+      <li>Módulo VIP Premium — mensalidade R$ 450,00</li>
+    </ul>
+    <p>Poderão ser concedidos descontos, meia bolsa de estudo ou bolsa integral de estudo, a critério da instituição.</p>
+  `;
+}
+
+function contractFooter(){
+  return `
+    <h4>Aceite e assinatura</h4>
+    <p>Neste ato, o(a) CONTRATANTE declara ter lido integralmente o presente CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS DE ENSINO DE IDIOMAS, ter tomado ciência de todas as suas cláusulas, com as quais concorda, e reitera sua concordância. Declara ainda que as informações prestadas no ato da matrícula são verdadeiras, e que a assinatura eletrônica registrada a seguir — acompanhada de data, horário, endereço IP e dispositivo utilizado — tem, para todos os fins de direito, a mesma validade da assinatura de próprio punho.</p>
+  `;
+}
+
+function buildContractHtml(type,studentName){
+  const h4=t=>({type:'h4',text:t});
+  const raw=h=>({type:'raw',html:h});
+  const cl=t=>({type:'clause',text:t});
+
+  const blocks=[
+    h4('1. Dos Serviços Prestados'),
+    cl('O presente contrato ANUAL tem por objeto a prestação de serviços educacionais, pela CONNECT INGLÊS VIP, no ano letivo de 2026.'),
+    cl('Caso a matrícula seja realizada após o mês de janeiro, o presente contrato terá vigência a partir do mês da efetivação da matrícula até dezembro do mesmo ano letivo.'),
+  ];
+
+  if(type==='vip_premium'){
+    blocks.push(cl('O Módulo Premium consiste em aulas ministradas pelo professor Nathan Barroso Pinheiro de Souza. Em caso de necessidade de alteração de dia, horário ou turno, ou em situações de afastamento por motivo de doença, a CONTRATADA compromete-se a disponibilizar outro profissional qualificado de sua equipe para a realização das aulas. Caso o CONTRATANTE não concorde com a substituição, a Escola e o CONTRATANTE alinharão nova data e horário convenientes para ambas as partes.'));
+  }
+
+  blocks.push(
+    h4('2. Distribuição de Turmas'),
+    raw(distribuicaoTurmasHtml()),
+    cl('O módulo é dividido em dois períodos: de janeiro a junho e de julho a dezembro, com pausa para o recesso escolar. Cada módulo totaliza 44 horas de carga horária, observando-se os feriados municipais, estaduais e federais para a adequada distribuição das atividades.')
+  );
+
+  if(type==='turma_infantil'){
+    blocks.push(cl('A CONTRATADA se responsabiliza por manter o valor do módulo contratado caso, durante a vigência deste contrato, a criança mude de faixa etária, passando do módulo infantil para o módulo regular. Eventual atualização de valores somente ocorrerá no ano subsequente, conforme política de reajuste anual aplicável aos alunos do módulo infantil.'));
+  } else {
+    blocks.push(cl('A CONTRATADA se responsabiliza por manter o valor do módulo contratado caso, durante a vigência deste contrato, ocorra eventual atualização de valores; esta somente ocorrerá no ano subsequente, conforme política de reajuste anual aplicável aos módulos.'));
+  }
+
+  blocks.push(
+    cl('Na ocasião em que a contratação for efetuada após o início do primeiro mês (janeiro) que marca o início das aulas contratadas, o valor total do pacote será cobrado de modo proporcional ao ano vigente (entende-se como período anual o equivalente a 12 (doze) meses para cálculo do valor proporcional do pacote ora contratado).'),
+    cl('A vigência deste contrato inicia-se na data de sua assinatura e permanece válida até dezembro de 2026, período no qual a CONTRATADA deverá prestar os serviços contratados, observando a carga horária de 44 (quarenta e quatro) horas prevista para cada módulo.'),
+    cl('FRISA-SE QUE O RECESSO NO MÊS DE JULHO NÃO ISENTA O(A) CONTRATANTE DO PAGAMENTO DA PARCELA DESTE MÊS, TENDO EM VISTA QUE A REFERIDA PARCELA FAZ PARTE DO PARCELAMENTO DO VALOR DO PACOTE, OU SEJA, TAL MÉTODO DE PAGAMENTO E QUANTIDADE DE PARCELAS FORAM ESCOLHIDOS EXCLUSIVAMENTE PELO(A) CONTRATANTE.'),
+    cl('As aulas do primeiro módulo (janeiro a junho) iniciaram entre os dias 12 e 17 de janeiro, variando conforme o dia de aula de cada turma — que possui um encontro semanal de duas horas, de segunda a sábado — e serão encerradas entre os dias 22 e 27 de junho. O segundo módulo (julho a dezembro) de 2026 retornará às atividades entre os dias 20 e 25 de julho de 2026, encerrando-se entre os dias 07 e 12 de dezembro, igualmente de acordo com o dia de aula de cada turma.'),
+    cl('A CONTRATADA se obriga a prestar serviços educacionais de ensino de idiomas, presencialmente, nesta cidade, ou ainda online através de plataforma disponibilizada pela escola, para que as aulas sejam ministradas relativas ao curso e nível adequados ao aluno(a), baseados nos diversos cursos por ela adotados e no local e horários por ela definidos, e de acordo com o calendário escolar do período letivo contratado, sendo de inteira responsabilidade da CONTRATADA a orientação técnica sobre a prestação de serviços de ensino, inclusive quanto ao remanejamento de professores e à orientação didático-pedagógica, obedecendo a seu exclusivo critério, sem ingerência do CONTRATANTE.'),
+    cl('A Connect Inglês Vip poderá prestar os serviços educacionais de forma presencial, não presencial ou híbrida, sempre de acordo com as normas regulatórias das autoridades educacionais da União, do Estado do Maranhão e do Município de Imperatriz, editadas em razão de qualquer fator externo que altere a normalidade do ensino. Quaisquer das formas acima adotadas serão consideradas como efetivo cumprimento do presente contrato.'),
+
+    h4('3. Do Requerimento de Matrícula'),
+    cl('A validade deste contrato e, por consequência, da matrícula, dependem da inexistência de débito do aluno beneficiário em anos letivos anteriores e da satisfação da legislação de ensino, incluindo a respectiva documentação escolar.'),
+    cl('O ato da matrícula terá sua confirmação formal através da entrega dos documentos solicitados pela CONTRATADA, efetivado após o preenchimento de todos os dados exigidos no preâmbulo deste contrato pelo responsável financeiro, com o pagamento à vista do pacote ou da primeira parcela do pacote anual contratado, bem como após a assinatura formal deste instrumento.'),
+
+    h4('4. Dos Valores e Vencimentos'),
+    cl('Como contraprestação aos serviços educacionais prestados pela CONTRATADA, o CONTRATANTE compromete-se a pagar o valor do módulo/pacote contratado, dividido no número de parcelas iguais e sucessivas combinado no ato da matrícula, com vencimento no dia acordado de cada mês, sendo a primeira parcela paga a título de arras e garantia de contrato, não sendo reembolsável nem transferível, exceto na eventual hipótese de a turma em que o aluno foi matriculado não ser formada por insuficiência de alunos e o aluno não puder ser inserido em outra turma.'),
+
+    h4('5. Do Pagamento'),
+    cl('O pagamento dos valores previstos poderá ser efetuado através de boletos bancários, disponibilizados pela CONTRATADA na secretaria da escola a partir do dia primeiro de cada mês e até o dia do vencimento, podendo ser pago na rede bancária e/ou casas lotéricas.'),
+    cl('É de inteira responsabilidade do CONTRATANTE informar e solicitar providências diretamente à Secretaria da Escola, pessoalmente, em caso de qualquer dificuldade em visualizar, imprimir ou acessar o boleto, por qualquer razão.'),
+    cl('O CONTRATANTE se compromete a apresentar os comprovantes de pagamento sempre que a CONTRATADA exigir, sob pena de os pagamentos serem considerados não realizados.'),
+    cl('Os valores contratados poderão ser modificados para preservar o equilíbrio contratual, caso qualquer mudança legislativa, normativa, convenção coletiva ou dissídio altere a equação econômico-financeira do presente contrato.'),
+    cl('Os valores das demais atividades, inclusive extracurriculares, serão fixados pela CONTRATADA conforme a natureza de cada serviço, tomando-se como base os PREÇOS DE SERVIÇOS ADICIONAIS fixados em mural na secretaria da escola.'),
+    cl('Nos pagamentos parcelados, a forma de pagamento das parcelas mensais é exclusivamente por BOLETO BANCÁRIO, emitido somente pela CONTRATADA.'),
+    cl('O pagamento das parcelas não será considerado quitado sem as devidas correções e atualizações de juros ou outros valores porventura acrescidos, como juros e multa por atraso, bem como sem a apresentação do comprovante de pagamento.'),
+    cl('É de suma importância frisar que tais parcelas NÃO têm natureza de mensalidades convencionais, sendo parcelamentos do valor do MÓDULO escolhido exclusivamente pelo(a) CONTRATANTE, que tem a liberdade de escolher a quantidade de parcelas para quitação do pacote anual.'),
+    cl('Em caso de inadimplência/falta de pagamento no vencimento, perder-se-á qualquer espécie de desconto, e o valor da parcela será corrigido, acrescido de multa moratória de 2,00% (dois por cento) ao mês e juros moratórios de 1,00% (um por cento) ao mês, aplicados à base de 0,033% ao dia.'),
+    cl('Em caso de inadimplência, a CONTRATADA poderá rescindir o contrato, independentemente da exigibilidade do débito vencido ou vincendo, podendo recusar a efetivação de novo contrato caso o débito não seja integralmente quitado.'),
+    cl('O CONTRATANTE tem ciência de que, em caso de inadimplência dos valores contratados por 30 (trinta) dias ou mais, a CONTRATADA poderá levar a protesto e incluir seu nome nos cadastros restritivos de crédito (SPC, SERASA etc.), com conhecimento e autorização, ficando a critério da CONTRATADA promover a cobrança judicial ou extrajudicial do débito.'),
+    cl('Independentemente das medidas indicadas nesta cláusula, fica facultado à CONTRATADA valer-se de empresa ou profissional especializado para proceder à cobrança extrajudicial ou judicial dos débitos, arcando o CONTRATANTE com as despesas processuais, extrajudiciais e honorários advocatícios correspondentes.'),
+
+    h4('6. Da Prestação de Serviço Especial'),
+    cl('O CONTRATANTE obriga-se a informar, no ato da assinatura deste contrato, caso o aluno seja portador de necessidade específica, nos termos dos artigos 58 e 59 da Lei nº 9.394/96, fornecendo o diagnóstico ou relatório emitido por profissional qualificado. Em caso de deficiência, a escola seguirá o disposto na Lei nº 13.146/2015 (Lei Brasileira de Inclusão da Pessoa com Deficiência), sem cobrança de valor adicional.'),
+    cl('Obriga-se ainda o CONTRATANTE a informar caso o aluno seja portador de necessidades específicas identificadas no decorrer do ano letivo.'),
+    cl('Caso o conhecimento sobre necessidades específicas do aluno ocorra somente após a assinatura deste contrato, a instituição, visando o bem-estar do aluno, poderá solicitar ao responsável laudos de acompanhamento médico e/ou psicológico, sem que isso represente qualquer tipo de desabono ou descrédito ao aluno.'),
+    cl('Obriga-se também o CONTRATANTE a informar, no ato da assinatura deste contrato, caso o aluno seja portador de doença e/ou necessidade específica que o impeça de praticar esportes ou atividades recreativas.'),
+
+    h4('7. Da Rescisão Contratual e Multa'),
+    cl('O CANCELAMENTO/DESISTÊNCIA POR PARTE DO(A) CONTRATANTE, RESPEITANDO O PRINCÍPIO CONSTITUCIONAL DA RAZOABILIDADE, DAR-SE-Á COM O PAGAMENTO DA MULTA RESCISÓRIA DE 10% (DEZ POR CENTO) DO VALOR TOTAL DAS PARCELAS VINCENDAS, A TÍTULO INDENIZATÓRIO, POR QUEBRA DE CONTRATO, HAJA VISTA QUE A CONTRATADA, POR SE TRATAR DE MÓDULO ANUAL, TERÁ GRANDES PREJUÍZOS COM A RESCISÃO. A CONTRATADA poderá, no entanto, rescindir o contrato sem qualquer ônus ou multa para o(a) CONTRATANTE quando ocorrer inadimplência de parcelas a partir de 30 dias corridos.'),
+    cl('Este instrumento poderá ser rescindido, a qualquer tempo, pelo CONTRATANTE, mediante desistência formal por escrito, através de formulário de rescisão/desistência disponibilizado pela CONTRATADA na Secretaria da Escola, ou pela CONTRATADA, quando infringidos pelo ALUNO/CONTRATANTE os dispositivos deste contrato e do regulamento interno da instituição.'),
+    cl('A interrupção do pagamento somente ocorrerá após o protocolo, na Secretaria da Escola, do requerimento de rescisão/desistência pelo CONTRATANTE.'),
+    cl('Em nenhuma hipótese de rescisão o CONTRATANTE terá direito à restituição de qualquer importância já paga à CONTRATADA, que poderá exigir o pagamento das despesas administrativas decorrentes do encerramento antecipado do contrato.'),
+    cl('O não comparecimento do aluno aos atos educacionais contratados não exime o CONTRATANTE do pagamento acordado. Qualquer desconto, abatimento ou redução constitui mera liberalidade da CONTRATADA, não caracterizando novação nem renúncia de direitos, podendo ser suprimido a qualquer tempo, respeitando-se a validade das promoções divulgadas.'),
+    cl('Para iniciar o protocolo de cancelamento do contrato, é necessário o pagamento das parcelas vencidas mais a multa por rescisão contratual.'),
+    cl('Na hipótese de quitação completa do módulo anual, serão devolvidos os valores das parcelas vincendas, contados a partir da assinatura do termo de rescisão/desistência na sede da CONTRATADA, subtraindo-se o valor da multa por rescisão.'),
+    cl('Se o pedido de rescisão for formalizado com a assinatura do termo em até 8 (oito) dias antes do vencimento da próxima parcela, o CONTRATANTE não terá que pagá-la; caso contrário, tal parcela será considerada devida.'),
+    cl('A rescisão contratual só será reconhecida após a assinatura formal do termo de rescisão/desistência junto à secretaria da CONTRATADA; enquanto isso não ocorrer, as parcelas continuarão vencendo até a data oficial da quebra do contrato.'),
+    cl('Sendo este contrato de duração anual, dividido em dois módulos (janeiro a junho e julho a dezembro), caso ainda constem parcelas pendentes após sua finalização, NÃO SERÁ POSSÍVEL RESCINDI-LO, devendo a parcela pendente ser quitada, sob pena de constituição do devedor em mora.'),
+    cl('Em caso de rescisão contratual por parte do(a) Contratante, após o pagamento da multa e de eventual inadimplemento, serão canceladas todas as parcelas vincendas.'),
+    cl('O ALUNO beneficiário deste contrato deverá observar o regulamento interno da instituição, bem como os princípios éticos, morais, disciplinares e de boa convivência com toda a comunidade escolar, sob pena de rescisão contratual.'),
+
+    h4('8. Da Autorização do Uso e Veiculação de Imagem'),
+    cl('Fica a CONTRATADA autorizada, desde já e livre de qualquer ônus, pelo ALUNO/CONTRATANTE e eventual responsável, a utilizar a imagem do aluno para fins exclusivos de divulgação da CONTRATADA e de suas atividades, podendo reproduzi-la e divulgá-la pela internet, jornais, revistas, cartazes, banners, outdoors, TV e demais meios de comunicação, resguardado que em nenhuma hipótese a imagem será utilizada de forma contrária à moral, aos bons costumes ou à ordem pública, enquanto o aluno estiver matriculado na Connect Inglês Vip ou enquanto houver autorização expressa do(a) contratante.'),
+
+    h4('9. Das Disposições Gerais'),
+    cl('Quanto aos feriados nacionais, estaduais e municipais, a CONTRATADA acompanhará os dias fixados pela maioria das escolas privadas e públicas de Imperatriz (MA), não havendo reposição de aulas não ministradas em razão de feriados.'),
+    cl('Em caso de inadimplência ao final do ano letivo de 2026, a CONTRATADA poderá recusar a renovação de matrícula do aluno para o ano seguinte.'),
+    cl('Em caso de emergência, o(a) aluno(a) será encaminhado ao hospital público da cidade-sede da CONTRATADA, salvo se possuir plano de saúde na mesma região.'),
+    cl('Caso o aluno possua plano de saúde, os responsáveis deverão informar à CONTRATADA o hospital de referência, entregando cópia da certidão de nascimento e da carteirinha do plano junto à secretaria.')
+  );
+
+  if(type==='turma_infantil'){
+    blocks.push(cl('Os(as) alunos(as) só poderão sair das dependências da Connect Inglês Vip acompanhados dos pais ou responsáveis, conforme dados informados no requerimento de matrícula. Qualquer outra pessoa autorizada a buscar o aluno deve estar previamente cadastrada na secretaria da escola, e sua identificação (nome, RG, CPF e telefone) consta no requerimento de matrícula, parte integrante deste contrato.'));
+  }
+
+  blocks.push(
+    cl('Os objetos de propriedade e uso pessoal do aluno na escola — equipamentos eletrônicos, joias, dinheiro e acessórios — são de inteira responsabilidade do usuário, não cabendo à CONTRATADA qualquer responsabilidade por perda, roubo ou abandono, dentro ou fora do ambiente escolar.'),
+    cl('As partes atribuem a este contrato plena eficácia executiva.'),
+    cl('Ao concordar com este contrato, o CONTRATANTE afirma serem verdadeiras todas as informações prestadas sobre si e sobre a pessoa pela qual se elege responsável legal, apresentadas no ato da matrícula, e submete-se ao regulamento interno, ao calendário escolar e aos demais anexos deste contrato, disponíveis na sede da CONTRATADA para consulta e impressão, bem como às demais obrigações legais aplicáveis à área de serviços educacionais.'),
+    cl('O CONTRATANTE declara ciência e aceitação dos termos e informações constantes neste contrato, no regulamento interno, no calendário escolar e no quadro resumo, apresentados pela CONTRATADA no ato da matrícula, os quais são parte integrante deste instrumento.'),
+    cl('Fica eleito o foro de Imperatriz – MA como competente para dirimir quaisquer questões decorrentes deste contrato, excluindo qualquer outro, por mais privilegiado que seja.')
+  );
+
+  return contractHeader(studentName,DOCUMENT_LABELS[type])+renderContractBlocks(blocks)+contractFooter();
+}
+
+// --- PÁGINA DA SECRETARIA: GERAR LINKS E VER AUDITORIA ---
+let _docsCache=[];
+pages.documentos=async function(){
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const[{data:alunos=[]},{data:docs=[]}]=await Promise.all([
+    sb.from('students').select('id,first_name,last_name').eq('status',true).order('first_name'),
+    sb.rpc('listar_documentos_assinatura'),
+  ]);
+  _docsCache=docs;
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Documentos</span></div>
+    <div class="page-title"><i class="fa fa-file-signature"></i> Documentos — Leitura e Assinatura</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Gerar link de assinatura</span></div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-col">
+            <label>Aluno(a) <span class="required">*</span></label>
+            <select id="doc-student">
+              <option value="">Selecione...</option>
+              ${alunos.map(a=>`<option value="${a.id}">${esc(a.first_name)} ${esc(a.last_name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-col">
+            <label>Tipo de contrato <span class="required">*</span></label>
+            <select id="doc-type">
+              ${Object.entries(DOCUMENT_LABELS).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="gerarLinkDocumento()"><i class="fa fa-link"></i> Gerar link de assinatura</button>
+        <div id="doc-link-result"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Histórico de auditoria</span></div>
+      <div class="table-wrap" id="doc-history-wrap">${renderDocHistoryTable(docs)}</div>
+    </div>
+  `);
+};
+
+function renderDocHistoryTable(docs){
+  if(!docs.length) return `<div class="empty-state"><i class="fa fa-file-signature"></i>Nenhum documento gerado ainda.</div>`;
+  return `<table>
+    <thead><tr><th>Aluno</th><th>Documento</th><th>Status</th><th>Criado em</th><th>Aberto</th><th>Lido</th><th>Assinado</th><th>Ações</th></tr></thead>
+    <tbody>${docs.map(d=>`
+      <tr>
+        <td>${esc(d.first_name)} ${esc(d.last_name)}</td>
+        <td>${DOCUMENT_LABELS[d.document_type]||esc(d.document_type)}</td>
+        <td><span class="badge doc-status-${d.status}">${DOC_STATUS_LABELS[d.status]||esc(d.status)}</span></td>
+        <td>${new Date(d.created_at).toLocaleString('pt-BR')}</td>
+        <td>${d.opened_at?new Date(d.opened_at).toLocaleString('pt-BR'):'—'}</td>
+        <td>${d.reading_completed_at?new Date(d.reading_completed_at).toLocaleString('pt-BR'):'—'}</td>
+        <td>${d.signed_at?new Date(d.signed_at).toLocaleString('pt-BR'):'—'}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-default btn-sm" onclick="verDetalhesDocumento('${d.id}')" title="Detalhes"><i class="fa fa-eye"></i></button>
+          ${d.status!=='assinado'&&d.status!=='revogado'?`<button class="btn btn-default btn-sm" style="color:var(--danger)" onclick="revogarDocumento('${d.id}')" title="Revogar link"><i class="fa fa-ban"></i></button>`:''}
+        </td>
+      </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function refreshDocHistory(){
+  const{data:docs=[]}=await sb.rpc('listar_documentos_assinatura');
+  _docsCache=docs;
+  const wrap=$('doc-history-wrap');
+  if(wrap) wrap.innerHTML=renderDocHistoryTable(docs);
+}
+
+async function gerarLinkDocumento(){
+  const studentId=$('doc-student').value;
+  const docType=$('doc-type').value;
+  if(!studentId){showAlert('page-alert','Selecione o aluno.','danger');return;}
+  const{data:token,error}=await sb.rpc('gerar_link_assinatura',{p_student_id:studentId,p_document_type:docType});
+  if(error){showAlert('page-alert','Erro ao gerar link: '+error.message,'danger');return;}
+  const url=location.origin+location.pathname+'?assinar='+token;
+  const nomeAluno=esc($('doc-student').selectedOptions[0].textContent);
+  const msg=encodeURIComponent(`Olá! Segue o link para leitura e assinatura do contrato de ${nomeAluno} na Connect Inglês VIP:\n${url}`);
+  $('doc-link-result').innerHTML=`
+    <div class="doc-link-box">
+      <input type="text" id="doc-link-input" value="${url}" readonly>
+      <button class="btn btn-default btn-sm" onclick="copiarLinkDocumento()"><i class="fa fa-copy"></i> <span id="doc-copy-label">Copiar</span></button>
+      <a class="btn btn-sm" style="background:#25D366;color:#fff" href="https://wa.me/?text=${msg}" target="_blank"><i class="fab fa-whatsapp"></i> Enviar</a>
+    </div>
+    <div class="help-text">O link expira em 30 dias e só pode ser assinado uma vez.</div>
+  `;
+  showAlert('page-alert','Link gerado com sucesso!','success');
+  refreshDocHistory();
+}
+
+function copiarLinkDocumento(){
+  const input=$('doc-link-input');
+  if(!input) return;
+  navigator.clipboard.writeText(input.value).then(()=>{
+    const label=$('doc-copy-label');
+    if(label){label.textContent='Copiado!';setTimeout(()=>{label.textContent='Copiar';},2000);}
+  });
+}
+
+function verDetalhesDocumento(id){
+  const d=_docsCache.find(x=>x.id===id);
+  if(!d) return;
+  $('doc-detail-body').innerHTML=`
+    <div class="doc-detail-row"><span>Aluno</span><span>${esc(d.first_name)} ${esc(d.last_name)}</span></div>
+    <div class="doc-detail-row"><span>Documento</span><span>${DOCUMENT_LABELS[d.document_type]||esc(d.document_type)}</span></div>
+    <div class="doc-detail-row"><span>Status</span><span><span class="badge doc-status-${d.status}">${DOC_STATUS_LABELS[d.status]||esc(d.status)}</span></span></div>
+    <div class="doc-detail-row"><span>Criado por</span><span>${esc(d.created_by_name)||'—'}</span></div>
+    <div class="doc-detail-row"><span>Criado em</span><span>${new Date(d.created_at).toLocaleString('pt-BR')}</span></div>
+    <div class="doc-detail-row"><span>Aberto em</span><span>${d.opened_at?new Date(d.opened_at).toLocaleString('pt-BR'):'—'}</span></div>
+    <div class="doc-detail-row"><span>Leitura completa em</span><span>${d.reading_completed_at?new Date(d.reading_completed_at).toLocaleString('pt-BR'):'—'}</span></div>
+    <div class="doc-detail-row"><span>Assinado em</span><span>${d.signed_at?new Date(d.signed_at).toLocaleString('pt-BR'):'—'}</span></div>
+    <div class="doc-detail-row"><span>Nome do responsável assinante</span><span>${esc(d.signer_name)||'—'}</span></div>
+    <div class="doc-detail-row"><span>CPF do responsável assinante</span><span>${esc(d.signer_cpf)||'—'}</span></div>
+    <div class="doc-detail-row"><span>Endereço IP registrado</span><span>${esc(d.ip_address)||'—'}</span></div>
+    <div class="doc-detail-row"><span>Dispositivo (user agent)</span><span style="text-align:left;word-break:break-all;max-width:260px">${esc(d.user_agent)||'—'}</span></div>
+  `;
+  $('doc-detail-overlay').style.display='flex';
+}
+function closeDocDetailModal(){$('doc-detail-overlay').style.display='none';}
+
+function revogarDocumento(id){
+  showConfirm(async()=>{
+    const{error}=await sb.rpc('revogar_link_assinatura',{p_id:id});
+    if(error){alert('Erro ao revogar: '+error.message);return;}
+    refreshDocHistory();
+  });
+}
+
+// --- PÁGINA PÚBLICA: LEITURA E ASSINATURA (sem login, via token na URL) ---
+let _signState={token:null,readingConfirmed:false};
+
+async function initSignPage(token){
+  $('login-page').style.display='none';
+  $('app').style.display='none';
+  $('sign-page').style.display='block';
+  _signState={token,readingConfirmed:false};
+
+  const{data,error}=await sb.rpc('abrir_documento_assinatura',{p_token:token});
+  const info=Array.isArray(data)?data[0]:data;
+  if(error||!info){
+    renderSignResult('err','Link inválido','Este link de assinatura não foi encontrado. Verifique se o endereço foi copiado corretamente ou solicite um novo link à secretaria.');
+    return;
+  }
+  if(info.status==='revogado'){
+    renderSignResult('err','Link indisponível','Este link foi revogado ou expirou. Solicite um novo link à secretaria da Connect Inglês VIP.');
+    return;
+  }
+  if(info.status==='assinado'){
+    renderSignResult('ok','Documento já assinado',`Este documento foi assinado por ${esc(info.signer_name)||''} em ${new Date(info.signed_at).toLocaleString('pt-BR')}. Não é possível assiná-lo novamente.`);
+    return;
+  }
+  _signState.readingConfirmed=!!info.reading_completed_at;
+  renderSignDocument(info);
+}
+
+function renderSignResult(type,title,text){
+  $('sign-content').innerHTML=`
+    <div class="sign-card"><div class="sign-result ${type}">
+      <i class="fa ${type==='ok'?'fa-check-circle':'fa-times-circle'}"></i>
+      <h3>${esc(title)}</h3>
+      <p>${esc(text)}</p>
+    </div></div>
+  `;
+}
+
+function renderSignDocument(info){
+  const nomeAluno=`${info.first_name} ${info.last_name}`;
+  const html=buildContractHtml(info.document_type,nomeAluno);
+  $('sign-content').innerHTML=`
+    <div class="sign-card">
+      <div class="sign-card-head">
+        <h3><i class="fa fa-file-signature" style="color:var(--brand)"></i> ${esc(DOCUMENT_LABELS[info.document_type]||info.document_type)}</h3>
+        <p>Aluno(a): ${esc(nomeAluno)} — leia o documento até o final para habilitar a assinatura.</p>
+      </div>
+      <div class="sign-doc-box" id="sign-doc-box" onscroll="handleSignScroll()">${html}</div>
+      <div class="sign-scroll-hint ${_signState.readingConfirmed?'done':''}" id="sign-scroll-hint">
+        <i class="fa ${_signState.readingConfirmed?'fa-check-circle':'fa-arrow-down'}"></i>
+        <span>${_signState.readingConfirmed?'Leitura concluída.':'Role o documento até o final para continuar.'}</span>
+      </div>
+      <div class="sign-actions">
+        <div class="sign-checkbox-row">
+          <input type="checkbox" id="sign-checkbox" ${_signState.readingConfirmed?'':'disabled'} onchange="toggleSignFields()">
+          <label for="sign-checkbox">Declaro que li integralmente este documento, compreendi todas as informações e concordo com os termos apresentados.</label>
+        </div>
+        <div class="sign-fields" id="sign-fields">
+          <div class="field"><label>Nome completo do(a) responsável <span class="required">*</span></label><input id="sign-name" placeholder="Nome completo"></div>
+          <div class="field"><label>CPF <span class="required">*</span></label><input id="sign-cpf" placeholder="000.000.000-00"></div>
+        </div>
+        <div id="sign-alert" class="alert"></div>
+        <button class="btn btn-primary" id="sign-submit-btn" style="width:100%;justify-content:center;padding:11px" disabled onclick="submeterAssinatura()"><i class="fa fa-signature"></i> Assinar documento</button>
+      </div>
+    </div>
+  `;
+  if($('sign-checkbox').disabled) handleSignScroll();
+}
+
+async function handleSignScroll(){
+  const el=$('sign-doc-box');
+  if(!el||_signState.readingConfirmed) return;
+  if(el.scrollTop+el.clientHeight>=el.scrollHeight-4){
+    _signState.readingConfirmed=true;
+    const hint=$('sign-scroll-hint');
+    hint.classList.add('done');
+    hint.innerHTML='<i class="fa fa-check-circle"></i><span>Leitura concluída.</span>';
+    $('sign-checkbox').disabled=false;
+    await sb.rpc('confirmar_leitura_assinatura',{p_token:_signState.token});
+  }
+}
+
+function toggleSignFields(){
+  const checked=$('sign-checkbox').checked;
+  $('sign-fields').classList.toggle('show',checked);
+  $('sign-submit-btn').disabled=!checked;
+}
+
+async function getClientIp(){
+  try{
+    const ctrl=new AbortController();
+    const t=setTimeout(()=>ctrl.abort(),3000);
+    const res=await fetch('https://api.ipify.org?format=json',{signal:ctrl.signal});
+    clearTimeout(t);
+    const j=await res.json();
+    return j.ip||null;
+  }catch(e){return null;}
+}
+
+async function submeterAssinatura(){
+  const name=$('sign-name').value.trim();
+  const cpf=$('sign-cpf').value.trim();
+  if(!name||!cpf){showAlert('sign-alert','Preencha nome completo e CPF.','danger');return;}
+  const btn=$('sign-submit-btn');
+  btn.disabled=true;
+  btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Assinando...';
+  const ip=await getClientIp();
+  const{error}=await sb.rpc('assinar_documento',{
+    p_token:_signState.token,p_signer_name:name,p_signer_cpf:cpf,
+    p_ip:ip,p_user_agent:navigator.userAgent,
+  });
+  if(error){
+    showAlert('sign-alert',error.message||'Erro ao assinar o documento.','danger');
+    btn.disabled=false;
+    btn.innerHTML='<i class="fa fa-signature"></i> Assinar documento';
+    return;
+  }
+  renderSignResult('ok','Documento assinado com sucesso!',`Obrigado, ${name}. O documento foi assinado em ${new Date().toLocaleString('pt-BR')} e o registro fica disponível para a Connect Inglês VIP.`);
+}
+
+// ============================
 // HELPERS
 // ============================
 async function abrirComprovante(value,tipo){
@@ -2500,6 +2978,8 @@ function clearFilters(keys){keys.forEach(k=>{const el=$(k);if(el)el.value='';del
 
 // Inicialização
 document.addEventListener('DOMContentLoaded',()=>{
+  const assinarToken=new URLSearchParams(location.search).get('assinar');
+  if(assinarToken){initSignPage(assinarToken);return;}
   document.addEventListener('keydown',e=>{if(e.key==='Enter'&&$('login-page').style.display!=='none')doLogin();});
   initAuth();
 });

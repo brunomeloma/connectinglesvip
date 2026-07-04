@@ -729,3 +729,163 @@ DROP POLICY IF EXISTS "Anon upload comprovantes" ON storage.objects;
 CREATE POLICY "comprovantes_select" ON storage.objects FOR SELECT USING (bucket_id='comprovantes' AND auth.uid() IS NOT NULL);
 CREATE POLICY "comprovantes_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id='comprovantes' AND has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
 CREATE POLICY "comprovantes_delete" ON storage.objects FOR DELETE USING (bucket_id='comprovantes' AND is_admin());
+
+
+-- #####################################################################
+-- 9. DOCUMENTOS — LEITURA E ASSINATURA ELETRÔNICA (link público por token)
+-- #####################################################################
+-- Fluxo: a secretaria gera um link com token para um aluno; o responsável
+-- abre o link (sem login), lê o documento até o fim, marca ciência e
+-- assina digitando nome/CPF. Tudo fica registrado para auditoria.
+-- O responsável NUNCA acessa a tabela diretamente — só via as 3 RPCs
+-- marcadas como "PÚBLICA" abaixo, validadas por token.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE IF NOT EXISTS document_signatures (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id uuid REFERENCES students(id) ON DELETE CASCADE,
+  document_type text NOT NULL,
+  token text NOT NULL UNIQUE,
+  status text NOT NULL DEFAULT 'pendente',
+  created_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now(),
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 days'),
+  opened_at timestamptz,
+  reading_completed_at timestamptz,
+  signed_at timestamptz,
+  signer_name text,
+  signer_cpf text,
+  ip_address text,
+  user_agent text,
+  revoked_at timestamptz,
+  revoked_by uuid REFERENCES profiles(id) ON DELETE SET NULL
+);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ds_document_type_check') THEN
+    ALTER TABLE document_signatures ADD CONSTRAINT ds_document_type_check CHECK (document_type IN ('turma_infantil','adulto','vip','vip_premium'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ds_status_check') THEN
+    ALTER TABLE document_signatures ADD CONSTRAINT ds_status_check CHECK (status IN ('pendente','aberto','lido','assinado','revogado'));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_ds_student ON document_signatures(student_id);
+CREATE INDEX IF NOT EXISTS idx_ds_status ON document_signatures(status);
+CREATE INDEX IF NOT EXISTS idx_ds_created_at ON document_signatures(created_at DESC);
+
+ALTER TABLE document_signatures ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "ds_select" ON document_signatures;
+DROP POLICY IF EXISTS "ds_insert" ON document_signatures;
+DROP POLICY IF EXISTS "ds_update" ON document_signatures;
+DROP POLICY IF EXISTS "ds_delete" ON document_signatures;
+CREATE POLICY "ds_select" ON document_signatures FOR SELECT USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "ds_insert" ON document_signatures FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "ds_update" ON document_signatures FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','secretaria']));
+CREATE POLICY "ds_delete" ON document_signatures FOR DELETE USING (is_admin());
+-- Nenhuma policy de anon: o público só entra pelas RPCs SECURITY DEFINER abaixo.
+
+-- Gerar link de assinatura para um aluno (staff)
+CREATE OR REPLACE FUNCTION gerar_link_assinatura(p_student_id uuid, p_document_type text)
+RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_token text; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF p_document_type NOT IN ('turma_infantil','adulto','vip','vip_premium') THEN RAISE EXCEPTION 'Tipo de documento inválido'; END IF;
+  v_token := encode(gen_random_bytes(32), 'hex');
+  INSERT INTO document_signatures (student_id, document_type, token, created_by)
+  VALUES (p_student_id, p_document_type, v_token, auth.uid());
+  RETURN v_token;
+END; $$;
+
+-- Revogar um link ainda não assinado (staff)
+CREATE OR REPLACE FUNCTION revogar_link_assinatura(p_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  UPDATE document_signatures SET status='revogado', revoked_at=now(), revoked_by=auth.uid()
+  WHERE id=p_id AND status<>'assinado';
+END; $$;
+
+-- Histórico de auditoria (staff)
+CREATE OR REPLACE FUNCTION listar_documentos_assinatura(p_student_id uuid DEFAULT NULL)
+RETURNS TABLE(
+  id uuid, student_id uuid, first_name text, last_name text,
+  document_type text, status text, created_at timestamptz, expires_at timestamptz,
+  opened_at timestamptz, reading_completed_at timestamptz, signed_at timestamptz,
+  signer_name text, signer_cpf text, ip_address text, user_agent text,
+  created_by_name text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT d.id, d.student_id, s.first_name, s.last_name,
+      d.document_type, d.status, d.created_at, d.expires_at,
+      d.opened_at, d.reading_completed_at, d.signed_at,
+      d.signer_name, d.signer_cpf, d.ip_address, d.user_agent,
+      p.name
+    FROM document_signatures d
+    JOIN students s ON s.id = d.student_id
+    LEFT JOIN profiles p ON p.id = d.created_by
+    WHERE p_student_id IS NULL OR d.student_id = p_student_id
+    ORDER BY d.created_at DESC;
+END; $$;
+
+-- PÚBLICA — abrir documento pelo token (sem login). Marca abertura.
+CREATE OR REPLACE FUNCTION abrir_documento_assinatura(p_token text)
+RETURNS TABLE(
+  first_name text, last_name text, document_type text, status text,
+  opened_at timestamptz, reading_completed_at timestamptz, signed_at timestamptz,
+  signer_name text, expires_at timestamptz
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_row document_signatures%ROWTYPE; BEGIN
+  SELECT * INTO v_row FROM document_signatures WHERE token = p_token;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Link inválido.'; END IF;
+  IF v_row.status <> 'assinado' AND v_row.status <> 'revogado' AND v_row.expires_at < now() THEN
+    UPDATE document_signatures SET status='revogado' WHERE id=v_row.id AND status NOT IN ('assinado','revogado');
+    v_row.status := 'revogado';
+  ELSIF v_row.status = 'pendente' THEN
+    UPDATE document_signatures SET status='aberto', opened_at=now() WHERE id=v_row.id;
+    v_row.status := 'aberto'; v_row.opened_at := now();
+  END IF;
+  RETURN QUERY
+    SELECT s.first_name, s.last_name, v_row.document_type, v_row.status,
+      v_row.opened_at, v_row.reading_completed_at, v_row.signed_at,
+      v_row.signer_name, v_row.expires_at
+    FROM students s WHERE s.id = v_row.student_id;
+END; $$;
+
+-- PÚBLICA — marcar que o responsável rolou o documento até o final
+CREATE OR REPLACE FUNCTION confirmar_leitura_assinatura(p_token text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_row document_signatures%ROWTYPE; BEGIN
+  SELECT * INTO v_row FROM document_signatures WHERE token = p_token;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Link inválido.'; END IF;
+  IF v_row.status IN ('assinado','revogado') THEN RAISE EXCEPTION 'Este documento não pode mais ser lido.'; END IF;
+  IF v_row.reading_completed_at IS NULL THEN
+    UPDATE document_signatures SET reading_completed_at=now(), status='lido' WHERE id=v_row.id;
+  END IF;
+END; $$;
+
+-- PÚBLICA — assinar (exige leitura completa registrada no servidor)
+CREATE OR REPLACE FUNCTION assinar_documento(
+  p_token text, p_signer_name text, p_signer_cpf text,
+  p_ip text DEFAULT NULL, p_user_agent text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_row document_signatures%ROWTYPE; BEGIN
+  SELECT * INTO v_row FROM document_signatures WHERE token = p_token;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Link inválido.'; END IF;
+  IF v_row.status = 'assinado' THEN RAISE EXCEPTION 'Este documento já foi assinado.'; END IF;
+  IF v_row.status = 'revogado' OR v_row.expires_at < now() THEN RAISE EXCEPTION 'Este link expirou ou foi revogado.'; END IF;
+  IF v_row.reading_completed_at IS NULL THEN RAISE EXCEPTION 'É necessário ler o documento até o final antes de assinar.'; END IF;
+  IF coalesce(trim(p_signer_name),'')='' OR coalesce(trim(p_signer_cpf),'')='' THEN RAISE EXCEPTION 'Nome completo e CPF são obrigatórios.'; END IF;
+  UPDATE document_signatures SET
+    status='assinado', signed_at=now(),
+    signer_name=trim(p_signer_name), signer_cpf=trim(p_signer_cpf),
+    ip_address=p_ip, user_agent=p_user_agent
+  WHERE id=v_row.id;
+END; $$;
+
+GRANT EXECUTE ON FUNCTION abrir_documento_assinatura(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION confirmar_leitura_assinatura(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION assinar_documento(text, text, text, text, text) TO anon, authenticated;
