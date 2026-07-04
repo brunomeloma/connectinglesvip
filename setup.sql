@@ -889,3 +889,151 @@ END; $$;
 GRANT EXECUTE ON FUNCTION abrir_documento_assinatura(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION confirmar_leitura_assinatura(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION assinar_documento(text, text, text, text, text) TO anon, authenticated;
+
+
+-- #####################################################################
+-- 10. FREQUÊNCIA — REGISTRO DE AULAS E CONTROLE DE PRESENÇA
+-- #####################################################################
+-- Cada encontro de uma turma gera um registro em class_lessons (data,
+-- professor que ministrou — permite substituição —, status, conteúdo
+-- ministrado e observações). A presença de cada aluno matriculado fica
+-- em attendance, vinculada à aula via lesson_id.
+
+CREATE TABLE IF NOT EXISTS class_lessons (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  class_id uuid REFERENCES classes(id) ON DELETE CASCADE,
+  lesson_date date NOT NULL,
+  teacher_id uuid REFERENCES teachers(id) ON DELETE SET NULL,
+  status text NOT NULL DEFAULT 'realizada',
+  content text,
+  notes text,
+  created_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE(class_id, lesson_date)
+);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='cl_status_check') THEN
+    ALTER TABLE class_lessons ADD CONSTRAINT cl_status_check CHECK (status IN ('realizada','cancelada','remarcada'));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_cl_class ON class_lessons(class_id);
+CREATE INDEX IF NOT EXISTS idx_cl_date ON class_lessons(lesson_date DESC);
+CREATE INDEX IF NOT EXISTS idx_cl_teacher ON class_lessons(teacher_id);
+
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS lesson_id uuid REFERENCES class_lessons(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_attendance_lesson ON attendance(lesson_id);
+
+ALTER TABLE class_lessons ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "cl_select" ON class_lessons;
+DROP POLICY IF EXISTS "cl_insert" ON class_lessons;
+DROP POLICY IF EXISTS "cl_update" ON class_lessons;
+DROP POLICY IF EXISTS "cl_delete" ON class_lessons;
+CREATE POLICY "cl_select" ON class_lessons FOR SELECT USING (auth.uid() IS NOT NULL);
+CREATE POLICY "cl_insert" ON class_lessons FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','secretaria','professor']));
+CREATE POLICY "cl_update" ON class_lessons FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','secretaria','professor']));
+CREATE POLICY "cl_delete" ON class_lessons FOR DELETE USING (is_admin());
+
+-- Criar/atualizar o registro de aula de uma turma numa data (1 por dia por turma)
+CREATE OR REPLACE FUNCTION registrar_aula_turma(
+  p_class_id uuid, p_lesson_date date, p_teacher_id uuid DEFAULT NULL,
+  p_status text DEFAULT 'realizada', p_content text DEFAULT NULL, p_notes text DEFAULT NULL
+) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_id uuid; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria','professor']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF p_status NOT IN ('realizada','cancelada','remarcada') THEN RAISE EXCEPTION 'Status de aula inválido'; END IF;
+  INSERT INTO class_lessons (class_id, lesson_date, teacher_id, status, content, notes, created_by)
+  VALUES (p_class_id, p_lesson_date, p_teacher_id, p_status, p_content, p_notes, auth.uid())
+  ON CONFLICT (class_id, lesson_date) DO UPDATE SET
+    teacher_id=EXCLUDED.teacher_id, status=EXCLUDED.status, content=EXCLUDED.content,
+    notes=EXCLUDED.notes, updated_at=now()
+  RETURNING id INTO v_id;
+  RETURN v_id;
+END; $$;
+
+-- Salvar frequência de uma aula em lote (p_rows = [{student_id, status}, ...])
+CREATE OR REPLACE FUNCTION salvar_frequencia_aula(p_lesson_id uuid, p_rows jsonb)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_lesson class_lessons%ROWTYPE; r jsonb; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria','professor']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  SELECT * INTO v_lesson FROM class_lessons WHERE id=p_lesson_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Aula não encontrada'; END IF;
+  FOR r IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
+    INSERT INTO attendance (class_id, student_id, date, status, lesson_id, confirmed, marked_by)
+    VALUES (v_lesson.class_id, (r->>'student_id')::uuid, v_lesson.lesson_date, r->>'status', p_lesson_id, true, auth.uid())
+    ON CONFLICT (class_id, student_id, date) DO UPDATE SET
+      status=EXCLUDED.status, lesson_id=EXCLUDED.lesson_id, confirmed=true, marked_by=auth.uid();
+  END LOOP;
+END; $$;
+
+-- Aulas de uma turma com resumo de presença (para o histórico da turma)
+CREATE OR REPLACE FUNCTION get_aulas_turma(p_class_id uuid)
+RETURNS TABLE(
+  id uuid, lesson_date date, teacher_id uuid, teacher_name text,
+  status text, content text, notes text,
+  total_presentes bigint, total_ausentes bigint, total_justificados bigint, total_alunos bigint
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Não autenticado'; END IF;
+  RETURN QUERY
+    SELECT cl.id, cl.lesson_date, cl.teacher_id, (t.first_name||' '||t.last_name)::text,
+      cl.status, cl.content, cl.notes,
+      COUNT(a.id) FILTER (WHERE a.status='presente'),
+      COUNT(a.id) FILTER (WHERE a.status='ausente'),
+      COUNT(a.id) FILTER (WHERE a.status='justificado'),
+      COUNT(a.id)
+    FROM class_lessons cl
+    LEFT JOIN teachers t ON t.id = cl.teacher_id
+    LEFT JOIN attendance a ON a.lesson_id = cl.id
+    WHERE cl.class_id = p_class_id
+    GROUP BY cl.id, cl.lesson_date, cl.teacher_id, t.first_name, t.last_name, cl.status, cl.content, cl.notes
+    ORDER BY cl.lesson_date DESC;
+END; $$;
+
+-- Histórico de frequência de um aluno
+CREATE OR REPLACE FUNCTION get_frequencia_aluno(p_student_id uuid)
+RETURNS TABLE(
+  attendance_id uuid, lesson_date date, class_name text, teacher_name text,
+  content text, status text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Não autenticado'; END IF;
+  RETURN QUERY
+    SELECT a.id, a.date, c.name::text, (t.first_name||' '||t.last_name)::text,
+      cl.content, a.status
+    FROM attendance a
+    JOIN classes c ON c.id = a.class_id
+    LEFT JOIN class_lessons cl ON cl.id = a.lesson_id
+    LEFT JOIN teachers t ON t.id = cl.teacher_id
+    WHERE a.student_id = p_student_id AND a.status <> 'pendente'
+    ORDER BY a.date DESC;
+END; $$;
+
+-- Relatório de frequência flexível (turma/aluno/professor/período combináveis)
+CREATE OR REPLACE FUNCTION get_relatorio_frequencia(
+  p_class_id uuid DEFAULT NULL, p_student_id uuid DEFAULT NULL,
+  p_teacher_id uuid DEFAULT NULL, p_data_ini date DEFAULT NULL, p_data_fim date DEFAULT NULL
+) RETURNS TABLE(
+  lesson_date date, class_id uuid, class_name text, teacher_name text,
+  content text, student_id uuid, student_name text, status text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT a.date, c.id, c.name::text, (t.first_name||' '||t.last_name)::text,
+      cl.content, s.id, (s.first_name||' '||s.last_name)::text, a.status
+    FROM attendance a
+    JOIN classes c ON c.id = a.class_id
+    JOIN students s ON s.id = a.student_id
+    LEFT JOIN class_lessons cl ON cl.id = a.lesson_id
+    LEFT JOIN teachers t ON t.id = cl.teacher_id
+    WHERE a.status <> 'pendente'
+      AND (p_class_id IS NULL OR a.class_id = p_class_id)
+      AND (p_student_id IS NULL OR a.student_id = p_student_id)
+      AND (p_teacher_id IS NULL OR cl.teacher_id = p_teacher_id)
+      AND (p_data_ini IS NULL OR a.date >= p_data_ini)
+      AND (p_data_fim IS NULL OR a.date <= p_data_fim)
+    ORDER BY a.date DESC;
+END; $$;

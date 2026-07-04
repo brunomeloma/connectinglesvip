@@ -247,6 +247,10 @@ tr:hover td{background:#fdf9f0}
 .status-badge-cancelada{background:#ebebeb;color:#444}
 .status-badge-falta{background:#fef3d0;color:#8a5c00}
 .status-badge-justificada{background:#d5ebf8;color:#0f4f7a}
+.status-badge-remarcada{background:#ede0fd;color:#4a1f8a}
+.status-badge-presente{background:#d4f0e0;color:#1a6b3a}
+.status-badge-ausente{background:#fde0de;color:#8b1a1a}
+.status-badge-pendente{background:#ebebeb;color:#444}
 .tipo-badge-aula_normal{background:#d4f0e0;color:#1a6b3a}
 .tipo-badge-substituicao{background:#fef3d0;color:#8a5c00}
 .tipo-badge-reuniao{background:#d5ebf8;color:#0f4f7a}
@@ -412,6 +416,7 @@ let currentUser = null;
     <div class="sb-item" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
     <div class="sb-item" data-page="vip" onclick="nav('vip')"><i class="fa fa-star"></i> VIP Online</div>
     <div class="sb-item" data-page="documentos" onclick="nav('documentos')"><i class="fa fa-file-signature"></i> Documentos</div>
+    <div class="sb-item" data-page="relatorios" onclick="nav('relatorios')"><i class="fa fa-chart-bar"></i> Relatórios</div>
     <div class="sb-logout">
       <div class="sb-item" onclick="doLogout()"><i class="fa fa-sign-out-alt"></i> Sair</div>
     </div>
@@ -699,7 +704,7 @@ async function carregarAulasHoje(){
         <td>${c.teacher?esc(c.teacher.first_name)+' '+esc(c.teacher.last_name):'—'}</td>
         <td>${esc(c.school?.name)||'—'}</td>
         <td>${level_badge(c.level)}</td>
-        <td><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}'})"><i class="fa fa-clipboard-check"></i> Chamada</button></td>
+        <td><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}',tab:'aula'})"><i class="fa fa-clipboard-check"></i> Chamada</button></td>
       </tr>`).join('')}</tbody>
     </table></div>
   </div>`;
@@ -1080,6 +1085,7 @@ async function saveTeacher(id){
 // --- STUDENTS ---
 pages.students=async function({view,id}={}){
   if(view==='form') return studentForm(id);
+  if(view==='frequencia') return studentFrequencia(id);
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const name=getFilter('st-name')||'';
   const classId=getFilter('st-class')||'';
@@ -1110,7 +1116,7 @@ pages.students=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Lista de alunos</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="2">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="3">Ações</th></tr></thead>
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
@@ -1121,15 +1127,61 @@ pages.students=async function({view,id}={}){
               <td>${level_badge(s.level)}</td>
               <td>${status_badge(s.status)}</td>
               <td>${fdate(s.date_joining)}</td>
+              <td><button class="btn-icon" onclick="nav('students',{view:'frequencia',id:'${s.id}'})" title="Histórico de frequência"><i class="fa fa-calendar-check"></i></button></td>
               <td><button class="btn-icon" onclick="nav('students',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
               <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('students','${s.id}','students')"><i class="fa fa-trash"></i></button></td>
-            </tr>`).join(''):`<tr><td colspan="10"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
+            </tr>`).join(''):`<tr><td colspan="11"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
           </tbody>
         </table>
       </div>
     </div>
   `);
 };
+
+async function studentFrequencia(id){
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const[{data:s},{data:rows=[],error}]=await Promise.all([
+    sb.from('students').select('id,first_name,last_name,class:classes(name)').eq('id',id).single(),
+    sb.rpc('get_frequencia_aluno',{p_student_id:id}),
+  ]);
+  if(!s){nav('students');return;}
+  const totalAulas=rows.length;
+  const presencas=rows.filter(r=>r.status==='presente').length;
+  const faltas=rows.filter(r=>r.status==='ausente').length;
+  const justificadas=rows.filter(r=>r.status==='justificado').length;
+  const pct=totalAulas?((presencas/totalAulas)*100).toFixed(1):'0.0';
+
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('students')">Aluno</a> › <span>${esc(s.first_name)} ${esc(s.last_name)}</span> › Frequência</div>
+    <div class="page-title"><i class="fa fa-calendar-check"></i> Histórico de Frequência — ${esc(s.first_name)} ${esc(s.last_name)}</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="stat-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="stat-card c-dark"><i class="fa fa-book stat-icon"></i><div><div class="stat-num">${totalAulas}</div><div class="stat-label">Total de aulas</div></div></div>
+      <div class="stat-card c-gold"><i class="fa fa-check-circle stat-icon"></i><div><div class="stat-num">${presencas}</div><div class="stat-label">Presenças</div></div></div>
+      <div class="stat-card c-orange"><i class="fa fa-times-circle stat-icon"></i><div><div class="stat-num">${faltas}</div><div class="stat-label">Faltas${justificadas?` (+${justificadas} justif.)`:''}</div></div></div>
+      <div class="stat-card c-brown"><i class="fa fa-percentage stat-icon"></i><div><div class="stat-num">${pct}%</div><div class="stat-label">Frequência</div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Turma atual</span><button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${id}'})"><i class="fa fa-pencil-alt"></i> Editar aluno</button></div>
+      <div class="panel-body"><p><strong>Turma:</strong> ${esc(s.class?.name)||'Nenhuma'}</p></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Aulas registradas</span></div>
+      <div class="table-wrap">
+        ${rows.length?`<table>
+          <thead><tr><th>Data</th><th>Turma</th><th>Professor</th><th>Conteúdo</th><th>Status</th></tr></thead>
+          <tbody>${rows.map(r=>`<tr>
+            <td>${fdate(r.lesson_date)}</td>
+            <td>${esc(r.class_name)}</td>
+            <td>${esc(r.teacher_name)||'—'}</td>
+            <td style="max-width:280px;white-space:normal">${esc(r.content)||'—'}</td>
+            <td><span class="badge status-badge-${r.status}">${FREQ_STATUS_UI[r.status]||esc(r.status)}</span></td>
+          </tr>`).join('')}</tbody>
+        </table>`:`<div class="empty-state"><i class="fa fa-calendar-times"></i>Nenhuma frequência registrada ainda.</div>`}
+      </div>
+    </div>
+  `);
+}
 
 async function studentForm(id){
   const[{data:classes=[]},{data:schools=[]},{data:teachers=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true),sb.from('teachers').select('id,first_name,last_name').eq('status',true)]);
@@ -1228,9 +1280,9 @@ async function saveStudent(id){
 }
 
 // --- CLASSES ---
-pages.classes=async function({view,id}={}){
+pages.classes=async function({view,id,tab,date}={}){
   if(view==='form') return classForm(id);
-  if(view==='detail') return classDetail(id);
+  if(view==='detail') return classDetail(id,tab||'info',date);
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const{data=[]}=await sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').order('created_at',{ascending:false});
   // count students per class
@@ -1329,25 +1381,28 @@ async function saveClass(id){
   nav('classes');
 }
 
-async function classDetail(classId){
+async function classDetail(classId,tab='info',date){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const[{data:c},{data:alunos=[]}]=await Promise.all([
     sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('id',classId).single(),
     sb.from('students').select('*').eq('class_id',classId).eq('status',true).order('first_name'),
   ]);
   if(!c){nav('classes');return;}
-  const hoje=new Date().toISOString().split('T')[0];
-  const{data:presencasHoje=[]}=await sb.from('attendance').select('*').eq('class_id',classId).eq('date',hoje);
-  const presMap={};presencasHoje.forEach(p=>presMap[p.student_id]=p);
 
   const diasMap={'Seg':'Segunda','Ter':'Terça','Qua':'Quarta','Qui':'Quinta','Sex':'Sexta','Sáb':'Sábado','Dom':'Domingo'};
   const diasTxt=(c.class_days||'').split(',').map(d=>diasMap[d]||d).join(', ');
   const horario=c.start_time&&c.end_time?c.start_time+' – '+c.end_time:(c.schedule||'—');
-
   const diasHoje=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][new Date().getDay()];
   const temAulaHoje=(c.class_days||'').includes(diasHoje);
 
-  setContent(`
+  const tabs=[
+    {id:'info',label:'Turma',icon:'fa-info-circle'},
+    {id:'aula',label:'Registrar Aula',icon:'fa-clipboard-check'},
+    {id:'historico',label:'Histórico de Aulas',icon:'fa-history'},
+  ];
+  const tabBar=`<div class="tab-bar">${tabs.map(t=>`<button class="tab-btn${tab===t.id?' active':''}" onclick="nav('classes',{view:'detail',id:'${classId}',tab:'${t.id}'})"><i class="fa ${t.icon}"></i> ${t.label}</button>`).join('')}</div>`;
+
+  const header=`
     <div class="breadcrumb"><a onclick="nav('classes')">Turmas</a> › <span>${esc(c.name)}</span></div>
     <div class="page-title"><i class="fa fa-layer-group"></i> ${esc(c.name)}</div>
     <div id="page-alert" class="alert"></div>
@@ -1357,40 +1412,23 @@ async function classDetail(classId){
       <div class="stat-card c-dark"><i class="fa fa-users stat-icon"></i><div><div class="stat-num">${alunos.length}</div><div class="stat-label">Alunos matriculados</div></div></div>
       <div class="stat-card c-brown"><i class="fa ${temAulaHoje?'fa-check-circle':'fa-minus-circle'} stat-icon"></i><div><div class="stat-num" style="font-size:16px">${temAulaHoje?'Sim':'Não'}</div><div class="stat-label">Aula hoje?</div></div></div>
     </div>
-    <div class="two-col">
-      <div class="panel">
-        <div class="panel-head"><span class="panel-title">Informações</span><button class="btn btn-default btn-sm" onclick="nav('classes',{view:'form',id:'${classId}'})"><i class="fa fa-pencil-alt"></i> Editar</button></div>
-        <div class="panel-body">
-          <p><strong>Professor:</strong> ${c.teacher?esc(c.teacher.first_name)+' '+esc(c.teacher.last_name):'Não definido'}</p>
-          <p style="margin-top:6px"><strong>Escola:</strong> ${esc(c.school?.name)||'Não definida'}</p>
-          <p style="margin-top:6px"><strong>Nível:</strong> ${esc(c.level)||'—'}</p>
-          <p style="margin-top:6px"><strong>Status:</strong> ${status_badge(c.status)}</p>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><span class="panel-title"><i class="fa fa-clipboard-check" style="color:var(--brand)"></i> Chamada — Hoje (${new Date().toLocaleDateString('pt-BR')})</span></div>
-        <div class="panel-body" style="padding:0">
-          ${!temAulaHoje?'<div class="empty-state" style="padding:20px"><i class="fa fa-calendar-times"></i>Não há aula hoje para esta turma</div>'
-          :alunos.length?`<table><thead><tr><th>Aluno</th><th>Presença</th><th>Confirmou?</th></tr></thead><tbody>${alunos.map(a=>{
-            const p=presMap[a.id];
-            const status=p?.status||'pendente';
-            const confirmed=p?.confirmed;
-            return `<tr>
-              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div>${esc(a.first_name)} ${esc(a.last_name)}</div></td>
-              <td>
-                <select onchange="marcarPresenca('${classId}','${a.id}',this.value)" style="padding:4px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px">
-                  <option value="pendente" ${status==='pendente'?'selected':''}>Pendente</option>
-                  <option value="presente" ${status==='presente'?'selected':''}>✅ Presente</option>
-                  <option value="ausente" ${status==='ausente'?'selected':''}>❌ Ausente</option>
-                  <option value="justificado" ${status==='justificado'?'selected':''}>📋 Justificado</option>
-                </select>
-              </td>
-              <td>${confirmed?'<span class="badge badge-success">Confirmou</span>':'<span class="badge badge-secondary">Não confirmou</span>'}</td>
-            </tr>`}).join('')}</tbody></table>`:'<div class="empty-state" style="padding:20px"><i class="fa fa-user-graduate"></i>Nenhum aluno nesta turma</div>'}
-        </div>
+    ${tabBar}
+  `;
+
+  if(tab==='aula') return classTabAula(c,alunos,classId,date,header);
+  if(tab==='historico') return classTabHistorico(classId,header);
+
+  setContent(header+`
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Informações</span><button class="btn btn-default btn-sm" onclick="nav('classes',{view:'form',id:'${classId}'})"><i class="fa fa-pencil-alt"></i> Editar</button></div>
+      <div class="panel-body">
+        <p><strong>Professor:</strong> ${c.teacher?esc(c.teacher.first_name)+' '+esc(c.teacher.last_name):'Não definido'}</p>
+        <p style="margin-top:6px"><strong>Escola:</strong> ${esc(c.school?.name)||'Não definida'}</p>
+        <p style="margin-top:6px"><strong>Nível:</strong> ${esc(c.level)||'—'}</p>
+        <p style="margin-top:6px"><strong>Status:</strong> ${status_badge(c.status)}</p>
       </div>
     </div>
-    <div class="panel" style="margin-top:14px">
+    <div class="panel">
       <div class="panel-head"><span class="panel-title">Alunos matriculados</span></div>
       <div class="table-wrap"><table>
         <thead><tr><th>Aluno</th><th>Tipo</th><th>Celular</th><th>WhatsApp</th><th>Nível</th><th>Ações</th></tr></thead>
@@ -1408,10 +1446,97 @@ async function classDetail(classId){
   `);
 }
 
-async function marcarPresenca(classId,studentId,status){
-  const hoje=new Date().toISOString().split('T')[0];
-  const{error}=await sb.from('attendance').upsert({class_id:classId,student_id:studentId,date:hoje,status,marked_by:currentUser.id},{onConflict:'class_id,student_id,date'});
-  if(error) alert('Erro: '+error.message);
+const LESSON_STATUS_UI={realizada:'Realizada',cancelada:'Cancelada',remarcada:'Remarcada'};
+
+async function classTabAula(c,alunos,classId,date,header){
+  const selDate=date||new Date().toISOString().split('T')[0];
+  const[{data:lesson},{data:presencas=[]},{data:teachers=[]}]=await Promise.all([
+    sb.from('class_lessons').select('*').eq('class_id',classId).eq('lesson_date',selDate).maybeSingle(),
+    sb.from('attendance').select('*').eq('class_id',classId).eq('date',selDate),
+    sb.from('teachers').select('id,first_name,last_name').eq('status',true),
+  ]);
+  const presMap={};presencas.forEach(p=>presMap[p.student_id]=p);
+  const teacherId=lesson?.teacher_id||c.teacher_id||'';
+  const tOpts=teachers.map(t=>`<option value="${t.id}" ${teacherId===t.id?'selected':''}>${esc(t.first_name)} ${esc(t.last_name)}</option>`).join('');
+  const statusAula=lesson?.status||'realizada';
+
+  setContent(header+`
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-clipboard-check" style="color:var(--brand)"></i> ${lesson?'Editar aula':'Registrar aula'} — ${fdate(selDate)}</span></div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-col"><label>Data da aula <span class="required">*</span></label><input id="aula-date" type="date" value="${selDate}" onchange="nav('classes',{view:'detail',id:'${classId}',tab:'aula',date:this.value})"></div>
+          <div class="form-col"><label>Professor que ministrou</label><select id="aula-teacher"><option value="">Não definido</option>${tOpts}</select></div>
+          <div class="form-col"><label>Status da aula</label><select id="aula-status">
+            ${Object.entries(LESSON_STATUS_UI).map(([k,l])=>`<option value="${k}" ${statusAula===k?'selected':''}>${l}</option>`).join('')}
+          </select></div>
+        </div>
+        <div class="field"><label>Conteúdo ministrado</label><textarea id="aula-content" placeholder="Ex: Present Simple — afirmativa e negativa">${esc(lesson?.content)}</textarea></div>
+        <div class="field"><label>Observações</label><textarea id="aula-notes">${esc(lesson?.notes)}</textarea></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Frequência dos alunos</span></div>
+      <div class="table-wrap">
+        ${alunos.length?`<table><thead><tr><th>Aluno</th><th>Presença</th></tr></thead><tbody>${alunos.map(a=>{
+          const p=presMap[a.id];
+          const status=p?.status&&p.status!=='pendente'?p.status:'presente';
+          return `<tr>
+            <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div>${esc(a.first_name)} ${esc(a.last_name)}</div></td>
+            <td>
+              <select class="aula-presenca-select" data-student="${a.id}" style="padding:4px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px">
+                <option value="presente" ${status==='presente'?'selected':''}>✅ Presente</option>
+                <option value="ausente" ${status==='ausente'?'selected':''}>❌ Ausente</option>
+                <option value="justificado" ${status==='justificado'?'selected':''}>📋 Justificado</option>
+              </select>
+            </td>
+          </tr>`}).join('')}</tbody></table>`:'<div class="empty-state" style="padding:20px"><i class="fa fa-user-graduate"></i>Nenhum aluno matriculado nesta turma</div>'}
+      </div>
+      <div class="panel-footer">
+        <button class="btn btn-primary" onclick="salvarAulaEFrequencia('${classId}','${selDate}')" ${alunos.length?'':'disabled'}><i class="fa fa-save"></i> Salvar aula e frequência</button>
+      </div>
+    </div>
+  `);
+}
+
+async function salvarAulaEFrequencia(classId,date){
+  const teacherId=$('aula-teacher').value||null;
+  const status=$('aula-status').value;
+  const content=$('aula-content').value.trim();
+  const notes=$('aula-notes').value.trim();
+  const{data:lessonId,error:e1}=await sb.rpc('registrar_aula_turma',{p_class_id:classId,p_lesson_date:date,p_teacher_id:teacherId,p_status:status,p_content:content||null,p_notes:notes||null});
+  if(e1){showAlert('page-alert','Erro ao salvar aula: '+e1.message,'danger');return;}
+  const rows=[...document.querySelectorAll('.aula-presenca-select')].map(sel=>({student_id:sel.dataset.student,status:sel.value}));
+  if(rows.length){
+    const{error:e2}=await sb.rpc('salvar_frequencia_aula',{p_lesson_id:lessonId,p_rows:rows});
+    if(e2){showAlert('page-alert','Erro ao salvar frequência: '+e2.message,'danger');return;}
+  }
+  await pages.classes({view:'detail',id:classId,tab:'aula',date});
+  showAlert('page-alert','Aula e frequência salvas com sucesso!','success');
+}
+
+async function classTabHistorico(classId,header){
+  const{data:aulas=[]}=await sb.rpc('get_aulas_turma',{p_class_id:classId});
+  setContent(header+`
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Histórico de aulas</span></div>
+      <div class="table-wrap">
+        ${aulas.length?`<table>
+          <thead><tr><th>Data</th><th>Professor</th><th>Status</th><th>Conteúdo</th><th>Presença</th><th>Ações</th></tr></thead>
+          <tbody>${aulas.map(l=>`
+            <tr>
+              <td>${fdate(l.lesson_date)}</td>
+              <td>${esc(l.teacher_name)||'—'}</td>
+              <td><span class="badge status-badge-${l.status}">${LESSON_STATUS_UI[l.status]||esc(l.status)}</span></td>
+              <td style="max-width:280px;white-space:normal">${esc(l.content)||'—'}</td>
+              <td style="white-space:nowrap">✅ ${l.total_presentes} &nbsp;❌ ${l.total_ausentes} &nbsp;📋 ${l.total_justificados} <span style="color:var(--gray-500)">/ ${l.total_alunos}</span></td>
+              <td><button class="btn btn-default btn-sm" onclick="nav('classes',{view:'detail',id:'${classId}',tab:'aula',date:'${l.lesson_date}'})"><i class="fa fa-pencil-alt"></i> Ver/Editar</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`:`<div class="empty-state"><i class="fa fa-history"></i>Nenhuma aula registrada ainda.</div>`}
+      </div>
+    </div>
+  `);
 }
 
 // ============================
@@ -2939,6 +3064,116 @@ async function submeterAssinatura(){
     return;
   }
   renderSignResult('ok','Documento assinado com sucesso!',`Obrigado, ${name}. O documento foi assinado em ${new Date().toLocaleString('pt-BR')} e o registro fica disponível para a Connect Inglês VIP.`);
+}
+
+// ============================
+// RELATÓRIOS DE FREQUÊNCIA
+// ============================
+pages.relatorios=async function(){
+  const[{data:turmas=[]},{data:teachers=[]}]=await Promise.all([
+    sb.from('classes').select('id,name').eq('status',true).order('name'),
+    sb.from('teachers').select('id,first_name,last_name').eq('status',true).order('first_name'),
+  ]);
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Relatórios</span></div>
+    <div class="page-title"><i class="fa fa-chart-bar"></i> Relatórios de Frequência</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Filtros</span></div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-col"><label>Turma</label><select id="rel-turma" onchange="relCarregarAlunosDaTurma()"><option value="">Todas</option>${turmas.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></div>
+          <div class="form-col"><label>Aluno</label><select id="rel-aluno"><option value="">Todos</option></select></div>
+          <div class="form-col"><label>Professor</label><select id="rel-professor"><option value="">Todos</option>${teachers.map(t=>`<option value="${t.id}">${esc(t.first_name)} ${esc(t.last_name)}</option>`).join('')}</select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-col"><label>Data inicial</label><input id="rel-data-ini" type="date"></div>
+          <div class="form-col"><label>Data final</label><input id="rel-data-fim" type="date"></div>
+        </div>
+        <button class="btn btn-primary" onclick="gerarRelatorioFrequencia()"><i class="fa fa-chart-bar"></i> Gerar relatório</button>
+      </div>
+    </div>
+    <div id="rel-resultado"></div>
+  `);
+};
+
+async function relCarregarAlunosDaTurma(){
+  const classId=$('rel-turma').value;
+  const sel=$('rel-aluno');
+  if(!classId){sel.innerHTML='<option value="">Todos</option>';return;}
+  const{data:alunos=[]}=await sb.from('students').select('id,first_name,last_name').eq('class_id',classId).eq('status',true).order('first_name');
+  sel.innerHTML='<option value="">Todos</option>'+alunos.map(a=>`<option value="${a.id}">${esc(a.first_name)} ${esc(a.last_name)}</option>`).join('');
+}
+
+const FREQ_STATUS_UI={presente:'Presente',ausente:'Ausente',justificado:'Justificado'};
+
+async function gerarRelatorioFrequencia(){
+  const classId=$('rel-turma').value||null;
+  const studentId=$('rel-aluno').value||null;
+  const teacherId=$('rel-professor').value||null;
+  const dataIni=$('rel-data-ini').value||null;
+  const dataFim=$('rel-data-fim').value||null;
+  $('rel-resultado').innerHTML=`<div class="loading"><i class="fa fa-spinner"></i></div>`;
+  const{data:rows=[],error}=await sb.rpc('get_relatorio_frequencia',{p_class_id:classId,p_student_id:studentId,p_teacher_id:teacherId,p_data_ini:dataIni,p_data_fim:dataFim});
+  if(error){showAlert('page-alert','Erro ao gerar relatório: '+error.message,'danger');$('rel-resultado').innerHTML='';return;}
+
+  const aulasSet=new Set(rows.map(r=>r.class_id+'|'+r.lesson_date));
+  const totalAulas=aulasSet.size;
+  const presencas=rows.filter(r=>r.status==='presente').length;
+  const faltas=rows.filter(r=>r.status==='ausente').length;
+  const justificadas=rows.filter(r=>r.status==='justificado').length;
+  const pctMedio=rows.length?((presencas/rows.length)*100).toFixed(1):'0.0';
+
+  let porAlunoHtml='';
+  if(!studentId&&rows.length){
+    const porAluno={};
+    rows.forEach(r=>{
+      if(!porAluno[r.student_id]) porAluno[r.student_id]={nome:r.student_name,presente:0,ausente:0,justificado:0,total:0};
+      porAluno[r.student_id][r.status]=(porAluno[r.student_id][r.status]||0)+1;
+      porAluno[r.student_id].total++;
+    });
+    const lista=Object.values(porAluno).sort((a,b)=>a.nome.localeCompare(b.nome));
+    porAlunoHtml=`
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Frequência por aluno</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Aluno</th><th>Presenças</th><th>Faltas</th><th>Justificadas</th><th>% Frequência</th></tr></thead>
+          <tbody>${lista.map(a=>`<tr>
+            <td>${esc(a.nome)}</td>
+            <td>${a.presente||0}</td>
+            <td>${a.ausente||0}</td>
+            <td>${a.justificado||0}</td>
+            <td>${a.total?(((a.presente||0)/a.total)*100).toFixed(1):'0.0'}%</td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+      </div>`;
+  }
+
+  $('rel-resultado').innerHTML=`
+    <div class="stat-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="stat-card c-dark"><i class="fa fa-book stat-icon"></i><div><div class="stat-num">${totalAulas}</div><div class="stat-label">Aulas no período</div></div></div>
+      <div class="stat-card c-gold"><i class="fa fa-check-circle stat-icon"></i><div><div class="stat-num">${presencas}</div><div class="stat-label">Presenças</div></div></div>
+      <div class="stat-card c-orange"><i class="fa fa-times-circle stat-icon"></i><div><div class="stat-num">${faltas}</div><div class="stat-label">Faltas${justificadas?` (+${justificadas} justif.)`:''}</div></div></div>
+      <div class="stat-card c-brown"><i class="fa fa-percentage stat-icon"></i><div><div class="stat-num">${pctMedio}%</div><div class="stat-label">% de presença</div></div></div>
+    </div>
+    ${porAlunoHtml}
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Detalhamento (${rows.length} registro(s))</span></div>
+      <div class="table-wrap">
+        ${rows.length?`<table>
+          <thead><tr><th>Data</th><th>Turma</th><th>Professor</th><th>Conteúdo</th><th>Aluno</th><th>Status</th></tr></thead>
+          <tbody>${rows.map(r=>`<tr>
+            <td>${fdate(r.lesson_date)}</td>
+            <td>${esc(r.class_name)}</td>
+            <td>${esc(r.teacher_name)||'—'}</td>
+            <td style="max-width:220px;white-space:normal">${esc(r.content)||'—'}</td>
+            <td>${esc(r.student_name)}</td>
+            <td><span class="badge status-badge-${r.status}">${FREQ_STATUS_UI[r.status]||esc(r.status)}</span></td>
+          </tr>`).join('')}</tbody>
+        </table>`:`<div class="empty-state"><i class="fa fa-chart-bar"></i>Nenhum registro encontrado para os filtros selecionados.</div>`}
+      </div>
+    </div>
+  `;
 }
 
 // ============================
