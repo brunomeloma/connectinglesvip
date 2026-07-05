@@ -1120,10 +1120,13 @@ ALTER TABLE students ADD CONSTRAINT students_modalidade_check
 -- a coluna level já tinha uma CHECK constraint (definida fora deste
 -- arquivo, no schema-base) que só aceitava os valores antigos
 -- (Básico/Intermediário/Avançado). Atualiza para os novos valores do
--- cadastro de aluno.
+-- cadastro de aluno. Usa NOT VALID para não exigir migração dos alunos
+-- já cadastrados com os valores antigos — a validação passa a valer
+-- só para inserções/edições novas a partir de agora.
 ALTER TABLE students DROP CONSTRAINT IF EXISTS students_level_check;
 ALTER TABLE students ADD CONSTRAINT students_level_check
-  CHECK (level IS NULL OR level IN ('STARTER','LEVEL 1','LEVEL 2','LEVEL 3','LEVEL 4','LEVEL 5','KIDS 4-5','KIDS 6-7','KIDS 8-9'));
+  CHECK (level IS NULL OR level IN ('STARTER','LEVEL 1','LEVEL 2','LEVEL 3','LEVEL 4','LEVEL 5','KIDS 4-5','KIDS 6-7','KIDS 8-9'))
+  NOT VALID;
 
 -- força o PostgREST a recarregar o cache de schema imediatamente, sem
 -- precisar esperar o recarregamento automático (evita o erro "Could not
