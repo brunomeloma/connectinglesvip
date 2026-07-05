@@ -2213,7 +2213,7 @@ pages.financeiro=async function({view,studentId}={}){
         <div class="form-row" style="align-items:flex-end">
           <div class="form-col aluno-suggest-wrap" style="max-width:320px">
             <label>Selecione o aluno</label>
-            <input id="fin-aluno-search" placeholder="Digite o nome do aluno…" autocomplete="off" oninput="filtrarAlunoSelect()" onfocus="filtrarAlunoSelect()" onblur="setTimeout(()=>{const l=$('fin-aluno-list');if(l)l.style.display='none';},150)">
+            <input id="fin-aluno-search" placeholder="Digite o nome do aluno…" autocomplete="off" oninput="alunoAutocomplete('fin-aluno-search','fin-aluno-list','fin-select-aluno',_finAlunosBusca)" onfocus="alunoAutocomplete('fin-aluno-search','fin-aluno-list','fin-select-aluno',_finAlunosBusca)" onblur="alunoAutocompleteHide('fin-aluno-list')">
             <input type="hidden" id="fin-select-aluno">
             <div id="fin-aluno-list" class="aluno-suggest-list" style="display:none"></div>
           </div>
@@ -2389,20 +2389,25 @@ function finGoLancar(){
 }
 
 let _finAlunosBusca=[];
-function filtrarAlunoSelect(){
-  const termo=($('fin-aluno-search')?.value||'').toLowerCase().trim();
-  const list=$('fin-aluno-list');
+// Busca de aluno com sugestões (usado em Financeiro e Documentos)
+function alunoAutocomplete(searchId,listId,hiddenId,alunosArr){
+  const termo=($(searchId)?.value||'').toLowerCase().trim();
+  const list=$(listId);
   if(!list) return;
-  const encontrados=termo?_finAlunosBusca.filter(a=>(a.first_name+' '+a.last_name).toLowerCase().includes(termo)):_finAlunosBusca;
-  list.innerHTML=encontrados.length?encontrados.map(a=>`<div class="aluno-suggest-item" onmousedown="selecionarAlunoBusca('${a.id}','${esc(a.first_name)} ${esc(a.last_name)}')">${esc(a.first_name)} ${esc(a.last_name)}</div>`).join(''):'<div class="aluno-suggest-empty">Nenhum aluno encontrado</div>';
+  const encontrados=termo?alunosArr.filter(a=>(a.first_name+' '+a.last_name).toLowerCase().includes(termo)):alunosArr;
+  list.innerHTML=encontrados.length?encontrados.map(a=>`<div class="aluno-suggest-item" onmousedown="alunoAutocompleteSelect('${hiddenId}','${searchId}','${listId}','${a.id}','${esc(a.first_name)} ${esc(a.last_name)}')">${esc(a.first_name)} ${esc(a.last_name)}</div>`).join(''):'<div class="aluno-suggest-empty">Nenhum aluno encontrado</div>';
   list.style.display='block';
 }
 
-function selecionarAlunoBusca(id,nome){
-  $('fin-select-aluno').value=id;
-  $('fin-aluno-search').value=nome;
-  const list=$('fin-aluno-list');
+function alunoAutocompleteSelect(hiddenId,searchId,listId,id,nome){
+  $(hiddenId).value=id;
+  $(searchId).value=nome;
+  const list=$(listId);
   if(list) list.style.display='none';
+}
+
+function alunoAutocompleteHide(listId){
+  setTimeout(()=>{const l=$(listId);if(l)l.style.display='none';},150);
 }
 
 function aplicarValorGlobal(){
@@ -2927,12 +2932,11 @@ pages.documentos=async function(){
       <div class="panel-head"><span class="panel-title">Gerar link de assinatura</span></div>
       <div class="panel-body">
         <div class="form-row">
-          <div class="form-col">
+          <div class="form-col aluno-suggest-wrap">
             <label>Aluno(a) <span class="required">*</span></label>
-            <select id="doc-student">
-              <option value="">Selecione...</option>
-              ${alunos.map(a=>`<option value="${a.id}">${esc(a.first_name)} ${esc(a.last_name)}</option>`).join('')}
-            </select>
+            <input id="doc-student-search" placeholder="Digite o nome do aluno…" autocomplete="off" oninput="alunoAutocomplete('doc-student-search','doc-student-list','doc-student',_docsAlunosCache)" onfocus="alunoAutocomplete('doc-student-search','doc-student-list','doc-student',_docsAlunosCache)" onblur="alunoAutocompleteHide('doc-student-list')">
+            <input type="hidden" id="doc-student">
+            <div id="doc-student-list" class="aluno-suggest-list" style="display:none"></div>
           </div>
           <div class="form-col">
             <label>Tipo de contrato <span class="required">*</span></label>
@@ -2989,7 +2993,7 @@ async function gerarLinkDocumento(){
   if(error){showAlert('page-alert','Erro ao gerar link: '+error.message,'danger');return;}
   const url=location.origin+location.pathname+'?assinar='+token;
   const aluno=_docsAlunosCache.find(a=>a.id===studentId);
-  const nomeAluno=esc($('doc-student').selectedOptions[0].textContent);
+  const nomeAluno=esc(aluno?.first_name)+' '+esc(aluno?.last_name);
   const msg=encodeURIComponent(`Olá! Segue o link para leitura e assinatura do contrato de ${nomeAluno} na Connect Inglês VIP:\n${url}`);
   let numero=(aluno?.whatsapp||aluno?.mobile_number||'').replace(/\D/g,'');
   if(numero&&!numero.startsWith('55')) numero='55'+numero;
