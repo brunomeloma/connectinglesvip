@@ -542,6 +542,8 @@ function canSeeFinanceiroGlobal(){return canManageBilling();}
 function canAccessVipFollowup(){return isAdmin()||isFinanceiro()||isSecretaria();}
 function requireRole(allowed,msg){if(!allowed){showAlert('page-alert',msg||'Sem permissão para esta ação.','danger');return false;}return true;}
 function status_badge(s){return s?'<span class="badge badge-success">Ativo</span>':'<span class="badge badge-warning">Inativo</span>';}
+const NIVEIS=['STARTER','LEVEL 1','LEVEL 2','LEVEL 3','LEVEL 4','LEVEL 5','KIDS 4-5','KIDS 6-7','KIDS 8-9'];
+function nivelOptions(selected){return `<option value="">Selecione</option>`+NIVEIS.map(n=>`<option value="${n}" ${selected===n?'selected':''}>${n}</option>`).join('');}
 function level_badge(l){if(!l)return '—';const m={Básico:'badge-basico',Intermediário:'badge-intermediario',Avançado:'badge-avancado',STARTER:'badge-secondary','LEVEL 1':'badge-basico','LEVEL 2':'badge-basico','LEVEL 3':'badge-intermediario','LEVEL 4':'badge-intermediario','LEVEL 5':'badge-avancado','KIDS 4-5':'badge-purple','KIDS 6-7':'badge-purple','KIDS 8-9':'badge-purple'};return `<span class="badge ${m[l]||'badge-secondary'}">${l}</span>`;}
 function modalidade_badge(m){if(!m)return '—';const c={KIDS:'badge-purple',REGULAR:'badge-secondary',VIP:'badge-vip','REGULAR ONLINE':'badge-info',BOLSA:'badge-gold'};return `<span class="badge ${c[m]||'badge-secondary'}">${m}</span>`;}
 function fdate(d){
@@ -1210,9 +1212,7 @@ async function studentForm(id){
   const classOpts=classes.map(c=>`<option value="${c.id}" ${s.class_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   const schoolOpts=schools.map(c=>`<option value="${c.id}" ${s.school_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   const MODALIDADES=['KIDS','REGULAR','VIP','REGULAR ONLINE','BOLSA'];
-  const NIVEIS=['STARTER','LEVEL 1','LEVEL 2','LEVEL 3','LEVEL 4','LEVEL 5','KIDS 4-5','KIDS 6-7','KIDS 8-9'];
   const modalidadeOpts=MODALIDADES.map(m=>`<option value="${m}" ${s.modalidade===m?'selected':''}>${m}</option>`).join('');
-  const nivelOpts=NIVEIS.map(n=>`<option value="${n}" ${s.level===n?'selected':''}>${n}</option>`).join('');
   const comprovanteAtual=s.parent_comprovante_path?`<div class="field"><a href="#" onclick="abrirComprovante('${esc(s.parent_comprovante_path)}',${/^https?:\/\//.test(s.parent_comprovante_path)?"'url'":"'path'"});return false" class="comprovante-icon"><i class="fa fa-image"></i> Ver comprovante atual</a></div>`:'';
   setContent(`
     <div class="breadcrumb"><a onclick="nav('students')">Aluno</a> › <span>${id?'Editar':'Adicionar'}</span></div>
@@ -1235,7 +1235,7 @@ async function studentForm(id){
             <div class="field"><label>Escola</label><select id="f-school"><option value="">Nenhuma</option>${schoolOpts}</select></div>
             <div class="field"><label>Turma</label><select id="f-class"><option value="">Nenhuma</option>${classOpts}</select></div>
             <div class="field"><label>Modalidade</label><select id="f-modalidade"><option value="">Selecione</option>${modalidadeOpts}</select></div>
-            <div class="field"><label>Nível</label><select id="f-level"><option value="">Selecione</option>${nivelOpts}</select></div>
+            <div class="field"><label>Nível</label><select id="f-level">${nivelOptions(s.level)}</select></div>
             <div class="field"><label>Observação</label><textarea id="f-note">${esc(s.note)}</textarea></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${s.status!==false?'selected':''}>Ativo</option><option value="false" ${s.status===false?'selected':''}>Inativo</option></select></div>
           </div>
@@ -1383,10 +1383,10 @@ async function classForm(id){
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Nome da turma <span class="required">*</span></label><input id="f-name" value="${esc(c.name)}" placeholder="Ex: Turma A — Básico"></div>
+            <div class="field"><label>Nome da turma <span class="required">*</span></label><input id="f-name" value="${esc(c.name)}" placeholder="Ex: Turma A — STARTER"></div>
             <div class="field"><label>Professor</label><select id="f-teacher"><option value="">Nenhum</option>${tOpts}</select></div>
             <div class="field"><label>Escola</label><select id="f-school"><option value="">Nenhuma</option>${sOpts}</select></div>
-            <div class="field"><label>Nível</label><select id="f-level"><option value="">Selecione</option><option value="Básico" ${c.level==='Básico'?'selected':''}>Básico</option><option value="Intermediário" ${c.level==='Intermediário'?'selected':''}>Intermediário</option><option value="Avançado" ${c.level==='Avançado'?'selected':''}>Avançado</option></select></div>
+            <div class="field"><label>Nível</label><select id="f-level">${nivelOptions(c.level)}</select></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${c.status!==false?'selected':''}>Ativo</option><option value="false" ${c.status===false?'selected':''}>Inativo</option></select></div>
           </div>
           <div>
