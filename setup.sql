@@ -1116,3 +1116,9 @@ ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_comprovante_path text;
 ALTER TABLE students DROP CONSTRAINT IF EXISTS students_modalidade_check;
 ALTER TABLE students ADD CONSTRAINT students_modalidade_check
   CHECK (modalidade IS NULL OR modalidade IN ('KIDS','REGULAR','VIP','REGULAR ONLINE','BOLSA'));
+
+-- força o PostgREST a recarregar o cache de schema imediatamente, sem
+-- precisar esperar o recarregamento automático (evita o erro "Could not
+-- find the 'modalidade' column ... in the schema cache" logo após rodar
+-- este script)
+NOTIFY pgrst, 'reload schema';
