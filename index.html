@@ -2964,7 +2964,7 @@ function renderDocHistoryTable(docs){
       <tr>
         <td>${esc(d.first_name)} ${esc(d.last_name)}</td>
         <td>${DOCUMENT_LABELS[d.document_type]||esc(d.document_type)}</td>
-        <td><span class="badge doc-status-${d.status}">${DOC_STATUS_LABELS[d.status]||esc(d.status)}</span></td>
+        <td><span class="badge doc-status-${d.status}">${DOC_STATUS_LABELS[d.status]||esc(d.status)}</span>${d.cpf_confere===false?` <span class="badge badge-danger" title="O CPF assinado é diferente do CPF do responsável cadastrado no aluno"><i class="fa fa-exclamation-triangle"></i> CPF divergente</span>`:''}</td>
         <td>${new Date(d.created_at).toLocaleString('pt-BR')}</td>
         <td>${d.opened_at?new Date(d.opened_at).toLocaleString('pt-BR'):'—'}</td>
         <td>${d.reading_completed_at?new Date(d.reading_completed_at).toLocaleString('pt-BR'):'—'}</td>
@@ -3034,7 +3034,7 @@ function verDetalhesDocumento(id){
     <div class="doc-detail-row"><span>Leitura completa em</span><span>${d.reading_completed_at?new Date(d.reading_completed_at).toLocaleString('pt-BR'):'—'}</span></div>
     <div class="doc-detail-row"><span>Assinado em</span><span>${d.signed_at?new Date(d.signed_at).toLocaleString('pt-BR'):'—'}</span></div>
     <div class="doc-detail-row"><span>Nome do responsável assinante</span><span>${esc(d.signer_name)||'—'}</span></div>
-    <div class="doc-detail-row"><span>CPF do responsável assinante</span><span>${esc(d.signer_cpf)||'—'}</span></div>
+    <div class="doc-detail-row"><span>CPF do responsável assinante</span><span>${esc(d.signer_cpf)||'—'}${d.cpf_confere===false?' <span class="badge badge-danger" title="Diferente do CPF cadastrado no aluno"><i class="fa fa-exclamation-triangle"></i> Divergente do cadastro</span>':''}</span></div>
     <div class="doc-detail-row"><span>Endereço IP registrado</span><span>${esc(d.ip_address)||'—'}</span></div>
     <div class="doc-detail-row"><span>Dispositivo (user agent)</span><span style="text-align:left;word-break:break-all;max-width:260px">${esc(d.user_agent)||'—'}</span></div>
   `;

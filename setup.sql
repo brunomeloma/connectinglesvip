@@ -1263,3 +1263,43 @@ AS $$ DECLARE v_row document_signatures%ROWTYPE; v_parent_cpf text; BEGIN
 END; $$;
 
 GRANT EXECUTE ON FUNCTION assinar_documento(text, text, text, text, text) TO anon, authenticated;
+
+
+-- #####################################################################
+-- 16. SINALIZAR NA AUDITORIA QUANDO O CPF ASSINADO DIVERGE DO CADASTRO
+-- #####################################################################
+-- A Seção 15 já bloqueia no servidor a assinatura com CPF diferente do
+-- cadastrado, mas como camada extra de segurança, o histórico de
+-- auditoria (tela Documentos) passa a mostrar um aviso visível sempre
+-- que um documento assinado tiver CPF diferente do parent_cpf do aluno
+-- — cobre também documentos assinados antes desta trava existir.
+
+DROP FUNCTION IF EXISTS listar_documentos_assinatura(uuid);
+CREATE FUNCTION listar_documentos_assinatura(p_student_id uuid DEFAULT NULL)
+RETURNS TABLE(
+  id uuid, student_id uuid, first_name text, last_name text,
+  document_type text, status text, created_at timestamptz, expires_at timestamptz,
+  opened_at timestamptz, reading_completed_at timestamptz, signed_at timestamptz,
+  signer_name text, signer_cpf text, ip_address text, user_agent text,
+  created_by_name text, cpf_confere boolean
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT d.id, d.student_id, s.first_name, s.last_name,
+      d.document_type, d.status, d.created_at, d.expires_at,
+      d.opened_at, d.reading_completed_at, d.signed_at,
+      d.signer_name, d.signer_cpf, d.ip_address, d.user_agent,
+      p.name,
+      (
+        d.status <> 'assinado'
+        OR s.parent_cpf IS NULL
+        OR regexp_replace(s.parent_cpf,'\D','','g') = ''
+        OR regexp_replace(s.parent_cpf,'\D','','g') = regexp_replace(coalesce(d.signer_cpf,''),'\D','','g')
+      ) AS cpf_confere
+    FROM document_signatures d
+    JOIN students s ON s.id = d.student_id
+    LEFT JOIN profiles p ON p.id = d.created_by
+    WHERE p_student_id IS NULL OR d.student_id = p_student_id
+    ORDER BY d.created_at DESC;
+END; $$;
