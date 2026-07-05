@@ -411,11 +411,11 @@ let currentUser = null;
     <div class="sb-item" data-page="teachers" onclick="nav('teachers')"><i class="fa fa-chalkboard-teacher"></i> Professor</div>
     <div class="sb-item" data-page="students" onclick="nav('students')"><i class="fa fa-user-graduate"></i> Aluno</div>
     <div class="sb-item" data-page="classes" onclick="nav('classes')"><i class="fa fa-layer-group"></i> Turmas</div>
-    <div class="sb-item" data-page="cobrancas" onclick="nav('cobrancas')"><i class="fa fa-calendar-check"></i> Cobranças</div>
+    <div class="sb-item no-professor" data-page="cobrancas" onclick="nav('cobrancas')"><i class="fa fa-calendar-check"></i> Cobranças</div>
     <div class="sb-item no-professor" data-page="professores" onclick="nav('professores')"><i class="fa fa-user-clock"></i> Prof. — Horas</div>
-    <div class="sb-item" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
+    <div class="sb-item no-professor" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
     <div class="sb-item" data-page="vip" onclick="nav('vip')"><i class="fa fa-star"></i> VIP Online</div>
-    <div class="sb-item" data-page="documentos" onclick="nav('documentos')"><i class="fa fa-file-signature"></i> Documentos</div>
+    <div class="sb-item no-professor" data-page="documentos" onclick="nav('documentos')"><i class="fa fa-file-signature"></i> Documentos</div>
     <div class="sb-item" data-page="relatorios" onclick="nav('relatorios')"><i class="fa fa-chart-bar"></i> Relatórios</div>
     <div class="sb-logout">
       <div class="sb-item" onclick="doLogout()"><i class="fa fa-sign-out-alt"></i> Sair</div>
@@ -521,7 +521,7 @@ function role_badge(role){
   const label={super_admin:'Super Admin',admin:'Admin',direcao:'Direção',financeiro:'Financeiro',secretaria:'Secretaria',escola:'Escola',escola_admin:'Escola Admin',professor:'Professor'};
   return `<span class="badge ${map[role]||'badge-secondary'}">${label[role]||role}</span>`;
 }
-function isAdmin(){return ['super_admin','admin','direcao'].includes(currentUser?.role);}
+function isAdmin(){return ['super_admin','direcao'].includes(currentUser?.role);}
 function isFinanceiro(){return isAdmin()||currentUser?.role==='financeiro';}
 function isSecretaria(){return currentUser?.role==='secretaria';}
 function canSeeFinanceiroGlobal(){return isFinanceiro();}
@@ -531,7 +531,14 @@ function canAccessVipFollowup(){return isAdmin()||isFinanceiro()||isSecretaria()
 function requireRole(allowed,msg){if(!allowed){showAlert('page-alert',msg||'Sem permissão para esta ação.','danger');return false;}return true;}
 function status_badge(s){return s?'<span class="badge badge-success">Ativo</span>':'<span class="badge badge-warning">Inativo</span>';}
 function level_badge(l){if(!l)return '—';const m={Básico:'badge-basico',Intermediário:'badge-intermediario',Avançado:'badge-avancado'};return `<span class="badge ${m[l]||'badge-secondary'}">${l}</span>`;}
-function fdate(d){if(!d)return '—';return new Date(d).toLocaleDateString('pt-BR');}
+function fdate(d){
+  if(!d)return '—';
+  if(typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d)){
+    const[y,m,day]=d.split('-').map(Number);
+    return new Date(y,m-1,day).toLocaleDateString('pt-BR');
+  }
+  return new Date(d).toLocaleDateString('pt-BR');
+}
 function avatar(name){return escapeHtml((name||'?').charAt(0).toUpperCase());}
 function showAlert(id,msg,type='success'){const el=$(id);if(!el)return;el.className='alert alert-'+type;el.textContent=msg;el.style.display='block';setTimeout(()=>{el.style.display='none'},3500);}
 function closeConfirm(){$('confirm-overlay').style.display='none';}
@@ -732,7 +739,7 @@ pages.schools=async function({view,id}={}){
           <div class="form-col"><label>Nome</label><input id="sch-name" placeholder="Nome da escola" value="${esc(name)}"></div>
           <div class="form-col"><label>Status</label><select id="sch-status"><option value="">Todos</option><option value="1" ${status==='1'?'selected':''}>Ativo</option><option value="0" ${status==='0'?'selected':''}>Inativo</option></select></div>
         </div>
-        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="nav('schools')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['sch-name','sch-status']);nav('schools')">Limpa</button></div>
+        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="saveFilters(['sch-name','sch-status']);nav('schools')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['sch-name','sch-status']);nav('schools')">Limpa</button></div>
       </div>
     </div>
     <div class="panel">
@@ -1003,7 +1010,7 @@ pages.teachers=async function({view,id}={}){
           <div class="form-col"><label>Nome</label><input id="tc-name" placeholder="Nome" value="${esc(name)}"></div>
           <div class="form-col"><label>Status</label><select id="tc-status"><option value="">Todos</option><option value="1" ${status==='1'?'selected':''}>Ativo</option><option value="0" ${status==='0'?'selected':''}>Inativo</option></select></div>
         </div>
-        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="nav('teachers')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['tc-name','tc-status']);nav('teachers')">Limpa</button></div>
+        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="saveFilters(['tc-name','tc-status']);nav('teachers')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['tc-name','tc-status']);nav('teachers')">Limpa</button></div>
       </div>
     </div>
     <div class="panel">
@@ -1109,7 +1116,7 @@ pages.students=async function({view,id}={}){
           <div class="form-col"><label>Turma</label><select id="st-class"><option value="">Todas</option>${classes.map(c=>`<option value="${c.id}" ${classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
           <div class="form-col"><label>Status</label><select id="st-status"><option value="">Todos</option><option value="1" ${status==='1'?'selected':''}>Ativo</option><option value="0" ${status==='0'?'selected':''}>Inativo</option></select></div>
         </div>
-        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="nav('students')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['st-name','st-class','st-status']);nav('students')">Limpa</button></div>
+        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="saveFilters(['st-name','st-class','st-status']);nav('students')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['st-name','st-class','st-status']);nav('students')">Limpa</button></div>
       </div>
     </div>
     <div class="panel">
@@ -1549,6 +1556,7 @@ const COBRANCA_MSGS={
 };
 
 pages.cobrancas=async function(){
+  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const[{data:hoje=[]},{data:vencidos=[]},{data:pagosHoje=[]}]=await Promise.all([
     sb.rpc('get_boletos_vencem_hoje'),
@@ -1600,7 +1608,7 @@ pages.cobrancas=async function(){
 };
 
 function renderBoletoCobranca(b,showAtraso){
-  const numero=(b.whatsapp||b.mobile_number||'').replace(/\\D/g,'');
+  const numero=(b.whatsapp||b.mobile_number||'').replace(/\D/g,'');
   const numFmt=numero&&!numero.startsWith('55')?'55'+numero:numero;
   const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const boletoInfo=b.url_boleto?`Link: ${b.url_boleto}`:(b.codigo_boleto?`Código: ${b.codigo_boleto}`:'');
@@ -1624,7 +1632,7 @@ function renderBoletoCobranca(b,showAtraso){
 
 function enviarCobrancaWpp(studentId,nome,numero,tipo,dataVenc,boletoInfo){
   const tpl=COBRANCA_MSGS[tipo]||COBRANCA_MSGS.vence_hoje;
-  let texto=tpl.text.replace(/\\{nome\\}/g,nome).replace(/\\{data\\}/g,dataVenc).replace(/\\{boleto\\}/g,boletoInfo?'\\n'+boletoInfo:'');
+  let texto=tpl.text.replace(/\{nome\}/g,nome).replace(/\{data\}/g,dataVenc).replace(/\{boleto\}/g,boletoInfo?'\n'+boletoInfo:'');
   const url='https://wa.me/'+numero+'?text='+encodeURIComponent(texto);
   window.open(url,'_blank');
   sb.rpc('registrar_cobranca_boleto',{p_student_id:studentId,p_contact_type:tpl.type,p_message:texto,p_channel:'whatsapp'});
@@ -2104,6 +2112,7 @@ async function profSalvarIndividual(teacherId,nome){
 function fmtBRL(v){return Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});}
 
 pages.financeiro=async function({view,studentId}={}){
+  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
   if(view==='lancar') return finLancarBoletos(studentId);
   if(view==='aluno')  return finAluno(studentId);
 
@@ -2169,7 +2178,7 @@ pages.financeiro=async function({view,studentId}={}){
           <div class="form-col"><label>Nome do aluno</label><input id="fin-nome" value="${esc(fNome)}" placeholder="Buscar por nome…"></div>
           <div class="form-col" style="max-width:160px"><label>Status</label><select id="fin-status"><option value="">Todos</option><option value="aberto" ${fStatus==='aberto'?'selected':''}>Em aberto</option><option value="pago" ${fStatus==='pago'?'selected':''}>Pago</option></select></div>
           <div class="form-col" style="max-width:120px"><label>Ano</label><select id="fin-ano">${anosOpts}</select></div>
-          <div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="nav('financeiro')"><i class="fa fa-search"></i> Filtrar</button><button class="btn btn-danger" onclick="clearFilters(['fin-nome','fin-status','fin-ano']);nav('financeiro')">Limpar</button></div>
+          <div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="saveFilters(['fin-nome','fin-status','fin-ano']);nav('financeiro')"><i class="fa fa-search"></i> Filtrar</button><button class="btn btn-danger" onclick="clearFilters(['fin-nome','fin-status','fin-ano']);nav('financeiro')">Limpar</button></div>
         </div>
       </div>
     </div>
@@ -2358,10 +2367,19 @@ async function deletarBoleto(boletoId, studentId){
 let _pgtoCtx={};
 
 function abrirPgtoModal(boletoId, statusAtual, studentId, mesTxt){
-  // Se já está pago, apenas desfaz sem modal
+  // Se já está pago, pede confirmação antes de desfazer
   if(statusAtual==='pago'){
-    _pgtoCtx={boletoId,novoStatus:'aberto',studentId};
-    confirmarPagamentoModal();
+    showConfirm(()=>{
+      _pgtoCtx={boletoId,novoStatus:'aberto',studentId};
+      confirmarPagamentoModal();
+    });
+    const box=document.querySelector('.confirm-box');
+    if(box){
+      box.querySelector('h4').textContent='Desfazer pagamento';
+      box.querySelector('p').textContent=`Marcar o boleto de ${mesTxt} novamente como "Em aberto"? Isso desfaz o registro de pagamento.`;
+      box.querySelector('#confirm-yes').textContent='Desfazer pagamento';
+      box.querySelector('#confirm-yes').className='btn btn-danger';
+    }
     return;
   }
   _pgtoCtx={boletoId,novoStatus:'pago',studentId};
@@ -2820,6 +2838,7 @@ function buildContractHtml(type,studentName){
 let _docsCache=[];
 let _docsAlunosCache=[];
 pages.documentos=async function(){
+  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const[{data:alunos=[]},{data:docs=[]}]=await Promise.all([
     sb.from('students').select('id,first_name,last_name,whatsapp,mobile_number').eq('status',true).order('first_name'),
@@ -3059,6 +3078,9 @@ async function submeterAssinatura(){
   const btn=$('sign-submit-btn');
   btn.disabled=true;
   btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Assinando...';
+  // reforça a confirmação de leitura no servidor, caso a chamada feita durante
+  // o scroll tenha falhado silenciosamente (rede instável)
+  await sb.rpc('confirmar_leitura_assinatura',{p_token:_signState.token});
   const ip=await getClientIp();
   const{error}=await sb.rpc('assinar_documento',{
     p_token:_signState.token,p_signer_name:name,p_signer_cpf:cpf,
@@ -3217,6 +3239,7 @@ async function deleteRecord(table,id,returnPage){
 const _filters={};
 function getFilter(key){return $( key)?.value||_filters[key]||'';}
 function clearFilters(keys){keys.forEach(k=>{const el=$(k);if(el)el.value='';delete _filters[k];});}
+function saveFilters(keys){keys.forEach(k=>{const el=$(k);if(el)_filters[k]=el.value;});}
 
 // Inicialização
 document.addEventListener('DOMContentLoaded',()=>{

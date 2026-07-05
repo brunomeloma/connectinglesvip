@@ -375,7 +375,7 @@ END; $$;
 DO $$ DECLARE pol record; BEGIN
   FOR pol IN
     SELECT policyname, tablename FROM pg_policies
-    WHERE schemaname='public' AND policyname LIKE 'anon_%' OR policyname LIKE 'temp_dev_%' OR policyname='Allow all for authenticated'
+    WHERE schemaname='public' AND (policyname LIKE 'anon_%' OR policyname LIKE 'temp_dev_%' OR policyname='Allow all for authenticated')
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', pol.policyname, pol.tablename);
   END LOOP;
@@ -800,7 +800,7 @@ END; $$;
 CREATE OR REPLACE FUNCTION revogar_link_assinatura(p_id uuid)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
-  IF NOT has_role(ARRAY['super_admin','direcao','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
   UPDATE document_signatures SET status='revogado', revoked_at=now(), revoked_by=auth.uid()
   WHERE id=p_id AND status<>'assinado';
 END; $$;
@@ -1035,3 +1035,60 @@ AS $$ BEGIN
       AND (p_data_fim IS NULL OR a.date <= p_data_fim)
     ORDER BY a.date DESC;
 END; $$;
+
+
+-- #####################################################################
+-- 11. CORREÇÃO DE INTEGRIDADE — excluir aluno/professor/turma não pode
+-- apagar em cascata histórico financeiro, jurídico e acadêmico
+-- #####################################################################
+-- Antes: ON DELETE CASCADE em attendance, document_signatures,
+-- teacher_lessons e class_lessons apagava para sempre presenças, contratos
+-- já assinados e lançamentos de pagamento junto com o registro pai.
+-- Agora: ON DELETE SET NULL preserva a linha (e seus dados), apenas
+-- desvinculando a referência ao registro excluído.
+
+ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_class_id_fkey;
+ALTER TABLE attendance ADD CONSTRAINT attendance_class_id_fkey
+  FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE SET NULL;
+
+ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_student_id_fkey;
+ALTER TABLE attendance ADD CONSTRAINT attendance_student_id_fkey
+  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL;
+
+ALTER TABLE student_contacts DROP CONSTRAINT IF EXISTS student_contacts_student_id_fkey;
+ALTER TABLE student_contacts ADD CONSTRAINT student_contacts_student_id_fkey
+  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL;
+
+ALTER TABLE document_signatures DROP CONSTRAINT IF EXISTS document_signatures_student_id_fkey;
+ALTER TABLE document_signatures ADD CONSTRAINT document_signatures_student_id_fkey
+  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL;
+
+ALTER TABLE teacher_lessons DROP CONSTRAINT IF EXISTS teacher_lessons_teacher_id_fkey;
+ALTER TABLE teacher_lessons ADD CONSTRAINT teacher_lessons_teacher_id_fkey
+  FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE SET NULL;
+
+ALTER TABLE teacher_lessons DROP CONSTRAINT IF EXISTS teacher_lessons_actual_teacher_id_fkey;
+ALTER TABLE teacher_lessons ADD CONSTRAINT teacher_lessons_actual_teacher_id_fkey
+  FOREIGN KEY (actual_teacher_id) REFERENCES teachers(id) ON DELETE SET NULL;
+
+ALTER TABLE class_lessons DROP CONSTRAINT IF EXISTS class_lessons_class_id_fkey;
+ALTER TABLE class_lessons ADD CONSTRAINT class_lessons_class_id_fkey
+  FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE SET NULL;
+
+-- boletos é definida fora deste arquivo (schema-base), então procura o nome
+-- real da constraint em vez de arriscar um nome adivinhado
+DO $$ DECLARE v_conname text; BEGIN
+  SELECT con.conname INTO v_conname
+  FROM pg_constraint con
+  JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = ANY(con.conkey)
+  WHERE con.contype = 'f'
+    AND con.conrelid = 'boletos'::regclass
+    AND con.confrelid = 'students'::regclass
+    AND att.attname = 'student_id'
+  LIMIT 1;
+
+  IF v_conname IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE boletos DROP CONSTRAINT %I', v_conname);
+    EXECUTE 'ALTER TABLE boletos ADD CONSTRAINT boletos_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL';
+  END IF;
+END $$;
