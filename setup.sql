@@ -1346,3 +1346,19 @@ AS $$ DECLARE v_row document_signatures%ROWTYPE; v_parent_cpf text; BEGIN
 END; $$;
 
 GRANT EXECUTE ON FUNCTION assinar_documento(text, text, text, text, text) TO anon, authenticated;
+
+
+-- #####################################################################
+-- 18. NÍVEL DE TURMA — MESMOS VALORES DO NÍVEL DE ALUNO
+-- #####################################################################
+-- A tabela classes tinha uma CHECK constraint (classes_level_check,
+-- definida fora deste arquivo, no schema-base) restrita aos valores
+-- antigos (Básico/Intermediário/Avançado), igual ao que aconteceu com
+-- students_level_check. Atualiza para os novos valores usados também
+-- no cadastro de aluno. NOT VALID para não exigir migração das turmas
+-- já cadastradas com os valores antigos.
+
+ALTER TABLE classes DROP CONSTRAINT IF EXISTS classes_level_check;
+ALTER TABLE classes ADD CONSTRAINT classes_level_check
+  CHECK (level IS NULL OR level IN ('STARTER','LEVEL 1','LEVEL 2','LEVEL 3','LEVEL 4','LEVEL 5','KIDS 4-5','KIDS 6-7','KIDS 8-9'))
+  NOT VALID;
