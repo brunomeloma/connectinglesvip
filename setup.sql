@@ -1117,6 +1117,14 @@ ALTER TABLE students DROP CONSTRAINT IF EXISTS students_modalidade_check;
 ALTER TABLE students ADD CONSTRAINT students_modalidade_check
   CHECK (modalidade IS NULL OR modalidade IN ('KIDS','REGULAR','VIP','REGULAR ONLINE','BOLSA'));
 
+-- a coluna level já tinha uma CHECK constraint (definida fora deste
+-- arquivo, no schema-base) que só aceitava os valores antigos
+-- (Básico/Intermediário/Avançado). Atualiza para os novos valores do
+-- cadastro de aluno.
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_level_check;
+ALTER TABLE students ADD CONSTRAINT students_level_check
+  CHECK (level IS NULL OR level IN ('STARTER','LEVEL 1','LEVEL 2','LEVEL 3','LEVEL 4','LEVEL 5','KIDS 4-5','KIDS 6-7','KIDS 8-9'));
+
 -- força o PostgREST a recarregar o cache de schema imediatamente, sem
 -- precisar esperar o recarregamento automático (evita o erro "Could not
 -- find the 'modalidade' column ... in the schema cache" logo após rodar
