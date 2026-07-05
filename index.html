@@ -2918,7 +2918,7 @@ pages.documentos=async function(){
   if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const[{data:alunos=[]},{data:docs=[]}]=await Promise.all([
-    sb.from('students').select('id,first_name,last_name,whatsapp,mobile_number').eq('status',true).order('first_name'),
+    sb.from('students').select('id,first_name,last_name,whatsapp,mobile_number,parent_cpf').eq('status',true).order('first_name'),
     sb.rpc('listar_documentos_assinatura'),
   ]);
   _docsCache=docs;
@@ -2990,6 +2990,11 @@ async function gerarLinkDocumento(){
   const studentId=$('doc-student').value;
   const docType=$('doc-type').value;
   if(!studentId){showAlert('page-alert','Selecione o aluno.','danger');return;}
+  const alunoSel=_docsAlunosCache.find(a=>a.id===studentId);
+  if(!alunoSel?.parent_cpf||!alunoSel.parent_cpf.replace(/\D/g,'')){
+    showAlert('page-alert','Este aluno ainda não tem CPF do responsável cadastrado. Cadastre o CPF em Aluno → Editar → Dados do Responsável antes de gerar o link — a assinatura só é aceita quando o CPF digitado bate com o cadastrado.','danger');
+    return;
+  }
   const{data:token,error}=await sb.rpc('gerar_link_assinatura',{p_student_id:studentId,p_document_type:docType});
   if(error){showAlert('page-alert','Erro ao gerar link: '+error.message,'danger');return;}
   const url=location.origin+location.pathname+'?assinar='+token;

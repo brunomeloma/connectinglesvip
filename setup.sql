@@ -1303,3 +1303,46 @@ AS $$ BEGIN
     WHERE p_student_id IS NULL OR d.student_id = p_student_id
     ORDER BY d.created_at DESC;
 END; $$;
+
+
+-- #####################################################################
+-- 17. EXIGIR CPF DO RESPONSÁVEL CADASTRADO (ENDURECE A SEÇÃO 15)
+-- #####################################################################
+-- A Seção 15 só bloqueava a assinatura quando o aluno JÁ tinha
+-- parent_cpf cadastrado e o CPF digitado era diferente. Por decisão
+-- explícita, agora a assinatura exige que o CPF do responsável já
+-- esteja cadastrado no aluno — se não estiver, a assinatura é
+-- recusada (em vez de aceitar qualquer CPF válido). Use parent_cpf
+-- (coluna real da tabela students nesta base — não confundir com um
+-- eventual "responsavel_cpf" sugerido por outra ferramenta, que não
+-- existe neste schema).
+
+CREATE OR REPLACE FUNCTION assinar_documento(
+  p_token text, p_signer_name text, p_signer_cpf text,
+  p_ip text DEFAULT NULL, p_user_agent text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_row document_signatures%ROWTYPE; v_parent_cpf text; BEGIN
+  SELECT * INTO v_row FROM document_signatures WHERE token = p_token;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Link inválido.'; END IF;
+  IF v_row.status = 'assinado' THEN RAISE EXCEPTION 'Este documento já foi assinado.'; END IF;
+  IF v_row.status = 'revogado' OR v_row.expires_at < now() THEN RAISE EXCEPTION 'Este link expirou ou foi revogado.'; END IF;
+  IF v_row.reading_completed_at IS NULL THEN RAISE EXCEPTION 'É necessário ler o documento até o final antes de assinar.'; END IF;
+  IF coalesce(trim(p_signer_name),'')='' OR coalesce(trim(p_signer_cpf),'')='' THEN RAISE EXCEPTION 'Nome completo e CPF são obrigatórios.'; END IF;
+  IF NOT is_valid_cpf(p_signer_cpf) THEN RAISE EXCEPTION 'CPF inválido.'; END IF;
+
+  SELECT parent_cpf INTO v_parent_cpf FROM students WHERE id = v_row.student_id;
+  IF v_parent_cpf IS NULL OR regexp_replace(v_parent_cpf,'\D','','g') = '' THEN
+    RAISE EXCEPTION 'CPF do responsável não está cadastrado para este aluno. Peça para a secretaria cadastrar o CPF antes de assinar.';
+  END IF;
+  IF regexp_replace(v_parent_cpf,'\D','','g') <> regexp_replace(p_signer_cpf,'\D','','g') THEN
+    RAISE EXCEPTION 'O CPF informado não confere com o CPF do responsável cadastrado para este aluno.';
+  END IF;
+
+  UPDATE document_signatures SET
+    status='assinado', signed_at=now(),
+    signer_name=trim(p_signer_name), signer_cpf=trim(p_signer_cpf),
+    ip_address=p_ip, user_agent=p_user_agent
+  WHERE id=v_row.id;
+END; $$;
+
+GRANT EXECUTE ON FUNCTION assinar_documento(text, text, text, text, text) TO anon, authenticated;
