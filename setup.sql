@@ -1092,3 +1092,27 @@ DO $$ DECLARE v_conname text; BEGIN
     EXECUTE 'ALTER TABLE boletos ADD CONSTRAINT boletos_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL';
   END IF;
 END $$;
+
+
+-- #####################################################################
+-- 12. CADASTRO DE ALUNO — Modalidade e Dados do Responsável
+-- #####################################################################
+-- Reorganização do cadastro: matrícula passa a ter Escola/Turma/
+-- Modalidade/Nível, e a antiga seção "Dados VIP / Acompanhamento" é
+-- substituída por "Dados do Responsável" (para alunos menores de idade).
+-- Colunas antigas (student_type, vip_status, vip_notes, vip_class_days,
+-- vip_start_time, vip_end_time, contact_preference, whatsapp) são
+-- mantidas no banco para não perder histórico, apenas deixam de ser
+-- editadas pelo formulário.
+
+ALTER TABLE students ADD COLUMN IF NOT EXISTS modalidade text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_cpf text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_rg text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_email text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_address text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_notes text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_comprovante_path text;
+
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_modalidade_check;
+ALTER TABLE students ADD CONSTRAINT students_modalidade_check
+  CHECK (modalidade IS NULL OR modalidade IN ('KIDS','REGULAR','VIP','REGULAR ONLINE','BOLSA'));

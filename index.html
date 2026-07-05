@@ -537,7 +537,8 @@ function canSeeFinanceiroGlobal(){return canManageBilling();}
 function canAccessVipFollowup(){return isAdmin()||isFinanceiro()||isSecretaria();}
 function requireRole(allowed,msg){if(!allowed){showAlert('page-alert',msg||'Sem permissão para esta ação.','danger');return false;}return true;}
 function status_badge(s){return s?'<span class="badge badge-success">Ativo</span>':'<span class="badge badge-warning">Inativo</span>';}
-function level_badge(l){if(!l)return '—';const m={Básico:'badge-basico',Intermediário:'badge-intermediario',Avançado:'badge-avancado'};return `<span class="badge ${m[l]||'badge-secondary'}">${l}</span>`;}
+function level_badge(l){if(!l)return '—';const m={Básico:'badge-basico',Intermediário:'badge-intermediario',Avançado:'badge-avancado',STARTER:'badge-secondary','LEVEL 1':'badge-basico','LEVEL 2':'badge-basico','LEVEL 3':'badge-intermediario','LEVEL 4':'badge-intermediario','LEVEL 5':'badge-avancado','KIDS 4-5':'badge-purple','KIDS 6-7':'badge-purple','KIDS 8-9':'badge-purple'};return `<span class="badge ${m[l]||'badge-secondary'}">${l}</span>`;}
+function modalidade_badge(m){if(!m)return '—';const c={KIDS:'badge-purple',REGULAR:'badge-secondary',VIP:'badge-vip','REGULAR ONLINE':'badge-info',BOLSA:'badge-gold'};return `<span class="badge ${c[m]||'badge-secondary'}">${m}</span>`;}
 function fdate(d){
   if(!d)return '—';
   if(typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d)){
@@ -1130,12 +1131,12 @@ pages.students=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Lista de alunos</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Tipo</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="3">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="3">Ações</th></tr></thead>
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
               <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(s.first_name)}</div><strong>${esc(s.first_name)} ${esc(s.last_name)}</strong></div></td>
-              <td>${s.student_type&&s.student_type!=='Regular'?`<span class="badge badge-vip">${esc(s.student_type)}</span>`:'<span class="badge badge-secondary">Regular</span>'}</td>
+              <td>${modalidade_badge(s.modalidade)}</td>
               <td>${esc(s.mobile_number)||'—'}</td>
               <td>${esc(s.class?.name)||'—'}</td>
               <td>${level_badge(s.level)}</td>
@@ -1203,6 +1204,11 @@ async function studentForm(id){
   if(id){const{data}=await sb.from('students').select('*').eq('id',id).single();s=data||{};}
   const classOpts=classes.map(c=>`<option value="${c.id}" ${s.class_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   const schoolOpts=schools.map(c=>`<option value="${c.id}" ${s.school_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
+  const MODALIDADES=['KIDS','REGULAR','VIP','REGULAR ONLINE','BOLSA'];
+  const NIVEIS=['STARTER','LEVEL 1','LEVEL 2','LEVEL 3','LEVEL 4','LEVEL 5','KIDS 4-5','KIDS 6-7','KIDS 8-9'];
+  const modalidadeOpts=MODALIDADES.map(m=>`<option value="${m}" ${s.modalidade===m?'selected':''}>${m}</option>`).join('');
+  const nivelOpts=NIVEIS.map(n=>`<option value="${n}" ${s.level===n?'selected':''}>${n}</option>`).join('');
+  const comprovanteAtual=s.parent_comprovante_path?`<div class="field"><a href="#" onclick="abrirComprovante('${esc(s.parent_comprovante_path)}',${/^https?:\/\//.test(s.parent_comprovante_path)?"'url'":"'path'"});return false" class="comprovante-icon"><i class="fa fa-image"></i> Ver comprovante atual</a></div>`:'';
   setContent(`
     <div class="breadcrumb"><a onclick="nav('students')">Aluno</a> › <span>${id?'Editar':'Adicionar'}</span></div>
     <div class="page-title"><i class="fa fa-user-graduate"></i> ${id?'Editar':'Adicionar'} aluno</div>
@@ -1221,11 +1227,10 @@ async function studentForm(id){
             <div class="field"><label>Endereço</label><textarea id="f-address">${esc(s.address)}</textarea></div>
           </div>
           <div>
-            <div class="field"><label>Nome do responsável</label><input id="f-parent" value="${esc(s.parent_name)}"></div>
-            <div class="field"><label>Celular do responsável</label><input id="f-parent-m" value="${esc(s.parent_mobile)}"></div>
-            <div class="field"><label>Turma</label><select id="f-class"><option value="">Nenhuma</option>${classOpts}</select></div>
             <div class="field"><label>Escola</label><select id="f-school"><option value="">Nenhuma</option>${schoolOpts}</select></div>
-            <div class="field"><label>Nível</label><select id="f-level"><option value="">Selecione</option><option value="Básico" ${s.level==='Básico'?'selected':''}>Básico</option><option value="Intermediário" ${s.level==='Intermediário'?'selected':''}>Intermediário</option><option value="Avançado" ${s.level==='Avançado'?'selected':''}>Avançado</option></select></div>
+            <div class="field"><label>Turma</label><select id="f-class"><option value="">Nenhuma</option>${classOpts}</select></div>
+            <div class="field"><label>Modalidade</label><select id="f-modalidade"><option value="">Selecione</option>${modalidadeOpts}</select></div>
+            <div class="field"><label>Nível</label><select id="f-level"><option value="">Selecione</option>${nivelOpts}</select></div>
             <div class="field"><label>Observação</label><textarea id="f-note">${esc(s.note)}</textarea></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${s.status!==false?'selected':''}>Ativo</option><option value="false" ${s.status===false?'selected':''}>Inativo</option></select></div>
           </div>
@@ -1233,29 +1238,23 @@ async function studentForm(id){
       </div>
     </div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title"><i class="fa fa-star" style="color:var(--brand)"></i> Dados VIP / Acompanhamento</span></div>
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-user-shield" style="color:var(--brand)"></i> Dados do Responsável</span></div>
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Tipo de aluno</label><select id="f-student-type" onchange="toggleVipSchedule()"><option value="Regular" ${s.student_type==='Regular'||!s.student_type?'selected':''}>Regular</option><option value="VIP Online" ${s.student_type==='VIP Online'?'selected':''}>VIP Online</option><option value="VIP Presencial" ${s.student_type==='VIP Presencial'?'selected':''}>VIP Presencial</option></select></div>
-            <div class="field"><label>WhatsApp</label><input id="f-whatsapp" value="${esc(s.whatsapp)}" placeholder="5511999999999"></div>
-            <div class="field"><label>Preferência de contato</label><select id="f-contact-pref"><option value="">Selecione</option><option value="WhatsApp" ${s.contact_preference==='WhatsApp'?'selected':''}>WhatsApp</option><option value="E-mail" ${s.contact_preference==='E-mail'?'selected':''}>E-mail</option><option value="Telefone" ${s.contact_preference==='Telefone'?'selected':''}>Telefone</option></select></div>
-            <div class="field"><label>Status de acompanhamento</label><select id="f-vip-status"><option value="">Selecione</option><option value="Ativo" ${s.vip_status==='Ativo'?'selected':''}>Ativo</option><option value="Pausado" ${s.vip_status==='Pausado'?'selected':''}>Pausado</option><option value="Em risco" ${s.vip_status==='Em risco'?'selected':''}>Em risco</option><option value="Cancelado" ${s.vip_status==='Cancelado'?'selected':''}>Cancelado</option></select></div>
+            <div class="field"><label>Nome do responsável</label><input id="f-parent-name" value="${esc(s.parent_name)}"></div>
+            <div class="field"><label>CPF do responsável</label><input id="f-parent-cpf" value="${esc(s.parent_cpf)}"></div>
+            <div class="field"><label>RG do responsável</label><input id="f-parent-rg" value="${esc(s.parent_rg)}"></div>
+            <div class="field"><label>Telefone / WhatsApp do responsável</label><input id="f-parent-mobile" value="${esc(s.parent_mobile)}"></div>
           </div>
           <div>
-            <div id="vip-schedule-fields" style="${(s.student_type||'').includes('VIP')?'':'display:none'}">
-              <div class="field"><label><i class="fa fa-calendar" style="color:var(--brand)"></i> Dias da aula individual</label>
-                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px" id="f-vip-days">
-                  ${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d=>{
-                    const checked=(s.vip_class_days||'').includes(d);
-                    return `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:4px 8px;border:1px solid var(--gray-300);border-radius:4px;background:${checked?'var(--brand)':'var(--white)'};color:${checked?'#111':'var(--gray-700)'}"><input type="checkbox" value="${d}" ${checked?'checked':''} style="display:none" onchange="this.parentElement.style.background=this.checked?'var(--brand)':'var(--white)';this.parentElement.style.color=this.checked?'#111':'var(--gray-700)'">${d}</label>`;
-                  }).join('')}
-                </div>
-              </div>
-              <div class="field"><label><i class="fa fa-clock" style="color:var(--brand)"></i> Horário de início</label><input id="f-vip-start" type="time" value="${s.vip_start_time||''}"></div>
-              <div class="field"><label><i class="fa fa-clock" style="color:var(--brand)"></i> Horário de término</label><input id="f-vip-end" type="time" value="${s.vip_end_time||''}"></div>
+            <div class="field"><label>E-mail do responsável</label><input id="f-parent-email" type="email" value="${esc(s.parent_email)}"></div>
+            <div class="field"><label>Endereço</label><textarea id="f-parent-address">${esc(s.parent_address)}</textarea></div>
+            <div class="field"><label>Comprovante de residência</label><input id="f-parent-comprovante" type="file" accept="image/*,.pdf">
+              <input id="f-parent-comprovante-link" placeholder="Ou cole um link do comprovante (opcional)" style="margin-top:6px">
             </div>
-            <div class="field"><label>Observações VIP / Atendimento</label><textarea id="f-vip-notes">${esc(s.vip_notes)}</textarea></div>
+            ${comprovanteAtual}
+            <div class="field"><label>Observações do responsável</label><textarea id="f-parent-notes">${esc(s.parent_notes)}</textarea></div>
           </div>
         </div>
       </div>
@@ -1267,29 +1266,59 @@ async function studentForm(id){
   `);
 }
 
-function toggleVipSchedule(){
-  const tipo=$('f-student-type')?.value||'';
-  const el=$('vip-schedule-fields');
-  if(el) el.style.display=tipo.includes('VIP')?'':'none';
-}
-
 async function saveStudent(id){
   const fn=$('f-fn').value.trim();
   const ln=$('f-ln').value.trim();
   const doj=$('f-doj').value;
   const mobile=$('f-mobile').value.trim();
   if(!fn||!ln||!doj||!mobile){showAlert('page-alert','Preencha os campos obrigatórios.','danger');return;}
-  const studentType=$('f-student-type').value||'Regular';
-  const whatsapp=$('f-whatsapp').value.trim();
-  if(studentType==='VIP Online'&&!whatsapp){showAlert('page-alert','WhatsApp é obrigatório para alunos VIP Online.','danger');return;}
-  const vipDays=studentType.includes('VIP')?[...document.querySelectorAll('#f-vip-days input:checked')].map(i=>i.value).join(','):'';
-  const vipStart=studentType.includes('VIP')?($('f-vip-start')?.value||null):null;
-  const vipEnd=studentType.includes('VIP')?($('f-vip-end')?.value||null):null;
-  const payload={first_name:fn,last_name:ln,gender:$('f-gender').value||null,date_birth:$('f-dob').value||null,date_joining:doj,mobile_number:mobile,parent_name:$('f-parent').value,parent_mobile:$('f-parent-m').value,address:$('f-address').value,class_id:$('f-class').value||null,school_id:$('f-school').value||null,level:$('f-level').value||null,note:$('f-note').value,status:$('f-status').value==='true',student_type:studentType,whatsapp:whatsapp||null,contact_preference:$('f-contact-pref').value||null,vip_status:$('f-vip-status').value||null,vip_notes:$('f-vip-notes').value||null,vip_class_days:vipDays||null,vip_start_time:vipStart,vip_end_time:vipEnd};
-  let err;
-  if(id){const r=await sb.from('students').update(payload).eq('id',id);err=r.error;}
-  else{const r=await sb.from('students').insert(payload);err=r.error;}
+  const payload={
+    first_name:fn,last_name:ln,
+    gender:$('f-gender').value||null,
+    date_birth:$('f-dob').value||null,
+    date_joining:doj,
+    mobile_number:mobile,
+    address:$('f-address').value,
+    school_id:$('f-school').value||null,
+    class_id:$('f-class').value||null,
+    modalidade:$('f-modalidade').value||null,
+    level:$('f-level').value||null,
+    note:$('f-note').value,
+    status:$('f-status').value==='true',
+    parent_name:$('f-parent-name').value,
+    parent_cpf:$('f-parent-cpf').value||null,
+    parent_rg:$('f-parent-rg').value||null,
+    parent_mobile:$('f-parent-mobile').value,
+    parent_email:$('f-parent-email').value||null,
+    parent_address:$('f-parent-address').value||null,
+    parent_notes:$('f-parent-notes').value||null,
+  };
+  let err,studentId=id;
+  if(id){
+    const r=await sb.from('students').update(payload).eq('id',id);
+    err=r.error;
+  } else {
+    const r=await sb.from('students').insert(payload).select('id').single();
+    err=r.error;
+    studentId=r.data?.id;
+  }
   if(err){showAlert('page-alert','Erro: '+err.message,'danger');return;}
+
+  const arquivo=$('f-parent-comprovante')?.files[0];
+  const link=$('f-parent-comprovante-link')?.value?.trim();
+  if(studentId&&(arquivo||link)){
+    let comprovantePath=null;
+    if(arquivo){
+      const ext=arquivo.name.split('.').pop();
+      const path='responsavel-'+studentId+'-'+Date.now()+'.'+ext;
+      const{error:upErr}=await sb.storage.from('comprovantes').upload(path,arquivo,{upsert:true});
+      if(upErr){showAlert('page-alert','Aluno salvo, mas houve erro ao enviar o comprovante: '+upErr.message,'danger');return;}
+      comprovantePath=path;
+    } else if(link){
+      comprovantePath=link;
+    }
+    await sb.from('students').update({parent_comprovante_path:comprovantePath}).eq('id',studentId);
+  }
   nav('students');
 }
 
@@ -1445,10 +1474,10 @@ async function classDetail(classId,tab='info',date){
     <div class="panel">
       <div class="panel-head"><span class="panel-title">Alunos matriculados</span></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Aluno</th><th>Tipo</th><th>Celular</th><th>WhatsApp</th><th>Nível</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Aluno</th><th>Modalidade</th><th>Celular</th><th>WhatsApp</th><th>Nível</th><th>Ações</th></tr></thead>
         <tbody>${alunos.length?alunos.map(a=>`<tr>
           <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${esc(a.first_name)} ${esc(a.last_name)}</strong></div></td>
-          <td>${a.student_type&&a.student_type!=='Regular'?`<span class="badge badge-vip">${esc(a.student_type)}</span>`:'<span class="badge badge-secondary">Regular</span>'}</td>
+          <td>${modalidade_badge(a.modalidade)}</td>
           <td>${esc(a.mobile_number)||'—'}</td>
           <td>${esc(a.whatsapp)||'—'}</td>
           <td>${level_badge(a.level)}</td>
@@ -2519,7 +2548,7 @@ pages.vip=async function({view,studentId}={}){
   if(view==='historico') return vipHistorico(studentId);
 
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const{data:alunos=[]}=await sb.from('students').select('*,class:classes(name,class_days,start_time,end_time)').in('student_type',['VIP Online','VIP Presencial']).eq('status',true).order('first_name');
+  const{data:alunos=[]}=await sb.from('students').select('*,class:classes(name,class_days,start_time,end_time)').eq('status',true).or('student_type.in.(VIP Online,VIP Presencial),modalidade.in.(VIP,REGULAR ONLINE)').order('first_name');
 
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>VIP Online</span></div>
@@ -2540,7 +2569,7 @@ pages.vip=async function({view,studentId}={}){
           const horario=a.vip_start_time&&a.vip_end_time?a.vip_start_time+'–'+a.vip_end_time:(a.class?.start_time&&a.class?.end_time?a.class.start_time+'–'+a.class.end_time:'—');
           return `<tr>
             <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${esc(a.first_name)} ${esc(a.last_name)}</strong></div></td>
-            <td><span class="badge badge-vip">${esc(a.student_type)}</span></td>
+            <td>${a.student_type&&a.student_type!=='Regular'?`<span class="badge badge-vip">${esc(a.student_type)}</span>`:modalidade_badge(a.modalidade)}</td>
             <td>${esc(a.whatsapp)||esc(a.mobile_number)||'—'}</td>
             <td>${dias}</td>
             <td><i class="fa fa-clock" style="color:var(--brand)"></i> ${horario}</td>
