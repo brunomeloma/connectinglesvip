@@ -2207,6 +2207,7 @@ pages.financeiro=async function({view,studentId}={}){
         <div class="form-row" style="align-items:flex-end">
           <div class="form-col" style="max-width:320px">
             <label>Selecione o aluno</label>
+            <input id="fin-aluno-search" placeholder="Buscar aluno pelo nome…" oninput="filtrarAlunoSelect()" style="margin-bottom:6px">
             <select id="fin-select-aluno"><option value="">— escolha um aluno —</option>${todosAlunos.map(a=>`<option value="${a.id}">${esc(a.first_name)} ${esc(a.last_name)}</option>`).join('')}</select>
           </div>
           <div><button class="btn btn-primary" onclick="finGoLancar()"><i class="fa fa-file-invoice-dollar"></i> Lançar boletos do ano</button></div>
@@ -2378,6 +2379,17 @@ function finGoLancar(){
   const sid=$('fin-select-aluno')?.value;
   if(!sid){alert('Selecione um aluno primeiro.');return;}
   nav('financeiro',{view:'lancar',studentId:sid});
+}
+
+function filtrarAlunoSelect(){
+  const termo=($('fin-aluno-search')?.value||'').toLowerCase().trim();
+  const sel=$('fin-select-aluno');
+  if(!sel) return;
+  [...sel.options].forEach(opt=>{
+    if(!opt.value){opt.hidden=false;return;}
+    opt.hidden=!opt.textContent.toLowerCase().includes(termo);
+  });
+  if(sel.selectedOptions[0]?.hidden) sel.value='';
 }
 
 function aplicarValorGlobal(){
