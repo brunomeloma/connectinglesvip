@@ -362,7 +362,13 @@ tr:hover td{background:#fdf9f0}
 <script>
 const SUPABASE_URL = 'https://jrkbwzpyzgekycqtmvco.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impya2J3enB5emdla3ljcXRtdmNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NTUwMzAsImV4cCI6MjA5NzEzMTAzMH0.-G7zDgGQ5ha6brAk3rk-hpRaZs36QM_z9dumLDLi0rg';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// storage: sessionStorage (não localStorage) para que cada ABA do navegador
+// mantenha sua própria sessão. Com localStorage (padrão), logar com uma
+// conta diferente em outra aba do mesmo navegador sobrescrevia a sessão de
+// todas as abas abertas, fazendo a secretaria "virar" gerência sem avisar.
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true },
+});
 
 let currentUser = null;
 </script>
