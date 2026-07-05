@@ -229,6 +229,11 @@ tr:hover td{background:#fdf9f0}
 .vip-status-em_risco,.vip-status-em-risco{color:var(--danger);font-weight:600}
 .vip-status-cancelado{color:var(--gray-500);font-weight:600}
 .badge-vip{background:linear-gradient(135deg,#D4A017,#f5c842);color:#111;font-weight:700}
+.aluno-suggest-wrap{position:relative}
+.aluno-suggest-list{position:absolute;top:100%;left:0;right:0;z-index:50;background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);box-shadow:0 4px 14px rgba(0,0,0,.12);max-height:220px;overflow-y:auto;margin-top:2px}
+.aluno-suggest-item{padding:8px 12px;font-size:13px;cursor:pointer;color:var(--gray-900)}
+.aluno-suggest-item:hover,.aluno-suggest-item.active{background:var(--gray-100)}
+.aluno-suggest-empty{padding:8px 12px;font-size:13px;color:var(--gray-500)}
 .msg-template{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);cursor:pointer;font-size:13px;transition:all .15s}
 .msg-template:hover{background:var(--gray-50);border-color:var(--brand)}
 .msg-template i{color:#25D366;font-size:16px}
@@ -2190,6 +2195,7 @@ pages.financeiro=async function({view,studentId}={}){
   if(fNome){const termo=fNome.toLowerCase();alunos=alunos.filter(a=>(a.first_name+' '+a.last_name).toLowerCase().includes(termo));}
 
   const{data:todosAlunos=[]}=await sb.from('students').select('id,first_name,last_name').eq('status',true).order('first_name');
+  _finAlunosBusca=todosAlunos;
   const anosOpts=[2024,2025,2026,2027].map(a=>`<option value="${a}" ${fAno==a?'selected':''}>${a}</option>`).join('');
 
   setContent(`
@@ -2205,10 +2211,11 @@ pages.financeiro=async function({view,studentId}={}){
       <div class="panel-head"><span class="panel-title"><i class="fa fa-plus-circle" style="color:var(--brand)"></i> Lançar boletos para um aluno</span></div>
       <div class="panel-body">
         <div class="form-row" style="align-items:flex-end">
-          <div class="form-col" style="max-width:320px">
+          <div class="form-col aluno-suggest-wrap" style="max-width:320px">
             <label>Selecione o aluno</label>
-            <input id="fin-aluno-search" placeholder="Buscar aluno pelo nome…" oninput="filtrarAlunoSelect()" style="margin-bottom:6px">
-            <select id="fin-select-aluno"><option value="">— escolha um aluno —</option>${todosAlunos.map(a=>`<option value="${a.id}">${esc(a.first_name)} ${esc(a.last_name)}</option>`).join('')}</select>
+            <input id="fin-aluno-search" placeholder="Digite o nome do aluno…" autocomplete="off" oninput="filtrarAlunoSelect()" onfocus="filtrarAlunoSelect()" onblur="setTimeout(()=>{const l=$('fin-aluno-list');if(l)l.style.display='none';},150)">
+            <input type="hidden" id="fin-select-aluno">
+            <div id="fin-aluno-list" class="aluno-suggest-list" style="display:none"></div>
           </div>
           <div><button class="btn btn-primary" onclick="finGoLancar()"><i class="fa fa-file-invoice-dollar"></i> Lançar boletos do ano</button></div>
         </div>
@@ -2381,15 +2388,21 @@ function finGoLancar(){
   nav('financeiro',{view:'lancar',studentId:sid});
 }
 
+let _finAlunosBusca=[];
 function filtrarAlunoSelect(){
   const termo=($('fin-aluno-search')?.value||'').toLowerCase().trim();
-  const sel=$('fin-select-aluno');
-  if(!sel) return;
-  [...sel.options].forEach(opt=>{
-    if(!opt.value){opt.hidden=false;return;}
-    opt.hidden=!opt.textContent.toLowerCase().includes(termo);
-  });
-  if(sel.selectedOptions[0]?.hidden) sel.value='';
+  const list=$('fin-aluno-list');
+  if(!list) return;
+  const encontrados=termo?_finAlunosBusca.filter(a=>(a.first_name+' '+a.last_name).toLowerCase().includes(termo)):_finAlunosBusca;
+  list.innerHTML=encontrados.length?encontrados.map(a=>`<div class="aluno-suggest-item" onmousedown="selecionarAlunoBusca('${a.id}','${esc(a.first_name)} ${esc(a.last_name)}')">${esc(a.first_name)} ${esc(a.last_name)}</div>`).join(''):'<div class="aluno-suggest-empty">Nenhum aluno encontrado</div>';
+  list.style.display='block';
+}
+
+function selecionarAlunoBusca(id,nome){
+  $('fin-select-aluno').value=id;
+  $('fin-aluno-search').value=nome;
+  const list=$('fin-aluno-list');
+  if(list) list.style.display='none';
 }
 
 function aplicarValorGlobal(){
