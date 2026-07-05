@@ -63,7 +63,7 @@ serve(async (req) => {
         return err("Apenas super_admin pode promover a super_admin.", 403);
       }
 
-      const allowedRoles = ["super_admin", "direcao", "financeiro", "secretaria", "professor"];
+      const allowedRoles = ["super_admin", "direcao", "financeiro", "secretaria", "professor", "captacao"];
       if (role && !allowedRoles.includes(role)) return err("Role inválido: " + role);
 
       const updates: Record<string, unknown> = {};

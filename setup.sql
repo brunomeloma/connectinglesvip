@@ -1423,3 +1423,222 @@ AS $$ SELECT count(*)::integer FROM students WHERE class_id = p_class_id AND sta
 DROP POLICY IF EXISTS "comprovantes_select" ON storage.objects;
 CREATE POLICY "comprovantes_select" ON storage.objects FOR SELECT
   USING (bucket_id='comprovantes' AND has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+
+
+-- #####################################################################
+-- 20. ASSINATURA MANUAL (FOTO) ANEXADA AO CONTRATO
+-- #####################################################################
+-- Além da assinatura eletrônica pelo link, o documento pode ter uma
+-- foto da assinatura feita a próprio punho anexada — os dois registros
+-- podem coexistir no mesmo contrato. Reaproveita o bucket "comprovantes"
+-- (já privado e restrito a papéis de equipe) em vez de criar um bucket
+-- novo.
+
+ALTER TABLE document_signatures ADD COLUMN IF NOT EXISTS manual_signature_path text;
+ALTER TABLE document_signatures ADD COLUMN IF NOT EXISTS manual_signature_uploaded_at timestamptz;
+ALTER TABLE document_signatures ADD COLUMN IF NOT EXISTS manual_signature_uploaded_by uuid REFERENCES profiles(id) ON DELETE SET NULL;
+
+DROP FUNCTION IF EXISTS listar_documentos_assinatura(uuid);
+CREATE FUNCTION listar_documentos_assinatura(p_student_id uuid DEFAULT NULL)
+RETURNS TABLE(
+  id uuid, student_id uuid, first_name text, last_name text,
+  document_type text, status text, created_at timestamptz, expires_at timestamptz,
+  opened_at timestamptz, reading_completed_at timestamptz, signed_at timestamptz,
+  signer_name text, signer_cpf text, ip_address text, user_agent text,
+  created_by_name text, cpf_confere boolean,
+  manual_signature_path text, manual_signature_uploaded_at timestamptz
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT d.id, d.student_id, s.first_name, s.last_name,
+      d.document_type, d.status, d.created_at, d.expires_at,
+      d.opened_at, d.reading_completed_at, d.signed_at,
+      d.signer_name, d.signer_cpf, d.ip_address, d.user_agent,
+      p.name,
+      (
+        d.status <> 'assinado'
+        OR s.parent_cpf IS NULL
+        OR regexp_replace(s.parent_cpf,'\D','','g') = ''
+        OR regexp_replace(s.parent_cpf,'\D','','g') = regexp_replace(coalesce(d.signer_cpf,''),'\D','','g')
+      ) AS cpf_confere,
+      d.manual_signature_path, d.manual_signature_uploaded_at
+    FROM document_signatures d
+    JOIN students s ON s.id = d.student_id
+    LEFT JOIN profiles p ON p.id = d.created_by
+    WHERE p_student_id IS NULL OR d.student_id = p_student_id
+    ORDER BY d.created_at DESC;
+END; $$;
+
+-- Anexar/atualizar a foto da assinatura manual (staff)
+CREATE OR REPLACE FUNCTION anexar_assinatura_manual(p_id uuid, p_path text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  UPDATE document_signatures SET
+    manual_signature_path = p_path,
+    manual_signature_uploaded_at = now(),
+    manual_signature_uploaded_by = auth.uid()
+  WHERE id = p_id;
+END; $$;
+
+
+-- #####################################################################
+-- 21. NOVO PAPEL "captacao" — MÓDULO DE CAPTAÇÃO DE CLIENTES
+-- #####################################################################
+-- Papel isolado: só enxerga o módulo de Captação (contatos e disparos).
+-- Não deve conseguir ler aluno, responsável, financeiro, documentos,
+-- turma, professor ou qualquer dado interno da escola — nem pela
+-- interface, nem chamando a API/RPC diretamente.
+
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
+ALTER TABLE profiles ADD CONSTRAINT profiles_role_check CHECK (
+  role IN ('super_admin', 'direcao', 'financeiro', 'secretaria', 'professor', 'captacao')
+);
+
+-- --- Reforço: as policies abaixo liberavam leitura para "qualquer
+-- autenticado" (auth.uid() IS NOT NULL). Sem esse reforço, o novo papel
+-- captacao conseguiria ler escola/professor/turma/frequência mesmo sem
+-- nenhum botão na interface, só chamando a API diretamente.
+
+DROP POLICY IF EXISTS "schools_select" ON schools;
+CREATE POLICY "schools_select" ON schools FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']));
+
+DROP POLICY IF EXISTS "teachers_select" ON teachers;
+CREATE POLICY "teachers_select" ON teachers FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']));
+
+DROP POLICY IF EXISTS "classes_select" ON classes;
+CREATE POLICY "classes_select" ON classes FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']));
+
+DROP POLICY IF EXISTS "attendance_select" ON attendance;
+CREATE POLICY "attendance_select" ON attendance FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']));
+
+DROP POLICY IF EXISTS "cl_select" ON class_lessons;
+CREATE POLICY "cl_select" ON class_lessons FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']));
+
+-- --- Reforço: estas duas RPCs só checavam "está logado", não o papel.
+CREATE OR REPLACE FUNCTION get_aulas_turma(p_class_id uuid)
+RETURNS TABLE(
+  id uuid, lesson_date date, teacher_id uuid, teacher_name text,
+  status text, content text, notes text,
+  total_presentes bigint, total_ausentes bigint, total_justificados bigint, total_alunos bigint
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT cl.id, cl.lesson_date, cl.teacher_id, (t.first_name||' '||t.last_name)::text,
+      cl.status, cl.content, cl.notes,
+      COUNT(a.id) FILTER (WHERE a.status='presente'),
+      COUNT(a.id) FILTER (WHERE a.status='ausente'),
+      COUNT(a.id) FILTER (WHERE a.status='justificado'),
+      COUNT(a.id)
+    FROM class_lessons cl
+    LEFT JOIN teachers t ON t.id = cl.teacher_id
+    LEFT JOIN attendance a ON a.lesson_id = cl.id
+    WHERE cl.class_id = p_class_id
+    GROUP BY cl.id, cl.lesson_date, cl.teacher_id, t.first_name, t.last_name, cl.status, cl.content, cl.notes
+    ORDER BY cl.lesson_date DESC;
+END; $$;
+
+CREATE OR REPLACE FUNCTION get_frequencia_aluno(p_student_id uuid)
+RETURNS TABLE(
+  attendance_id uuid, lesson_date date, class_name text, teacher_name text,
+  content text, status text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT a.id, a.date, c.name::text, (t.first_name||' '||t.last_name)::text,
+      cl.content, a.status
+    FROM attendance a
+    JOIN classes c ON c.id = a.class_id
+    LEFT JOIN class_lessons cl ON cl.id = a.lesson_id
+    LEFT JOIN teachers t ON t.id = cl.teacher_id
+    WHERE a.student_id = p_student_id AND a.status <> 'pendente'
+    ORDER BY a.date DESC;
+END; $$;
+
+-- --- Tabelas do módulo de Captação ---
+
+CREATE TABLE IF NOT EXISTS captacao_contatos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  nome text NOT NULL,
+  telefone text NOT NULL,
+  observacoes text,
+  origem text DEFAULT 'manual',
+  created_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now(),
+  last_contacted_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS idx_captacao_contatos_created_at ON captacao_contatos(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS captacao_disparos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  mensagem text NOT NULL,
+  total_contatos int NOT NULL DEFAULT 0,
+  created_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now(),
+  finalizado_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS idx_captacao_disparos_created_at ON captacao_disparos(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS captacao_disparo_contatos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  disparo_id uuid REFERENCES captacao_disparos(id) ON DELETE CASCADE,
+  contato_id uuid REFERENCES captacao_contatos(id) ON DELETE SET NULL,
+  contato_nome text NOT NULL,
+  contato_telefone text NOT NULL,
+  status text NOT NULL DEFAULT 'pendente',
+  enviado_at timestamptz
+);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='cdc_status_check') THEN
+    ALTER TABLE captacao_disparo_contatos ADD CONSTRAINT cdc_status_check CHECK (status IN ('pendente','enviado','pulado'));
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_captacao_disparo_contatos_disparo ON captacao_disparo_contatos(disparo_id);
+
+ALTER TABLE captacao_contatos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "captacao_contatos_select" ON captacao_contatos;
+DROP POLICY IF EXISTS "captacao_contatos_insert" ON captacao_contatos;
+DROP POLICY IF EXISTS "captacao_contatos_update" ON captacao_contatos;
+DROP POLICY IF EXISTS "captacao_contatos_delete" ON captacao_contatos;
+CREATE POLICY "captacao_contatos_select" ON captacao_contatos FOR SELECT USING (has_role(ARRAY['super_admin','direcao','captacao']));
+CREATE POLICY "captacao_contatos_insert" ON captacao_contatos FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','captacao']));
+CREATE POLICY "captacao_contatos_update" ON captacao_contatos FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','captacao']));
+CREATE POLICY "captacao_contatos_delete" ON captacao_contatos FOR DELETE USING (has_role(ARRAY['super_admin','direcao','captacao']));
+
+ALTER TABLE captacao_disparos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "captacao_disparos_select" ON captacao_disparos;
+DROP POLICY IF EXISTS "captacao_disparos_insert" ON captacao_disparos;
+DROP POLICY IF EXISTS "captacao_disparos_update" ON captacao_disparos;
+DROP POLICY IF EXISTS "captacao_disparos_delete" ON captacao_disparos;
+-- histórico de disparos: captação só vê os próprios; direção/admin vê tudo
+CREATE POLICY "captacao_disparos_select" ON captacao_disparos FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao']) OR (has_role(ARRAY['captacao']) AND created_by = auth.uid()));
+CREATE POLICY "captacao_disparos_insert" ON captacao_disparos FOR INSERT
+  WITH CHECK (has_role(ARRAY['super_admin','direcao','captacao']) AND created_by = auth.uid());
+CREATE POLICY "captacao_disparos_update" ON captacao_disparos FOR UPDATE
+  USING (has_role(ARRAY['super_admin','direcao']) OR (has_role(ARRAY['captacao']) AND created_by = auth.uid()));
+CREATE POLICY "captacao_disparos_delete" ON captacao_disparos FOR DELETE USING (is_admin());
+
+ALTER TABLE captacao_disparo_contatos ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "cdc_select" ON captacao_disparo_contatos;
+DROP POLICY IF EXISTS "cdc_insert" ON captacao_disparo_contatos;
+DROP POLICY IF EXISTS "cdc_update" ON captacao_disparo_contatos;
+DROP POLICY IF EXISTS "cdc_delete" ON captacao_disparo_contatos;
+CREATE POLICY "cdc_select" ON captacao_disparo_contatos FOR SELECT
+  USING (EXISTS (SELECT 1 FROM captacao_disparos d WHERE d.id = disparo_id
+    AND (has_role(ARRAY['super_admin','direcao']) OR (has_role(ARRAY['captacao']) AND d.created_by = auth.uid()))));
+CREATE POLICY "cdc_insert" ON captacao_disparo_contatos FOR INSERT
+  WITH CHECK (EXISTS (SELECT 1 FROM captacao_disparos d WHERE d.id = disparo_id
+    AND (has_role(ARRAY['super_admin','direcao']) OR (has_role(ARRAY['captacao']) AND d.created_by = auth.uid()))));
+CREATE POLICY "cdc_update" ON captacao_disparo_contatos FOR UPDATE
+  USING (EXISTS (SELECT 1 FROM captacao_disparos d WHERE d.id = disparo_id
+    AND (has_role(ARRAY['super_admin','direcao']) OR (has_role(ARRAY['captacao']) AND d.created_by = auth.uid()))));
+CREATE POLICY "cdc_delete" ON captacao_disparo_contatos FOR DELETE USING (is_admin());

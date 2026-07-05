@@ -66,7 +66,7 @@ serve(async (req) => {
       );
     }
 
-    const allowedRoles = ["super_admin", "direcao", "financeiro", "secretaria", "professor"];
+    const allowedRoles = ["super_admin", "direcao", "financeiro", "secretaria", "professor", "captacao"];
     if (!allowedRoles.includes(role)) {
       return new Response(
         JSON.stringify({ error: "Role inválido: " + role }),
