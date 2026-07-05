@@ -806,7 +806,11 @@ AS $$ BEGIN
 END; $$;
 
 -- Histórico de auditoria (staff)
-CREATE OR REPLACE FUNCTION listar_documentos_assinatura(p_student_id uuid DEFAULT NULL)
+-- DROP antes do CREATE: seções mais abaixo neste arquivo mudam as
+-- colunas de retorno dessa função (cpf_confere, manual_signature_*),
+-- e Postgres não permite "CREATE OR REPLACE" mudar o tipo de retorno.
+DROP FUNCTION IF EXISTS listar_documentos_assinatura(uuid);
+CREATE FUNCTION listar_documentos_assinatura(p_student_id uuid DEFAULT NULL)
 RETURNS TABLE(
   id uuid, student_id uuid, first_name text, last_name text,
   document_type text, status text, created_at timestamptz, expires_at timestamptz,
