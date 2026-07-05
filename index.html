@@ -420,12 +420,12 @@ let currentUser = null;
     <div class="sb-item" data-page="schools" onclick="nav('schools')"><i class="fa fa-building"></i> Escola</div>
     <div class="sb-item admin-only" data-page="admins" onclick="nav('admins')"><i class="fa fa-user-tie"></i> Administrador</div>
     <div class="sb-item" data-page="teachers" onclick="nav('teachers')"><i class="fa fa-chalkboard-teacher"></i> Professor</div>
-    <div class="sb-item" data-page="students" onclick="nav('students')"><i class="fa fa-user-graduate"></i> Aluno</div>
+    <div class="sb-item no-professor" data-page="students" onclick="nav('students')"><i class="fa fa-user-graduate"></i> Aluno</div>
     <div class="sb-item" data-page="classes" onclick="nav('classes')"><i class="fa fa-layer-group"></i> Turmas</div>
     <div class="sb-item no-professor" data-page="cobrancas" onclick="nav('cobrancas')"><i class="fa fa-calendar-check"></i> Cobranças</div>
     <div class="sb-item no-professor" data-page="professores" onclick="nav('professores')"><i class="fa fa-user-clock"></i> Prof. — Horas</div>
     <div class="sb-item no-professor" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
-    <div class="sb-item" data-page="vip" onclick="nav('vip')"><i class="fa fa-star"></i> VIP Online</div>
+    <div class="sb-item no-professor" data-page="vip" onclick="nav('vip')"><i class="fa fa-star"></i> VIP Online</div>
     <div class="sb-item no-professor" data-page="documentos" onclick="nav('documentos')"><i class="fa fa-file-signature"></i> Documentos</div>
     <div class="sb-item" data-page="relatorios" onclick="nav('relatorios')"><i class="fa fa-chart-bar"></i> Relatórios</div>
     <div class="sb-logout">
@@ -661,10 +661,10 @@ const pages={};
 // --- DASHBOARD ---
 pages.dashboard=async function(){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i> Carregando...</div>`);
-  const [sc,tc,st,cl]=await Promise.all([
+  const [sc,tc,stCount,cl]=await Promise.all([
     sb.from('schools').select('id',{count:'exact',head:true}).eq('status',true),
     sb.from('teachers').select('id',{count:'exact',head:true}).eq('status',true),
-    sb.from('students').select('id',{count:'exact',head:true}).eq('status',true),
+    sb.rpc('count_active_students'),
     sb.from('classes').select('id',{count:'exact',head:true}).eq('status',true),
   ]);
   setContent(`
@@ -673,7 +673,7 @@ pages.dashboard=async function(){
     <div class="stat-grid">
       <div class="stat-card c-gold"><i class="fa fa-building stat-icon"></i><div><div class="stat-num">${sc.count??0}</div><div class="stat-label">Escolas ativas</div></div></div>
       <div class="stat-card c-orange"><i class="fa fa-chalkboard-teacher stat-icon"></i><div><div class="stat-num">${tc.count??0}</div><div class="stat-label">Professores</div></div></div>
-      <div class="stat-card c-dark"><i class="fa fa-user-graduate stat-icon"></i><div><div class="stat-num">${st.count??0}</div><div class="stat-label">Alunos matriculados</div></div></div>
+      <div class="stat-card c-dark"><i class="fa fa-user-graduate stat-icon"></i><div><div class="stat-num">${stCount.data??0}</div><div class="stat-label">Alunos matriculados</div></div></div>
       <div class="stat-card c-brown"><i class="fa fa-layer-group stat-icon"></i><div><div class="stat-num">${cl.count??0}</div><div class="stat-label">Turmas ativas</div></div></div>
     </div>
     <div id="dash-aulas-hoje"></div>
@@ -681,7 +681,7 @@ pages.dashboard=async function(){
       <div class="panel">
         <div class="panel-head"><span class="panel-title">Acesso rápido</span></div>
         <div class="panel-body" style="padding:8px 0">
-          ${['schools','teachers','students','classes'].map(p=>{
+          ${['schools','teachers','students','classes'].filter(p=>p!=='students'||currentUser?.role!=='professor').map(p=>{
             const icons={schools:'fa-building',teachers:'fa-chalkboard-teacher',students:'fa-user-graduate',classes:'fa-layer-group'};
             const labels={schools:'Adicionar escola',teachers:'Adicionar professor',students:'Adicionar aluno',classes:'Criar turma'};
             return `<div onclick="nav('${p}',{view:'form'})" style="display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--gray-200);color:var(--gray-700);font-size:13px" onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background=''"><i class="fa ${icons[p]}" style="color:var(--brand);width:16px"></i>${labels[p]}</div>`;
@@ -1106,6 +1106,7 @@ async function saveTeacher(id){
 
 // --- STUDENTS ---
 pages.students=async function({view,id}={}){
+  if(currentUser?.role==='professor'){nav('dashboard');return;}
   if(view==='form') return studentForm(id);
   if(view==='frequencia') return studentFrequencia(id);
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
@@ -1335,7 +1336,7 @@ pages.classes=async function({view,id,tab,date}={}){
   const{data=[]}=await sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').order('created_at',{ascending:false});
   // count students per class
   const counts={};
-  for(const c of data){const{count}=await sb.from('students').select('id',{count:'exact',head:true}).eq('class_id',c.id).eq('status',true);counts[c.id]=count||0;}
+  for(const c of data){const{data:n}=await sb.rpc('count_students_in_class',{p_class_id:c.id});counts[c.id]=n||0;}
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>Turmas</span></div>
     <div class="page-title"><i class="fa fa-layer-group"></i> Turmas</div>
@@ -1433,7 +1434,7 @@ async function classDetail(classId,tab='info',date){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const[{data:c},{data:alunos=[]}]=await Promise.all([
     sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('id',classId).single(),
-    sb.from('students').select('*').eq('class_id',classId).eq('status',true).order('first_name'),
+    sb.rpc('get_turma_alunos',{p_class_id:classId}),
   ]);
   if(!c){nav('classes');return;}
 
@@ -2574,6 +2575,7 @@ const MSG_TEMPLATES={
 };
 
 pages.vip=async function({view,studentId}={}){
+  if(!canAccessVipFollowup()){nav('dashboard');return;}
   if(view==='contato') return vipContato(studentId);
   if(view==='historico') return vipHistorico(studentId);
 
@@ -3240,7 +3242,7 @@ async function relCarregarAlunosDaTurma(){
   const classId=$('rel-turma').value;
   const sel=$('rel-aluno');
   if(!classId){sel.innerHTML='<option value="">Todos</option>';return;}
-  const{data:alunos=[]}=await sb.from('students').select('id,first_name,last_name').eq('class_id',classId).eq('status',true).order('first_name');
+  const{data:alunos=[]}=await sb.rpc('get_turma_alunos',{p_class_id:classId});
   sel.innerHTML='<option value="">Todos</option>'+alunos.map(a=>`<option value="${a.id}">${esc(a.first_name)} ${esc(a.last_name)}</option>`).join('');
 }
 

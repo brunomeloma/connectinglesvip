@@ -1362,3 +1362,64 @@ ALTER TABLE classes DROP CONSTRAINT IF EXISTS classes_level_check;
 ALTER TABLE classes ADD CONSTRAINT classes_level_check
   CHECK (level IS NULL OR level IN ('STARTER','LEVEL 1','LEVEL 2','LEVEL 3','LEVEL 4','LEVEL 5','KIDS 4-5','KIDS 6-7','KIDS 8-9'))
   NOT VALID;
+
+
+-- #####################################################################
+-- 19. REVISÃO DE SEGURANÇA — dados sensíveis de aluno/responsável
+-- #####################################################################
+-- Achado da auditoria: a policy "students_select" liberava a leitura de
+-- TODA a linha de students (inclusive parent_cpf, parent_rg,
+-- parent_email, parent_address, parent_comprovante_path) para
+-- QUALQUER usuário autenticado — inclusive professor, que acessa as
+-- telas Aluno, Turma e VIP Online sem nenhum bloqueio de papel. Como o
+-- front-end usa select('*') nessas telas, os dados sensíveis do
+-- responsável chegavam ao navegador do professor mesmo sem aparecer
+-- na interface (visível via devtools/network).
+--
+-- Correção:
+--  1. students_select passa a exigir papel de equipe (super_admin,
+--     direção, financeiro, secretaria) — professor não lê mais a
+--     tabela students diretamente.
+--  2. Cria get_turma_alunos(): RPC segura para professor (e demais
+--     papéis) conseguir a lista de alunos de uma turma só com os
+--     campos necessários para chamada/frequência (nome, modalidade,
+--     nível, celular, whatsapp) — sem CPF/RG/e-mail/endereço/
+--     comprovante do responsável.
+--  3. Cria count_active_students() e count_students_in_class() para
+--     os cards/contadores do painel e da lista de turmas não
+--     dependerem de leitura direta da tabela.
+--  4. Restringe o bucket "comprovantes" (boletos e comprovante de
+--     residência) a papéis de equipe — professor não tinha motivo
+--     para ler esses arquivos.
+
+DROP POLICY IF EXISTS "students_select" ON students;
+CREATE POLICY "students_select" ON students FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+
+CREATE OR REPLACE FUNCTION get_turma_alunos(p_class_id uuid)
+RETURNS TABLE(
+  id uuid, first_name text, last_name text,
+  modalidade text, level text, mobile_number text, whatsapp text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']) THEN
+    RAISE EXCEPTION 'Permissão negada';
+  END IF;
+  RETURN QUERY
+    SELECT s.id, s.first_name, s.last_name, s.modalidade, s.level, s.mobile_number, s.whatsapp
+    FROM students s
+    WHERE s.class_id = p_class_id AND s.status = true
+    ORDER BY s.first_name;
+END; $$;
+
+CREATE OR REPLACE FUNCTION count_active_students()
+RETURNS integer LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$ SELECT count(*)::integer FROM students WHERE status = true; $$;
+
+CREATE OR REPLACE FUNCTION count_students_in_class(p_class_id uuid)
+RETURNS integer LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$ SELECT count(*)::integer FROM students WHERE class_id = p_class_id AND status = true; $$;
+
+DROP POLICY IF EXISTS "comprovantes_select" ON storage.objects;
+CREATE POLICY "comprovantes_select" ON storage.objects FOR SELECT
+  USING (bucket_id='comprovantes' AND has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
