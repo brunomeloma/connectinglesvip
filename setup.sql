@@ -120,7 +120,7 @@ AS $$ SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('
 
 CREATE OR REPLACE FUNCTION can_view_finance()
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
-AS $$ SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin','direcao','financeiro') AND status = true); $$;
+AS $$ SELECT EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('super_admin','direcao','financeiro','secretaria') AND status = true); $$;
 
 CREATE OR REPLACE FUNCTION has_role(allowed_roles text[])
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
@@ -155,19 +155,17 @@ AS $$ BEGIN
   RETURN QUERY SELECT * FROM boletos WHERE student_id=p_student_id AND ano_referencia=p_ano ORDER BY mes_referencia;
 END; $$;
 
--- Boletos de UM aluno — secretaria: agora COM valor, para poder conferir,
--- lançar e reeditar boletos (marcar pago, anexar comprovante, atualizar
--- código de barras/link) sem risco de sobrescrever o valor às cegas.
--- Segue SEM comprovante_url direto (só a flag tem_comprovante) e sem
--- acesso aos totais agregados da escola (get_resumo_financeiro,
--- get_boletos_com_aluno), que continuam restritos a financeiro/direção.
+-- Boletos de UM aluno — secretaria: acesso financeiro completo, igual
+-- financeiro/direção (ela faz caixa e cobrança e precisa dos mesmos
+-- dados: valor, status, comprovante) para lançar, reeditar, marcar pago
+-- e conferir comprovantes sem nada escondido.
 DROP FUNCTION IF EXISTS get_boletos_aluno_secretaria(uuid, int);
 CREATE OR REPLACE FUNCTION get_boletos_aluno_secretaria(p_student_id uuid, p_ano int)
 RETURNS TABLE(
   id uuid, mes_referencia int, ano_referencia int,
   data_vencimento date, valor numeric, status text, data_pagamento date,
   observacao text, url_boleto text, codigo_boleto text,
-  tem_comprovante boolean
+  comprovante_path text, comprovante_url text, tem_comprovante boolean
 ) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
   IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
@@ -175,13 +173,14 @@ AS $$ BEGIN
     SELECT b.id, b.mes_referencia, b.ano_referencia,
       b.data_vencimento, b.valor, b.status, b.data_pagamento,
       b.observacao, b.url_boleto, b.codigo_boleto,
+      b.comprovante_path, b.comprovante_url,
       (b.comprovante_path IS NOT NULL OR b.comprovante_url IS NOT NULL)
     FROM boletos b WHERE b.student_id=p_student_id AND b.ano_referencia=p_ano
     ORDER BY b.mes_referencia;
 END; $$;
 
--- Listagem com nome do aluno — SOMENTE direção/financeiro
--- Secretaria NÃO tem acesso a esta RPC
+-- Listagem com nome do aluno, valores e totais — direção/financeiro/secretaria
+-- (a secretaria faz caixa e cobrança, precisa ver os mesmos dados)
 CREATE OR REPLACE FUNCTION get_boletos_com_aluno(p_ano int, p_status text DEFAULT NULL)
 RETURNS TABLE(
   id uuid, student_id uuid, first_name text, last_name text,
@@ -190,7 +189,7 @@ RETURNS TABLE(
   comprovante_url text, comprovante_path text, url_boleto text, codigo_boleto text
 ) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
-  IF NOT has_role(ARRAY['super_admin','direcao','financeiro']) THEN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN
     RAISE EXCEPTION 'Permissão negada';
   END IF;
   RETURN QUERY

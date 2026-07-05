@@ -530,9 +530,10 @@ function role_badge(role){
 function isAdmin(){return ['super_admin','direcao'].includes(currentUser?.role);}
 function isFinanceiro(){return isAdmin()||currentUser?.role==='financeiro';}
 function isSecretaria(){return currentUser?.role==='secretaria';}
-function canSeeFinanceiroGlobal(){return isFinanceiro();}
 function canManageUsers(){return isAdmin();}
 function canManageBilling(){return isFinanceiro()||isSecretaria();}
+// Secretaria faz caixa/cobrança: vê os mesmos valores e totais que financeiro/direção.
+function canSeeFinanceiroGlobal(){return canManageBilling();}
 function canAccessVipFollowup(){return isAdmin()||isFinanceiro()||isSecretaria();}
 function requireRole(allowed,msg){if(!allowed){showAlert('page-alert',msg||'Sem permissão para esta ação.','danger');return false;}return true;}
 function status_badge(s){return s?'<span class="badge badge-success">Ativo</span>':'<span class="badge badge-warning">Inativo</span>';}
