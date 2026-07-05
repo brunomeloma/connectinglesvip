@@ -2972,6 +2972,7 @@ function renderDocHistoryTable(docs){
         <td style="white-space:nowrap">
           <button class="btn btn-default btn-sm" onclick="verDetalhesDocumento('${d.id}')" title="Detalhes"><i class="fa fa-eye"></i></button>
           ${d.status!=='assinado'&&d.status!=='revogado'?`<button class="btn btn-default btn-sm" style="color:var(--danger)" onclick="revogarDocumento('${d.id}')" title="Revogar link"><i class="fa fa-ban"></i></button>`:''}
+          ${isAdmin()||isSecretaria()?`<button class="btn btn-default btn-sm" style="color:var(--danger)" onclick="excluirDocumento('${d.id}')" title="Excluir contrato"><i class="fa fa-trash"></i></button>`:''}
         </td>
       </tr>`).join('')}
     </tbody>
@@ -3045,6 +3046,15 @@ function revogarDocumento(id){
   showConfirm(async()=>{
     const{error}=await sb.rpc('revogar_link_assinatura',{p_id:id});
     if(error){alert('Erro ao revogar: '+error.message);return;}
+    refreshDocHistory();
+  });
+}
+
+function excluirDocumento(id){
+  if(!isAdmin()&&!isSecretaria()){alert('Sem permissão.');return;}
+  showConfirm(async()=>{
+    const{error}=await sb.from('document_signatures').delete().eq('id',id);
+    if(error){alert('Erro ao excluir: '+error.message);return;}
     refreshDocHistory();
   });
 }

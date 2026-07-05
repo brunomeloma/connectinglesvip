@@ -1202,3 +1202,16 @@ AS $$ DECLARE v_row document_signatures%ROWTYPE; BEGIN
 END; $$;
 
 GRANT EXECUTE ON FUNCTION assinar_documento(text, text, text, text, text) TO anon, authenticated;
+
+
+-- #####################################################################
+-- 14. PERMITIR SECRETARIA/DIREÇÃO EXCLUIR CONTRATOS GERADOS POR ENGANO
+-- #####################################################################
+-- Antes só is_admin() (super_admin/direção) podia excluir uma linha de
+-- document_signatures. Libera também para secretaria, que é quem mais
+-- gera esses links no dia a dia e precisa poder apagar um contrato
+-- criado errado (aluno errado, tipo de contrato errado etc.).
+
+DROP POLICY IF EXISTS "ds_delete" ON document_signatures;
+CREATE POLICY "ds_delete" ON document_signatures FOR DELETE
+  USING (has_role(ARRAY['super_admin','direcao','secretaria']));
