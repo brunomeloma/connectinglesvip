@@ -1133,3 +1133,72 @@ ALTER TABLE students ADD CONSTRAINT students_level_check
 -- find the 'modalidade' column ... in the schema cache" logo após rodar
 -- este script)
 NOTIFY pgrst, 'reload schema';
+
+
+-- #####################################################################
+-- 13. VALIDAÇÃO DE CPF NA ASSINATURA DE DOCUMENTOS
+-- #####################################################################
+-- O front-end já valida o CPF antes de enviar, mas assinar_documento é
+-- SECURITY DEFINER e liberada para o papel anon (link público de
+-- assinatura), então a validação também precisa existir aqui — do
+-- contrário alguém poderia chamar o RPC diretamente e gravar um
+-- documento como "assinado" com um CPF inválido/forjado.
+
+CREATE OR REPLACE FUNCTION is_valid_cpf(p_cpf text)
+RETURNS boolean LANGUAGE plpgsql IMMUTABLE
+AS $$
+DECLARE
+  cpf text;
+  d int[] := ARRAY[]::int[];
+  i int;
+  sum1 int := 0;
+  sum2 int := 0;
+  d1 int;
+  d2 int;
+BEGIN
+  cpf := regexp_replace(coalesce(p_cpf,''), '\D', '', 'g');
+  IF length(cpf) <> 11 THEN RETURN false; END IF;
+  IF cpf ~ '^(\d)\1{10}$' THEN RETURN false; END IF;
+
+  FOR i IN 1..11 LOOP
+    d := d || substring(cpf from i for 1)::int;
+  END LOOP;
+
+  FOR i IN 1..9 LOOP
+    sum1 := sum1 + d[i] * (11 - i);
+  END LOOP;
+  d1 := (sum1 * 10) % 11;
+  IF d1 >= 10 THEN d1 := 0; END IF;
+  IF d1 <> d[10] THEN RETURN false; END IF;
+
+  FOR i IN 1..10 LOOP
+    sum2 := sum2 + d[i] * (12 - i);
+  END LOOP;
+  d2 := (sum2 * 10) % 11;
+  IF d2 >= 10 THEN d2 := 0; END IF;
+  IF d2 <> d[11] THEN RETURN false; END IF;
+
+  RETURN true;
+END; $$;
+
+-- PÚBLICA — assinar (exige leitura completa registrada no servidor e CPF válido)
+CREATE OR REPLACE FUNCTION assinar_documento(
+  p_token text, p_signer_name text, p_signer_cpf text,
+  p_ip text DEFAULT NULL, p_user_agent text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_row document_signatures%ROWTYPE; BEGIN
+  SELECT * INTO v_row FROM document_signatures WHERE token = p_token;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Link inválido.'; END IF;
+  IF v_row.status = 'assinado' THEN RAISE EXCEPTION 'Este documento já foi assinado.'; END IF;
+  IF v_row.status = 'revogado' OR v_row.expires_at < now() THEN RAISE EXCEPTION 'Este link expirou ou foi revogado.'; END IF;
+  IF v_row.reading_completed_at IS NULL THEN RAISE EXCEPTION 'É necessário ler o documento até o final antes de assinar.'; END IF;
+  IF coalesce(trim(p_signer_name),'')='' OR coalesce(trim(p_signer_cpf),'')='' THEN RAISE EXCEPTION 'Nome completo e CPF são obrigatórios.'; END IF;
+  IF NOT is_valid_cpf(p_signer_cpf) THEN RAISE EXCEPTION 'CPF inválido.'; END IF;
+  UPDATE document_signatures SET
+    status='assinado', signed_at=now(),
+    signer_name=trim(p_signer_name), signer_cpf=trim(p_signer_cpf),
+    ip_address=p_ip, user_agent=p_user_agent
+  WHERE id=v_row.id;
+END; $$;
+
+GRANT EXECUTE ON FUNCTION assinar_documento(text, text, text, text, text) TO anon, authenticated;

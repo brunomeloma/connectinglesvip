@@ -3147,10 +3147,29 @@ async function getClientIp(){
   }catch(e){return null;}
 }
 
+function isValidCPF(cpf){
+  cpf=String(cpf||'').replace(/\D/g,'');
+  if(cpf.length!==11) return false;
+  if(/^(\d)\1{10}$/.test(cpf)) return false;
+  const digits=cpf.split('').map(Number);
+  let sum1=0;
+  for(let i=0;i<9;i++) sum1+=digits[i]*(10-i);
+  let d1=(sum1*10)%11;
+  if(d1>=10) d1=0;
+  if(d1!==digits[9]) return false;
+  let sum2=0;
+  for(let i=0;i<10;i++) sum2+=digits[i]*(11-i);
+  let d2=(sum2*10)%11;
+  if(d2>=10) d2=0;
+  if(d2!==digits[10]) return false;
+  return true;
+}
+
 async function submeterAssinatura(){
   const name=$('sign-name').value.trim();
   const cpf=$('sign-cpf').value.trim();
   if(!name||!cpf){showAlert('sign-alert','Preencha nome completo e CPF.','danger');return;}
+  if(!isValidCPF(cpf)){showAlert('sign-alert','CPF inválido. Confira os números digitados.','danger');return;}
   const btn=$('sign-submit-btn');
   btn.disabled=true;
   btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Assinando...';
