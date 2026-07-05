@@ -2125,9 +2125,11 @@ pages.financeiro=async function({view,studentId}={}){
 
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
 
-  let totalPago=0,totalAberto=0,inadimplentes=0;
+  let totalPago=0,totalAberto=0,inadimplentes=0,finErro=null;
   if(canSeeFinanceiroGlobal()){
-    const{data:kpi=[]}=await sb.rpc('get_resumo_financeiro');
+    const{data,error}=await sb.rpc('get_resumo_financeiro');
+    if(error) finErro=error.message;
+    const kpi=data||[];
     totalPago=kpi.reduce((s,r)=>s+parseFloat(r.valor_pago||0),0);
     totalAberto=kpi.reduce((s,r)=>s+parseFloat(r.valor_aberto||0),0);
     inadimplentes=kpi.filter(r=>parseFloat(r.valor_aberto)>0).length;
@@ -2139,7 +2141,9 @@ pages.financeiro=async function({view,studentId}={}){
 
   let alunos=[];
   if(canSeeFinanceiroGlobal()){
-    const{data:boletos=[]}=await sb.rpc('get_boletos_com_aluno',{p_ano:parseInt(fAno),p_status:fStatus||null});
+    const{data,error}=await sb.rpc('get_boletos_com_aluno',{p_ano:parseInt(fAno),p_status:fStatus||null});
+    if(error) finErro=error.message;
+    const boletos=data||[];
     const alunosMap={};
     for(const b of boletos){
       const sid=b.student_id;
@@ -2149,7 +2153,9 @@ pages.financeiro=async function({view,studentId}={}){
     }
     alunos=Object.values(alunosMap);
   } else {
-    const{data:lista=[]}=await sb.rpc('get_alunos_com_boletos_status',{p_ano:parseInt(fAno)});
+    const{data,error}=await sb.rpc('get_alunos_com_boletos_status',{p_ano:parseInt(fAno)});
+    if(error) finErro=error.message;
+    const lista=data||[];
     alunos=lista.map(a=>({id:a.student_id,first_name:a.first_name,last_name:a.last_name,totalAberto:a.tem_aberto?1:0,totalPago:0}));
   }
   if(fNome){const termo=fNome.toLowerCase();alunos=alunos.filter(a=>(a.first_name+' '+a.last_name).toLowerCase().includes(termo));}
@@ -2207,17 +2213,19 @@ pages.financeiro=async function({view,studentId}={}){
       </div>
     </div>
   `);
+  if(finErro) showAlert('page-alert','Não foi possível carregar todos os dados financeiros: '+finErro+' (pode ser necessário rodar a atualização mais recente do banco de dados)','danger');
 };
 
 async function finAluno(studentId){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const fAno=getFilter('fin-ano')||new Date().getFullYear().toString();
   const rpcName=isSecretaria()?'get_boletos_aluno_secretaria':'get_boletos_aluno';
-  const[{data:student},{data:boletos=[]}]=await Promise.all([
+  const[{data:student},{data:boletosData,error:boletosErro}]=await Promise.all([
     sb.from('students').select('id,first_name,last_name').eq('id',studentId).single(),
     sb.rpc(rpcName,{p_student_id:studentId,p_ano:parseInt(fAno)}),
   ]);
   if(!student){nav('financeiro');return;}
+  const boletos=boletosData||[];
 
   const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const totalPago=boletos.filter(b=>b.status==='pago').reduce((s,b)=>s+parseFloat(b.valor),0);
@@ -2278,6 +2286,7 @@ async function finAluno(studentId){
       </div>
     </div>
   `);
+  if(boletosErro) showAlert('page-alert','Não foi possível carregar os boletos: '+boletosErro.message+' (pode ser necessário rodar a atualização mais recente do banco de dados)','danger');
 }
 
 async function finLancarBoletos(studentId){
@@ -2287,7 +2296,8 @@ async function finLancarBoletos(studentId){
   const ano=new Date().getFullYear();
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const rpcLancar=isSecretaria()?'get_boletos_aluno_secretaria':'get_boletos_aluno';
-  const{data:existentes=[]}=await sb.rpc(rpcLancar,{p_student_id:studentId,p_ano:ano});
+  const{data:existentesData,error:existentesErro}=await sb.rpc(rpcLancar,{p_student_id:studentId,p_ano:ano});
+  const existentes=existentesData||[];
   const existMap={};
   for(const b of existentes) existMap[b.mes_referencia]=b;
 
@@ -2332,6 +2342,7 @@ async function finLancarBoletos(studentId){
       </div>
     </div>
   `);
+  if(existentesErro) showAlert('page-alert','Erro ao carregar boletos existentes: '+existentesErro.message,'danger');
 }
 
 function finGoLancar(){
