@@ -276,6 +276,19 @@ tr:hover td{background:#fdf9f0}
 .captacao-actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .captacao-empty{padding:36px;text-align:center;color:var(--gray-500)}
 .captacao-empty i{display:block;font-size:30px;margin-bottom:8px;opacity:.45}
+.cap-campaign-overlay{position:fixed;inset:0;background:rgba(0,0,0,.58);z-index:1200;display:flex;align-items:center;justify-content:center;padding:18px}
+.cap-campaign-modal{width:min(540px,96vw);background:#fff;border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.32);overflow:hidden}
+.cap-campaign-head{padding:18px 22px 10px}
+.cap-campaign-title{font-size:15px;font-weight:800;color:var(--gray-900);line-height:1.35;display:flex;gap:8px;align-items:flex-start}
+.cap-campaign-title i{color:#25D366;margin-top:2px}
+.cap-campaign-pill{display:inline-flex;margin-top:9px;padding:5px 10px;border-radius:999px;background:#fff2e8;color:#7a2d16;font-size:12px;font-weight:700}
+.cap-campaign-body{padding:0 22px 18px}
+.cap-campaign-label{font-size:12px;color:#8a4d3c;margin:10px 0 6px}
+.cap-campaign-text{width:100%;height:190px;border:1px solid #f0c8b9;border-radius:10px;padding:12px;font-family:'Inter',sans-serif;font-size:13px;line-height:1.45;resize:vertical;background:#fffaf7;color:var(--gray-900)}
+.cap-campaign-text:focus{outline:none;border-color:var(--brand)}
+.cap-campaign-footer{padding:14px 22px 22px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.cap-campaign-progress{height:8px;background:var(--gray-200);border-radius:999px;overflow:hidden;margin-top:12px}
+.cap-campaign-progress span{display:block;height:100%;background:#25D366;transition:width .2s}
 
 /* CONTROLE DE PROFESSORES */
 .tab-bar{display:flex;gap:4px;margin-bottom:18px;border-bottom:2px solid var(--gray-200);padding-bottom:0}
@@ -892,7 +905,8 @@ pages.captacao=async function(){
       </div>
       <div class="captacao-hero-actions">
         <button class="btn btn-default" onclick="nav('captacao')"><i class="fa fa-rotate"></i> Atualizar</button>
-        <button class="btn btn-primary" onclick="capStartSelected()"><i class="fab fa-whatsapp"></i> Iniciar captação</button>
+        <button class="btn btn-default" onclick="capToggleAll(true)"><i class="fa fa-check-square"></i> Selecionar visíveis</button>
+        <button class="btn btn-primary" onclick="capStartSelected()"><i class="fab fa-whatsapp"></i> Enviar em massa</button>
       </div>
     </div>
     <div id="page-alert" class="alert"></div>
@@ -1031,13 +1045,13 @@ async function capBeginQueue(queue){
   if(error){showAlert('page-alert','Erro ao iniciar disparo: '+error.message,'danger');return;}
   capState={queue,index:0,disparoId:data.id,message,sent:0};
   capRenderRunPanel();
-  capOpenCurrent();
+  capShowCampaignModal();
 }
 function capRenderRunPanel(){
   const el=$('cap-run-panel');
   if(!el) return;
   if(!capState.queue.length){
-    el.innerHTML='<div class="captacao-small">Nenhum disparo em andamento. Selecione contatos e clique em “Iniciar captação”.</div>';
+    el.innerHTML='<div class="captacao-small">Nenhuma campanha em andamento. Selecione contatos e clique em “Enviar em massa”.</div>';
     return;
   }
   const total=capState.queue.length;
@@ -1049,19 +1063,60 @@ function capRenderRunPanel(){
     <div class="captacao-progress"><span style="width:${pct}%"></span></div>
     ${current?`<div class="captacao-small"><strong>Próximo:</strong> ${esc(current.telefone)||'sem telefone'}</div>`:'<div class="badge badge-success">Concluído</div>'}
     <div class="captacao-actions-row">
-      ${current?`<button class="btn btn-primary" onclick="capOpenCurrent()"><i class="fab fa-whatsapp"></i> Abrir próximo</button><button class="btn btn-default" onclick="capSkipCurrent()"><i class="fa fa-forward"></i> Pular</button>`:`<button class="btn btn-default" onclick="nav('captacao')"><i class="fa fa-check"></i> Finalizar</button>`}
+      ${current?`<button class="btn btn-primary" onclick="capShowCampaignModal()"><i class="fab fa-whatsapp"></i> Continuar campanha</button><button class="btn btn-default" onclick="capSkipCurrent()"><i class="fa fa-forward"></i> Pular</button>`:`<button class="btn btn-default" onclick="capCloseCampaignModal();nav('captacao')"><i class="fa fa-check"></i> Finalizar</button>`}
     </div>
   </div>`;
 }
-async function capOpenCurrent(){
+function capShowCampaignModal(){
   const contact=capState.queue[capState.index];
-  if(!contact){capRenderRunPanel();showAlert('page-alert','Captação finalizada.','success');return;}
+  if(!contact){capCloseCampaignModal();capRenderRunPanel();showAlert('page-alert','Campanha finalizada.','success');return;}
   const digits=capDigits(contact.telefone);
-  if(!digits||digits.length<10){showAlert('page-alert','Contato sem telefone válido. Pulando para o próximo.','danger');capState.index++;capRenderRunPanel();return;}
   const msg=capPersonalize(capState.message,contact);
-  window.open(`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,'connect_captacao_whatsapp');
+  const total=capState.queue.length;
+  const currentNumber=capState.index+1;
+  const pct=Math.round((capState.sent/total)*100);
+  let overlay=$('cap-campaign-overlay');
+  if(!overlay){
+    overlay=document.createElement('div');
+    overlay.id='cap-campaign-overlay';
+    overlay.className='cap-campaign-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.style.display='flex';
+  overlay.innerHTML=`
+    <div class="cap-campaign-modal">
+      <div class="cap-campaign-head">
+        <div class="cap-campaign-title"><i class="fab fa-whatsapp"></i><span>Mensagem para ${esc(contact.nome)}</span></div>
+        <div class="cap-campaign-pill">Campanha em massa: ${currentNumber} de ${total}</div>
+        <div class="cap-campaign-progress"><span style="width:${pct}%"></span></div>
+      </div>
+      <div class="cap-campaign-body">
+        <div class="cap-campaign-label">Revise e edite o texto antes de enviar:</div>
+        <textarea id="cap-campaign-text" class="cap-campaign-text">${esc(msg)}</textarea>
+        <div class="captacao-small" style="margin-top:8px"><strong>WhatsApp:</strong> ${esc(contact.telefone)||'sem telefone'}${!digits||digits.length<10?' • número inválido':''}</div>
+      </div>
+      <div class="cap-campaign-footer">
+        <button class="btn btn-default" onclick="capCloseCampaignModal()">Cancelar</button>
+        <button class="btn btn-default" onclick="capSkipCurrent()"><i class="fa fa-forward"></i> Pular</button>
+        <button class="btn btn-success" onclick="capSendCurrentAndNext()" ${!digits||digits.length<10?'disabled':''}><i class="fab fa-whatsapp"></i> Enviar e ir para o próximo</button>
+      </div>
+    </div>`;
+}
+function capCloseCampaignModal(){
+  const overlay=$('cap-campaign-overlay');
+  if(overlay) overlay.style.display='none';
+}
+async function capSendCurrentAndNext(){
+  const contact=capState.queue[capState.index];
+  if(!contact){capShowCampaignModal();return;}
+  const digits=capDigits(contact.telefone);
+  if(!digits||digits.length<10){showAlert('page-alert','Contato sem telefone válido. Pulando para o próximo.','danger');capState.index++;capRenderRunPanel();capShowCampaignModal();return;}
+  const textEl=$('cap-campaign-text');
+  const msg=(textEl?.value||capPersonalize(capState.message,contact)).trim();
+  if(!msg){showAlert('page-alert','A mensagem está vazia.','danger');return;}
+  window.open(`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,'_blank');
   const now=new Date().toISOString();
-  await sb.from('captacao_disparo_contatos').insert({
+  const {error}=await sb.from('captacao_disparo_contatos').insert({
     disparo_id:capState.disparoId,
     contato_id:contact.id,
     contato_nome:contact.nome,
@@ -1069,12 +1124,14 @@ async function capOpenCurrent(){
     status:'enviado',
     enviado_at:now
   });
+  if(error){showAlert('page-alert','WhatsApp abriu, mas não consegui salvar o envio: '+error.message,'danger');return;}
   await sb.from('captacao_contatos').update({last_contacted_at:now}).in('id',contact.ids||[contact.id]);
   capState.sent++;
   capState.index++;
   capRenderRunPanel();
+  capShowCampaignModal();
 }
-function capSkipCurrent(){capState.index++;capRenderRunPanel();}
+function capSkipCurrent(){capState.index++;capRenderRunPanel();capShowCampaignModal();}
 
 // --- SCHOOLS ---
 pages.schools=async function({view,id}={}){
