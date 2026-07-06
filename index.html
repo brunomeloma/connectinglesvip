@@ -1144,7 +1144,7 @@ pages.students=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Lista de alunos</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="3">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="4">Ações</th></tr></thead>
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
@@ -1157,8 +1157,9 @@ pages.students=async function({view,id}={}){
               <td>${fdate(s.date_joining)}</td>
               <td><button class="btn-icon" onclick="nav('students',{view:'frequencia',id:'${s.id}'})" title="Histórico de frequência"><i class="fa fa-calendar-check"></i></button></td>
               <td><button class="btn-icon" onclick="nav('students',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
+              <td><button class="btn-icon" onclick="imprimirRelatorioAluno('${s.id}')" title="Imprimir relatório"><i class="fa fa-file-pdf"></i></button></td>
               <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('students','${s.id}','students')"><i class="fa fa-trash"></i></button></td>
-            </tr>`).join(''):`<tr><td colspan="11"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
+            </tr>`).join(''):`<tr><td colspan="12"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -1271,6 +1272,7 @@ async function studentForm(id){
       </div>
       <div class="panel-footer">
         <button class="btn btn-default" onclick="nav('students')">Cancelar</button>
+        ${id?`<button class="btn btn-default" onclick="imprimirRelatorioAluno('${id}')"><i class="fa fa-file-pdf"></i> Imprimir Relatório</button>`:''}
         <button class="btn btn-primary" onclick="saveStudent('${id||''}')"><i class="fa fa-save"></i> ${id?'Atualizar':'Adicionar'}</button>
       </div>
     </div>
@@ -3584,6 +3586,139 @@ async function capPularContato(itemId,disparoId){
   const{error}=await sb.from('captacao_disparo_contatos').update({status:'pulado'}).eq('id',itemId);
   if(error){alert('Erro ao atualizar: '+error.message);return;}
   captacaoFila(disparoId);
+}
+
+// ============================
+// RELATÓRIO COMPLETO DO ALUNO (PDF via impressão do navegador)
+// ============================
+function calcularIdade(dataNasc){
+  if(!dataNasc) return null;
+  const hoje=new Date();
+  const nasc=new Date(dataNasc+'T00:00:00');
+  let idade=hoje.getFullYear()-nasc.getFullYear();
+  const m=hoje.getMonth()-nasc.getMonth();
+  if(m<0||(m===0&&hoje.getDate()<nasc.getDate())) idade--;
+  return idade;
+}
+
+async function imprimirRelatorioAluno(id){
+  const win=window.open('','_blank');
+  if(!win){alert('Não foi possível abrir a janela de impressão. Verifique se o navegador está bloqueando pop-ups.');return;}
+  win.document.write('<p style="font-family:sans-serif;padding:40px">Gerando relatório...</p>');
+
+  const[{data:s,error:e1},{data:boletos=[],error:e2}]=await Promise.all([
+    sb.from('students').select('*,school:schools(name),class:classes(name,schedule,start_time,end_time,class_days,teacher:teachers(first_name,last_name))').eq('id',id).single(),
+    sb.rpc('get_boletos_aluno_secretaria',{p_student_id:id,p_ano:new Date().getFullYear()}),
+  ]);
+  if(e1||!s){win.close();alert('Não foi possível carregar os dados do aluno.'+(e1?' '+e1.message:''));return;}
+
+  const html=buildRelatorioAlunoHtml(s,e2?[]:boletos);
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(),300);
+}
+
+function buildRelatorioAlunoHtml(s,boletos){
+  const diasMap={'Seg':'Segunda','Ter':'Terça','Qua':'Quarta','Qui':'Quinta','Sex':'Sexta','Sáb':'Sábado','Dom':'Domingo'};
+  const diasTxt=(s.class?.class_days||'').split(',').filter(Boolean).map(d=>diasMap[d]||d).join(', ')||'—';
+  const horario=s.class?.start_time&&s.class?.end_time?s.class.start_time+' – '+s.class.end_time:(s.class?.schedule||'—');
+  const idade=calcularIdade(s.date_birth);
+  const generoTxt=s.gender==='male'?'Masculino':s.gender==='female'?'Feminino':'—';
+  const temAberto=boletos.some(b=>b.status==='aberto');
+  const situacaoFinanceira=boletos.length?(temAberto?'Pendente':'Em dia'):'Sem lançamentos no ano';
+
+  const row=(label,value)=>`<div class="rel-row"><span class="rel-label">${esc(label)}</span><span class="rel-value">${value!=null&&value!==''?value:'—'}</span></div>`;
+  const secao=(titulo,rows)=>`<div class="rel-secao"><h3>${esc(titulo)}</h3>${rows}</div>`;
+
+  const boletosHtml=boletos.length?`
+    <table class="rel-table">
+      <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Status</th></tr></thead>
+      <tbody>${boletos.map(b=>`<tr>
+        <td>${b.mes_referencia}/${b.ano_referencia}</td>
+        <td>${b.data_vencimento?new Date(b.data_vencimento+'T00:00:00').toLocaleDateString('pt-BR'):'—'}</td>
+        <td>${b.valor!=null?'R$ '+Number(b.valor).toFixed(2).replace('.',','):'—'}</td>
+        <td>${b.status==='pago'?'Pago':'Em aberto'}</td>
+      </tr>`).join('')}</tbody>
+    </table>`:'<p class="rel-empty">Nenhum boleto lançado no ano vigente.</p>';
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório — ${esc(s.first_name)} ${esc(s.last_name)}</title>
+  <style>
+    @page{size:A4;margin:18mm 15mm}
+    body{font-family:Arial,Helvetica,sans-serif;color:#222;font-size:12px;line-height:1.5;margin:0}
+    .rel-header{text-align:center;border-bottom:3px solid #D4A017;padding-bottom:12px;margin-bottom:16px}
+    .rel-header h1{font-size:16px;margin:0 0 2px;color:#111}
+    .rel-header p{margin:2px 0;font-size:11px;color:#555}
+    .rel-titulo{font-size:15px;font-weight:bold;text-align:center;margin:14px 0;text-transform:uppercase;letter-spacing:.5px}
+    .rel-emissao{text-align:right;font-size:10px;color:#777;margin-bottom:10px}
+    .rel-secao{margin-bottom:14px;break-inside:avoid}
+    .rel-secao h3{font-size:12.5px;background:#f4f4f4;border-left:4px solid #D4A017;padding:5px 10px;margin:0 0 6px}
+    .rel-row{display:flex;padding:3px 10px;border-bottom:1px solid #eee}
+    .rel-label{width:220px;font-weight:bold;color:#444;flex-shrink:0}
+    .rel-value{flex:1}
+    .rel-table{width:100%;border-collapse:collapse;margin:0 10px;width:calc(100% - 20px)}
+    .rel-table th,.rel-table td{border:1px solid #ddd;padding:5px 8px;text-align:left;font-size:11px}
+    .rel-table th{background:#f4f4f4}
+    .rel-empty{margin:0 10px;color:#777;font-style:italic}
+    .rel-footer{margin-top:24px;text-align:center;font-size:10px;color:#999;border-top:1px solid #ddd;padding-top:8px}
+    @media print{.rel-noprint{display:none}}
+  </style></head>
+  <body>
+    <div class="rel-header">
+      <h1>CONNECT INGLÊS VIP</h1>
+      <p>Rua Pernambuco, nº 978, Nova Imperatriz, Imperatriz – MA — Tel. (99) 99116-2110 / (99) 99184-5500</p>
+    </div>
+    <div class="rel-titulo">Relatório Completo do Aluno</div>
+    <div class="rel-emissao">Emitido em ${new Date().toLocaleString('pt-BR')}</div>
+
+    ${secao('Dados Pessoais',
+      row('Nome completo',esc(s.first_name)+' '+esc(s.last_name))+
+      row('Data de nascimento',s.date_birth?new Date(s.date_birth+'T00:00:00').toLocaleDateString('pt-BR'):null)+
+      row('Idade',idade!=null?idade+' anos':null)+
+      row('Sexo',generoTxt)
+    )}
+
+    ${secao('Contato',
+      row('Telefone principal',esc(s.mobile_number))+
+      row('WhatsApp / telefone secundário',esc(s.whatsapp))+
+      row('Endereço',esc(s.address))
+    )}
+
+    ${secao('Dados do Responsável',
+      row('Nome do responsável',esc(s.parent_name))+
+      row('CPF do responsável',esc(s.parent_cpf))+
+      row('RG do responsável',esc(s.parent_rg))+
+      row('Telefone / WhatsApp',esc(s.parent_mobile))+
+      row('E-mail',esc(s.parent_email))+
+      row('Endereço do responsável',esc(s.parent_address))
+    )}
+
+    ${secao('Informações Acadêmicas',
+      row('Escola',esc(s.school?.name))+
+      row('Turma',esc(s.class?.name))+
+      row('Modalidade',esc(s.modalidade))+
+      row('Nível',esc(s.level))+
+      row('Data de matrícula',s.date_joining?new Date(s.date_joining+'T00:00:00').toLocaleDateString('pt-BR'):null)+
+      row('Status da matrícula',s.status!==false?'Ativo':'Inativo')+
+      row('Professor responsável',s.class?.teacher?esc(s.class.teacher.first_name)+' '+esc(s.class.teacher.last_name):null)+
+      row('Dias de aula',diasTxt)+
+      row('Horário das aulas',horario)
+    )}
+
+    <div class="rel-secao">
+      <h3>Informações Financeiras (ano ${new Date().getFullYear()})</h3>
+      ${row('Situação financeira',situacaoFinanceira)}
+      ${boletosHtml}
+    </div>
+
+    ${secao('Observações',esc(s.note))}
+
+    <div class="rel-footer">Connect Inglês VIP — Relatório gerado pelo sistema de gestão escolar</div>
+    <div class="rel-noprint" style="text-align:center;margin-top:16px">
+      <button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">Imprimir / Salvar PDF</button>
+    </div>
+  </body></html>`;
 }
 
 // ============================
