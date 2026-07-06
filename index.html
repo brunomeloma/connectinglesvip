@@ -242,6 +242,41 @@ tr:hover td{background:#fdf9f0}
 .contact-log-date{color:var(--gray-500);font-size:11px}
 .hidden{display:none!important}
 
+/* CAPTAÇÃO */
+.captacao-shell{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+.captacao-hero{background:linear-gradient(135deg,#111,#2b2411);border:1px solid rgba(212,160,23,.25);border-radius:8px;padding:18px;color:#fff;margin-bottom:16px;display:flex;justify-content:space-between;gap:14px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.captacao-hero h2{font-size:20px;margin-bottom:4px}
+.captacao-hero p{font-size:13px;color:#d8d2c2;max-width:680px;line-height:1.45}
+.captacao-hero-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.captacao-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
+.captacao-stat{background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:12px;box-shadow:var(--shadow)}
+.captacao-stat strong{display:block;font-size:20px;color:var(--gray-900);line-height:1}
+.captacao-stat span{display:block;font-size:11px;color:var(--gray-500);margin-top:5px}
+.captacao-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.captacao-toolbar .form-col{min-width:150px}
+.captacao-contact{display:grid;grid-template-columns:28px minmax(210px,1.25fr) minmax(140px,.8fr) minmax(130px,.7fr) minmax(150px,.8fr) 118px;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--gray-200);background:#fff}
+.captacao-contact:hover{background:#fffaf0}
+.captacao-contact.sent{background:#fbfbfb}
+.captacao-contact-head{background:var(--gray-50);font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;color:var(--gray-700);border-bottom:1px solid var(--gray-200)}
+.captacao-name{font-weight:700;color:var(--gray-900);line-height:1.25}
+.captacao-meta{font-size:11px;color:var(--gray-500);margin-top:3px;line-height:1.35}
+.captacao-phone{font-weight:600;color:#14532d}
+.captacao-origin{font-size:12px;color:var(--gray-700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.captacao-side{position:sticky;top:14px}
+.captacao-message-list{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.captacao-message-item{border:1px solid var(--gray-200);border-radius:8px;padding:10px;cursor:pointer;background:#fff;transition:all .15s}
+.captacao-message-item:hover,.captacao-message-item.active{border-color:var(--brand);background:#fff8e4}
+.captacao-message-title{font-weight:700;font-size:13px;margin-bottom:3px;color:var(--gray-900)}
+.captacao-message-preview{font-size:12px;color:var(--gray-500);line-height:1.35;max-height:34px;overflow:hidden}
+.captacao-progress{height:8px;background:var(--gray-200);border-radius:999px;overflow:hidden;margin:10px 0}
+.captacao-progress span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--brand-dark),var(--brand));transition:width .2s}
+.captacao-run-card{border:1px solid var(--gray-200);border-radius:8px;padding:12px;background:#fff}
+.captacao-current{font-weight:700;margin-bottom:4px}
+.captacao-small{font-size:12px;color:var(--gray-500);line-height:1.4}
+.captacao-actions-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.captacao-empty{padding:36px;text-align:center;color:var(--gray-500)}
+.captacao-empty i{display:block;font-size:30px;margin-bottom:8px;opacity:.45}
+
 /* CONTROLE DE PROFESSORES */
 .tab-bar{display:flex;gap:4px;margin-bottom:18px;border-bottom:2px solid var(--gray-200);padding-bottom:0}
 .tab-btn{padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;color:var(--gray-500);border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;font-family:'Inter',sans-serif;display:flex;align-items:center;gap:6px}
@@ -329,6 +364,13 @@ tr:hover td{background:#fdf9f0}
   .stat-grid,.fin-summary-grid{grid-template-columns:1fr 1fr!important}
   .two-col,.form-grid{grid-template-columns:1fr!important}
   .vip-grid{grid-template-columns:1fr!important}
+  .captacao-shell{grid-template-columns:1fr}
+  .captacao-side{position:static}
+  .captacao-stats{grid-template-columns:1fr 1fr}
+  .captacao-hero{flex-direction:column;align-items:flex-start}
+  .captacao-contact{grid-template-columns:28px 1fr;gap:8px}
+  .captacao-contact-head{display:none}
+  .captacao-contact>div:nth-child(n+3){grid-column:2}
   .form-row{flex-direction:column}
   .form-col{min-width:100%!important}
   .topbar{padding:0 12px}
@@ -358,6 +400,7 @@ tr:hover td{background:#fdf9f0}
   .content{padding:10px}
   .vip-card-actions{flex-direction:column}
   .vip-card-actions .btn{width:100%;justify-content:center}
+  .captacao-stats{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -541,6 +584,7 @@ function canManageBilling(){return isFinanceiro()||isSecretaria();}
 // Secretaria faz caixa/cobrança: vê os mesmos valores e totais que financeiro/direção.
 function canSeeFinanceiroGlobal(){return canManageBilling();}
 function canAccessVipFollowup(){return isAdmin()||isFinanceiro()||isSecretaria();}
+function canAccessCaptacao(){return isAdmin()||currentUser?.role==='captacao';}
 function requireRole(allowed,msg){if(!allowed){showAlert('page-alert',msg||'Sem permissão para esta ação.','danger');return false;}return true;}
 function status_badge(s){return s?'<span class="badge badge-success">Ativo</span>':'<span class="badge badge-warning">Inativo</span>';}
 const NIVEIS=['STARTER','LEVEL 1','LEVEL 2','LEVEL 3','LEVEL 4','LEVEL 5','KIDS 4-5','KIDS 6-7','KIDS 8-9'];
@@ -654,7 +698,7 @@ function startApp(){
   document.querySelectorAll('.no-professor').forEach(el=>el.style.display=currentUser?.role==='professor'?'none':'');
   document.querySelectorAll('.no-captacao').forEach(el=>el.style.display=currentUser?.role==='captacao'?'none':'');
   document.querySelectorAll('.captacao-item').forEach(el=>el.style.display=(currentUser?.role==='captacao'||isAdmin())?'':'none');
-  nav('dashboard');
+  nav(currentUser?.role==='captacao'?'captacao':'dashboard');
 }
 
 // ============================
@@ -735,6 +779,302 @@ async function carregarAulasHoje(){
     </table></div>
   </div>`;
 }
+
+// --- CAPTAÇÃO ---
+let capState={queue:[],index:0,disparoId:null,message:'',sent:0};
+
+function capDefaultTemplates(){
+  return [{
+    id:'default-connect-vip',
+    title:'Captação Connect VIP',
+    text:'Olá, {nome}! Tudo bem?\n\nA Connect Inglês VIP está com vagas abertas para novos alunos.\n\nOferecemos aulas de inglês com acompanhamento personalizado, metodologia prática e foco no desenvolvimento real do aluno, seja para conversação, reforço escolar, viagens, trabalho ou novas oportunidades.\n\nGostaria de conhecer melhor nossos planos e horários disponíveis?'
+  }];
+}
+function capLoadTemplates(){
+  try{
+    const saved=JSON.parse(localStorage.getItem('connect_captacao_templates')||'[]');
+    return saved.length?saved:capDefaultTemplates();
+  }catch(e){return capDefaultTemplates();}
+}
+function capSaveTemplates(list){localStorage.setItem('connect_captacao_templates',JSON.stringify(list));}
+function capCleanName(v){return String(v||'Sem nome').replace(/^"+|"+$/g,'').replace(/""/g,'"').trim()||'Sem nome';}
+function capCleanPhone(v){
+  const raw=String(v||'').replace(/""/g,'"');
+  const match=raw.match(/\+?\d{2}\s?\d{2}\s?\d{4,5}[-\s]?\d{4}/);
+  if(match) return match[0].replace(/\s+/g,' ').trim();
+  const digits=raw.replace(/\D/g,'');
+  if(!digits) return '';
+  return digits.startsWith('55')?`+${digits}`:digits;
+}
+function capDigits(v){return capCleanPhone(v).replace(/\D/g,'');}
+function capOrigin(c){
+  const raw=[c.origem,c.telefone,c.observacoes].filter(Boolean).join(' ');
+  const file=String(raw).match(/([^",;]+\.vcf)/i);
+  if(file) return file[1].trim();
+  return c.origem&&c.origem!=='manual'?c.origem:'Manual / importado';
+}
+function capDate(d){if(!d)return 'Nunca';return new Date(d).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});}
+function capPersonalize(text,contact){
+  const first=capCleanName(contact.nome).split(/\s+/)[0]||'';
+  return text.replaceAll('{nome}',capCleanName(contact.nome)).replaceAll('{primeiro_nome}',first).replaceAll('{telefone}',capCleanPhone(contact.telefone));
+}
+function capStatusBadge(count){
+  if(count>1) return `<span class="badge badge-success">Enviado ${count}x</span>`;
+  if(count===1) return '<span class="badge badge-info">Enviado 1x</span>';
+  return '<span class="badge badge-warning">Não enviado</span>';
+}
+
+pages.captacao=async function(){
+  if(!canAccessCaptacao()){nav('dashboard');return;}
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i> Carregando captação...</div>`);
+
+  const [{data:contatos=[],error:contatosErr},{data:envios=[]}]=await Promise.all([
+    sb.from('captacao_contatos').select('*').order('created_at',{ascending:false}),
+    sb.from('captacao_disparo_contatos').select('contato_telefone,status,enviado_at').eq('status','enviado').order('enviado_at',{ascending:false}).limit(5000)
+  ]);
+  if(contatosErr){
+    setContent(`<div class="page-title"><i class="fa fa-bullhorn"></i> Captação</div><div class="alert alert-danger" style="display:block">Não consegui carregar a tabela de captação: ${esc(contatosErr.message)}</div>`);
+    return;
+  }
+
+  const historyByPhone={};
+  envios.forEach(e=>{
+    const k=capDigits(e.contato_telefone);
+    if(!k) return;
+    if(!historyByPhone[k]) historyByPhone[k]={count:0,last:null};
+    historyByPhone[k].count++;
+    if(e.enviado_at&&(!historyByPhone[k].last||new Date(e.enviado_at)>new Date(historyByPhone[k].last))) historyByPhone[k].last=e.enviado_at;
+  });
+
+  const merged={};
+  contatos.forEach(c=>{
+    const phone=capCleanPhone(c.telefone);
+    const key=capDigits(phone)||c.id;
+    if(!merged[key]){
+      merged[key]={...c,nome:capCleanName(c.nome),telefone:phone,origens:new Set([capOrigin(c)]),ids:[c.id]};
+    }else{
+      merged[key].origens.add(capOrigin(c));
+      merged[key].ids.push(c.id);
+      if(!merged[key].last_contacted_at&&c.last_contacted_at) merged[key].last_contacted_at=c.last_contacted_at;
+    }
+  });
+
+  const all=Object.entries(merged).map(([key,c])=>{
+    const h=historyByPhone[key]||{count:0,last:null};
+    const last=h.last||c.last_contacted_at||null;
+    return {...c,phoneKey:key,sendCount:h.count,lastSentAt:last,origemLimpa:[...c.origens].filter(Boolean).join(' / ')};
+  });
+
+  const search=getFilter('cap-search').toLowerCase();
+  const status=getFilter('cap-status')||'todos';
+  let filtered=all.filter(c=>{
+    const hay=(c.nome+' '+c.telefone+' '+c.origemLimpa).toLowerCase();
+    if(search&&!hay.includes(search)) return false;
+    if(status==='nao_enviados') return c.sendCount===0;
+    if(status==='enviados') return c.sendCount>0;
+    if(status==='enviado_1') return c.sendCount===1;
+    if(status==='enviado_2mais') return c.sendCount>1;
+    return true;
+  }).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+
+  window._capContacts=filtered;
+  const total=all.length;
+  const sent=all.filter(c=>c.sendCount>0).length;
+  const unsent=all.filter(c=>c.sendCount===0).length;
+  const totalShots=all.reduce((sum,c)=>sum+c.sendCount,0);
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Captação</span></div>
+    <div class="captacao-hero">
+      <div>
+        <h2><i class="fa fa-bullhorn" style="color:var(--brand)"></i> Captação Connect Inglês VIP</h2>
+        <p>Selecione contatos, escolha uma mensagem salva e avance pelo WhatsApp com controle de quem já recebeu contato. Nenhum contato é apagado neste fluxo.</p>
+      </div>
+      <div class="captacao-hero-actions">
+        <button class="btn btn-default" onclick="nav('captacao')"><i class="fa fa-rotate"></i> Atualizar</button>
+        <button class="btn btn-primary" onclick="capStartSelected()"><i class="fab fa-whatsapp"></i> Iniciar captação</button>
+      </div>
+    </div>
+    <div id="page-alert" class="alert"></div>
+    <div class="captacao-stats">
+      <div class="captacao-stat"><strong>${total}</strong><span>Total de contatos</span></div>
+      <div class="captacao-stat"><strong id="cap-selected-count">0</strong><span>Selecionados</span></div>
+      <div class="captacao-stat"><strong>${unsent}</strong><span>Ainda não enviados</span></div>
+      <div class="captacao-stat"><strong>${sent}</strong><span>Já enviados</span></div>
+      <div class="captacao-stat"><strong>${totalShots}</strong><span>Mensagens registradas</span></div>
+    </div>
+    <div class="captacao-shell">
+      <div>
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">Contatos para captação</span></div>
+          <div class="panel-body">
+            <div class="captacao-toolbar">
+              <div class="form-col" style="flex:2"><label>Buscar</label><input id="cap-search" value="${esc(getFilter('cap-search'))}" placeholder="Nome, telefone ou origem"></div>
+              <div class="form-col"><label>Status</label><select id="cap-status">
+                <option value="todos" ${status==='todos'?'selected':''}>Todos</option>
+                <option value="nao_enviados" ${status==='nao_enviados'?'selected':''}>Ainda não enviados</option>
+                <option value="enviados" ${status==='enviados'?'selected':''}>Já enviados</option>
+                <option value="enviado_1" ${status==='enviado_1'?'selected':''}>Enviados 1 vez</option>
+                <option value="enviado_2mais" ${status==='enviado_2mais'?'selected':''}>Enviados +1 vez</option>
+              </select></div>
+              <button class="btn btn-primary" onclick="_filters['cap-search']=$('cap-search').value;_filters['cap-status']=$('cap-status').value;nav('captacao')"><i class="fa fa-search"></i> Filtrar</button>
+              <button class="btn btn-default" onclick="clearFilters(['cap-search','cap-status']);nav('captacao')">Limpar</button>
+            </div>
+          </div>
+          <div class="captacao-contact captacao-contact-head">
+            <div><input type="checkbox" onchange="capToggleAll(this.checked)"></div><div>Contato</div><div>Telefone</div><div>Status</div><div>Último envio</div><div>Ação</div>
+          </div>
+          <div id="cap-list">
+            ${filtered.length?filtered.map((c,i)=>`
+              <div class="captacao-contact ${c.sendCount?'sent':''}" data-cap-row="${i}">
+                <div><input type="checkbox" class="cap-check" value="${i}" onchange="capUpdateSelectedCount()"></div>
+                <div><div class="captacao-name">${esc(c.nome)}</div><div class="captacao-meta">${esc(c.origemLimpa)}${c.ids.length>1?` • ${c.ids.length} registros com mesmo telefone`:''}</div></div>
+                <div><div class="captacao-phone">${esc(c.telefone)||'Sem telefone'}</div><div class="captacao-meta">Chave: ${esc(c.phoneKey)}</div></div>
+                <div>${capStatusBadge(c.sendCount)}</div>
+                <div><strong>${capDate(c.lastSentAt)}</strong><div class="captacao-meta">${c.sendCount?`${c.sendCount} envio(s)`:'Sem histórico'}</div></div>
+                <div><button class="btn btn-default btn-sm" onclick="capStartSingle(${i})"><i class="fab fa-whatsapp"></i> Enviar</button></div>
+              </div>
+            `).join(''):`<div class="captacao-empty"><i class="fa fa-address-book"></i>Nenhum contato encontrado para este filtro.</div>`}
+          </div>
+        </div>
+      </div>
+      <div class="captacao-side">
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">Mensagens salvas</span><button class="btn btn-default btn-sm" onclick="capNewTemplate()"><i class="fa fa-plus"></i> Nova</button></div>
+          <div class="panel-body">
+            <div id="cap-template-list"></div>
+            <div class="field"><label>Título</label><input id="cap-msg-title" placeholder="Ex: Primeira abordagem"></div>
+            <div class="field"><label>Mensagem</label><textarea id="cap-msg-text" style="height:150px" placeholder="Use {nome}, {primeiro_nome} ou {telefone}"></textarea></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary" onclick="capSaveTemplate()"><i class="fa fa-save"></i> Salvar mensagem</button>
+              <button class="btn btn-default" onclick="capDeleteTemplate()"><i class="fa fa-trash"></i> Excluir</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="panel-title">Disparo em andamento</span></div>
+          <div class="panel-body" id="cap-run-panel"></div>
+        </div>
+      </div>
+    </div>
+  `);
+  capRenderTemplates();
+  capRenderRunPanel();
+};
+
+function capRenderTemplates(){
+  const list=capLoadTemplates();
+  const selected=localStorage.getItem('connect_captacao_template_active')||list[0]?.id;
+  if(!localStorage.getItem('connect_captacao_template_active')&&selected) localStorage.setItem('connect_captacao_template_active',selected);
+  const wrap=$('cap-template-list');
+  if(wrap){
+    wrap.innerHTML=`<div class="captacao-message-list">${list.map(t=>`
+      <div class="captacao-message-item ${t.id===selected?'active':''}" onclick="capSelectTemplate('${t.id}')">
+        <div class="captacao-message-title">${esc(t.title)}</div>
+        <div class="captacao-message-preview">${esc(t.text)}</div>
+      </div>
+    `).join('')}</div>`;
+  }
+  const active=list.find(t=>t.id===selected)||list[0];
+  if(active&&$('cap-msg-title')){
+    $('cap-msg-title').value=active.title;
+    $('cap-msg-text').value=active.text;
+  }
+}
+function capSelectTemplate(id){localStorage.setItem('connect_captacao_template_active',id);capRenderTemplates();}
+function capNewTemplate(){
+  localStorage.setItem('connect_captacao_template_active','new');
+  $('cap-msg-title').value='';
+  $('cap-msg-text').value='';
+  document.querySelectorAll('.captacao-message-item').forEach(el=>el.classList.remove('active'));
+}
+function capSaveTemplate(){
+  const title=$('cap-msg-title').value.trim();
+  const text=$('cap-msg-text').value.trim();
+  if(!title||!text){showAlert('page-alert','Preencha título e mensagem.','danger');return;}
+  const list=capLoadTemplates();
+  let id=localStorage.getItem('connect_captacao_template_active');
+  if(!id||id==='new'){id='tpl-'+Date.now();list.push({id,title,text});}
+  else{
+    const idx=list.findIndex(t=>t.id===id);
+    if(idx>=0) list[idx]={id,title,text};
+    else list.push({id,title,text});
+  }
+  capSaveTemplates(list);
+  localStorage.setItem('connect_captacao_template_active',id);
+  capRenderTemplates();
+  showAlert('page-alert','Mensagem salva.','success');
+}
+function capDeleteTemplate(){
+  const id=localStorage.getItem('connect_captacao_template_active');
+  let list=capLoadTemplates().filter(t=>t.id!==id);
+  if(!list.length) list=capDefaultTemplates();
+  capSaveTemplates(list);
+  localStorage.setItem('connect_captacao_template_active',list[0].id);
+  capRenderTemplates();
+}
+function capSelectedTemplateText(){
+  const id=localStorage.getItem('connect_captacao_template_active');
+  const tpl=capLoadTemplates().find(t=>t.id===id)||capLoadTemplates()[0];
+  return tpl?.text||'';
+}
+function capToggleAll(checked){document.querySelectorAll('.cap-check').forEach(ch=>ch.checked=checked);capUpdateSelectedCount();}
+function capUpdateSelectedCount(){const el=$('cap-selected-count');if(el)el.textContent=document.querySelectorAll('.cap-check:checked').length;}
+function capCheckedContacts(){return [...document.querySelectorAll('.cap-check:checked')].map(ch=>window._capContacts[Number(ch.value)]).filter(Boolean);}
+function capStartSingle(index){capBeginQueue([window._capContacts[index]].filter(Boolean));}
+function capStartSelected(){capBeginQueue(capCheckedContacts());}
+async function capBeginQueue(queue){
+  if(!queue.length){showAlert('page-alert','Selecione pelo menos um contato.','danger');return;}
+  const message=capSelectedTemplateText().trim();
+  if(!message){showAlert('page-alert','Escolha ou salve uma mensagem antes de iniciar.','danger');return;}
+  const {data,error}=await sb.from('captacao_disparos').insert({mensagem:message,total_contatos:queue.length,created_by:currentUser.id}).select('id').single();
+  if(error){showAlert('page-alert','Erro ao iniciar disparo: '+error.message,'danger');return;}
+  capState={queue,index:0,disparoId:data.id,message,sent:0};
+  capRenderRunPanel();
+  capOpenCurrent();
+}
+function capRenderRunPanel(){
+  const el=$('cap-run-panel');
+  if(!el) return;
+  if(!capState.queue.length){
+    el.innerHTML='<div class="captacao-small">Nenhum disparo em andamento. Selecione contatos e clique em “Iniciar captação”.</div>';
+    return;
+  }
+  const total=capState.queue.length;
+  const current=capState.queue[capState.index];
+  const pct=Math.round((capState.sent/total)*100);
+  el.innerHTML=`<div class="captacao-run-card">
+    <div class="captacao-current">${current?esc(current.nome):'Disparo concluído'}</div>
+    <div class="captacao-small">${capState.sent} de ${total} registrados</div>
+    <div class="captacao-progress"><span style="width:${pct}%"></span></div>
+    ${current?`<div class="captacao-small"><strong>Próximo:</strong> ${esc(current.telefone)||'sem telefone'}</div>`:'<div class="badge badge-success">Concluído</div>'}
+    <div class="captacao-actions-row">
+      ${current?`<button class="btn btn-primary" onclick="capOpenCurrent()"><i class="fab fa-whatsapp"></i> Abrir próximo</button><button class="btn btn-default" onclick="capSkipCurrent()"><i class="fa fa-forward"></i> Pular</button>`:`<button class="btn btn-default" onclick="nav('captacao')"><i class="fa fa-check"></i> Finalizar</button>`}
+    </div>
+  </div>`;
+}
+async function capOpenCurrent(){
+  const contact=capState.queue[capState.index];
+  if(!contact){capRenderRunPanel();showAlert('page-alert','Captação finalizada.','success');return;}
+  const digits=capDigits(contact.telefone);
+  if(!digits||digits.length<10){showAlert('page-alert','Contato sem telefone válido. Pulando para o próximo.','danger');capState.index++;capRenderRunPanel();return;}
+  const msg=capPersonalize(capState.message,contact);
+  window.open(`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`,'connect_captacao_whatsapp');
+  const now=new Date().toISOString();
+  await sb.from('captacao_disparo_contatos').insert({
+    disparo_id:capState.disparoId,
+    contato_id:contact.id,
+    contato_nome:contact.nome,
+    contato_telefone:contact.telefone,
+    status:'enviado',
+    enviado_at:now
+  });
+  await sb.from('captacao_contatos').update({last_contacted_at:now}).in('id',contact.ids||[contact.id]);
+  capState.sent++;
+  capState.index++;
+  capRenderRunPanel();
+}
+function capSkipCurrent(){capState.index++;capRenderRunPanel();}
 
 // --- SCHOOLS ---
 pages.schools=async function({view,id}={}){
@@ -3345,7 +3685,7 @@ async function gerarRelatorioFrequencia(){
 // ============================
 let _capSelecionados=new Set();
 
-pages.captacao=async function({view,id}={}){
+async function captacaoLegada({view,id}={}){
   if(!isAdmin()&&currentUser?.role!=='captacao'){nav('dashboard');return;}
   if(view==='fila') return captacaoFila(id);
   _capSelecionados=new Set();
