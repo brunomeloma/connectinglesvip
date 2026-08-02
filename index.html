@@ -1817,6 +1817,20 @@ async function classForm(id){
   `);
 }
 
+async function verificarConflitoProfessor(teacherId,days,startTime,endTime,excludeClassId){
+  const{data:outras=[]}=await sb.from('classes').select('id,name,class_days,start_time,end_time').eq('teacher_id',teacherId).eq('status',true);
+  for(const c of outras){
+    if(excludeClassId&&c.id===excludeClassId) continue;
+    if(!c.start_time||!c.end_time) continue;
+    const diasC=(c.class_days||'').split(',').filter(Boolean);
+    const temDiaComum=diasC.some(d=>days.includes(d));
+    if(!temDiaComum) continue;
+    const sobrepoe=startTime<c.end_time&&c.start_time<endTime;
+    if(sobrepoe) return c;
+  }
+  return null;
+}
+
 async function saveClass(id){
   const name=$('f-name').value.trim();
   if(!name){showAlert('page-alert','Informe o nome da turma.','danger');return;}
@@ -1824,9 +1838,18 @@ async function saveClass(id){
   const startTime=$('f-start-time').value;
   const endTime=$('f-end-time').value;
   if(!days.length||!startTime||!endTime){showAlert('page-alert','Informe dias e horários da turma.','danger');return;}
+  if(endTime<=startTime){showAlert('page-alert','O horário de término precisa ser depois do horário de início.','danger');return;}
+  const teacherId=$('f-teacher').value||null;
+  if(teacherId){
+    const conflito=await verificarConflitoProfessor(teacherId,days,startTime,endTime,id||null);
+    if(conflito){
+      showAlert('page-alert',`Esse professor já tem a turma "${conflito.name}" no mesmo dia e horário (${conflito.start_time}–${conflito.end_time}). Ajuste o horário ou escolha outro professor.`,'danger');
+      return;
+    }
+  }
   let schedule=$('f-schedule').value.trim();
   if(!schedule) schedule=days.join('/')+' '+startTime+'–'+endTime;
-  const payload={name,teacher_id:$('f-teacher').value||null,school_id:$('f-school').value||null,schedule,class_days:days.join(','),start_time:startTime,end_time:endTime,level:$('f-level').value||null,status:$('f-status').value==='true'};
+  const payload={name,teacher_id:teacherId,school_id:$('f-school').value||null,schedule,class_days:days.join(','),start_time:startTime,end_time:endTime,level:$('f-level').value||null,status:$('f-status').value==='true'};
   let err;
   if(id){const r=await sb.from('classes').update(payload).eq('id',id);err=r.error;}
   else{const r=await sb.from('classes').insert(payload);err=r.error;}
