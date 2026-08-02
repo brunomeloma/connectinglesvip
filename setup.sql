@@ -1726,3 +1726,48 @@ $function$;
 -- teachers/schools.
 
 DROP TABLE IF EXISTS public.users CASCADE;
+
+
+-- #####################################################################
+-- 24. CAPTAÇÃO — compartilha histórico de disparos entre operadores
+-- #####################################################################
+-- Achado da auditoria: a tela nova de Captação mostra, pra qualquer
+-- contato, se já foi enviado por QUALQUER operador de captação
+-- ("Já enviados"/badges/histórico), pra evitar que dois atendentes
+-- mandem mensagem pro mesmo lead. Mas a policy de SELECT em
+-- captacao_disparos/captacao_disparo_contatos só liberava "próprios
+-- disparos" pra quem tem papel captacao — assim que existir mais de
+-- um usuário com esse papel, cada um só enxergaria o que ELE MESMO
+-- enviou, e o "já enviado" ficaria incompleto/errado silenciosamente
+-- pros envios dos colegas. Corrige pra leitura compartilhada entre
+-- todos os operadores de captação (exclusão continua só admin).
+-- Aproveita pra otimizar auth.uid() -> (select auth.uid()) nas
+-- policies (achado do advisor de performance).
+
+DROP POLICY IF EXISTS "captacao_disparos_select" ON captacao_disparos;
+CREATE POLICY "captacao_disparos_select" ON captacao_disparos FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','captacao']));
+
+DROP POLICY IF EXISTS "cdc_select" ON captacao_disparo_contatos;
+CREATE POLICY "cdc_select" ON captacao_disparo_contatos FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','captacao']));
+
+DROP POLICY IF EXISTS "captacao_disparos_insert" ON captacao_disparos;
+CREATE POLICY "captacao_disparos_insert" ON captacao_disparos FOR INSERT
+  WITH CHECK (has_role(ARRAY['super_admin','direcao','captacao']) AND created_by = (select auth.uid()));
+DROP POLICY IF EXISTS "captacao_disparos_update" ON captacao_disparos;
+CREATE POLICY "captacao_disparos_update" ON captacao_disparos FOR UPDATE
+  USING (has_role(ARRAY['super_admin','direcao']) OR (has_role(ARRAY['captacao']) AND created_by = (select auth.uid())));
+
+DROP POLICY IF EXISTS "cdc_insert" ON captacao_disparo_contatos;
+CREATE POLICY "cdc_insert" ON captacao_disparo_contatos FOR INSERT
+  WITH CHECK (EXISTS (SELECT 1 FROM captacao_disparos d WHERE d.id = disparo_id
+    AND (has_role(ARRAY['super_admin','direcao']) OR (has_role(ARRAY['captacao']) AND d.created_by = (select auth.uid())))));
+DROP POLICY IF EXISTS "cdc_update" ON captacao_disparo_contatos;
+CREATE POLICY "cdc_update" ON captacao_disparo_contatos FOR UPDATE
+  USING (EXISTS (SELECT 1 FROM captacao_disparos d WHERE d.id = disparo_id
+    AND (has_role(ARRAY['super_admin','direcao']) OR (has_role(ARRAY['captacao']) AND d.created_by = (select auth.uid())))));
+
+-- Performance (achado do advisor): auth.uid() reavaliado por linha.
+DROP POLICY IF EXISTS "profiles_select_own" ON profiles;
+CREATE POLICY "profiles_select_own" ON profiles FOR SELECT USING (id = (select auth.uid()));
