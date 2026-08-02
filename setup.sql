@@ -1847,3 +1847,84 @@ AS $$ BEGIN
       AND s.date_joining <= CURRENT_DATE - (p_meses || ' months')::interval
     ORDER BY s.date_joining;
 END; $$;
+
+
+-- #####################################################################
+-- 26. PORTAL DO RESPONSÁVEL (link público por token, somente leitura)
+-- #####################################################################
+
+-- Ao contrário do link de assinatura (uso único), o link do portal é
+-- reutilizável: o responsável pode acessar quantas vezes quiser para
+-- ver frequência, boletos e próxima aula do aluno.
+CREATE TABLE IF NOT EXISTS portal_acesso (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id uuid NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  token text NOT NULL UNIQUE,
+  status text NOT NULL DEFAULT 'ativo',
+  created_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now(),
+  last_accessed_at timestamptz,
+  revoked_at timestamptz,
+  revoked_by uuid REFERENCES profiles(id) ON DELETE SET NULL
+);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='portal_acesso_status_check') THEN
+    ALTER TABLE portal_acesso ADD CONSTRAINT portal_acesso_status_check CHECK (status IN ('ativo','revogado'));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_portal_acesso_student ON portal_acesso(student_id);
+
+ALTER TABLE portal_acesso ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "portal_acesso_select" ON portal_acesso;
+DROP POLICY IF EXISTS "portal_acesso_insert" ON portal_acesso;
+DROP POLICY IF EXISTS "portal_acesso_update" ON portal_acesso;
+CREATE POLICY "portal_acesso_select" ON portal_acesso FOR SELECT USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "portal_acesso_insert" ON portal_acesso FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "portal_acesso_update" ON portal_acesso FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','secretaria']));
+
+-- Gera (ou reaproveita, se já houver um ativo) o link do portal do aluno.
+CREATE OR REPLACE FUNCTION gerar_link_portal(p_student_id uuid)
+RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_token text; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  SELECT token INTO v_token FROM portal_acesso WHERE student_id = p_student_id AND status='ativo' LIMIT 1;
+  IF v_token IS NOT NULL THEN RETURN v_token; END IF;
+  v_token := replace(gen_random_uuid()::text,'-','') || replace(gen_random_uuid()::text,'-','');
+  INSERT INTO portal_acesso (student_id, token, created_by) VALUES (p_student_id, v_token, auth.uid());
+  RETURN v_token;
+END; $$;
+
+-- Revoga o link do portal ativo de um aluno.
+CREATE OR REPLACE FUNCTION revogar_link_portal(p_student_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  UPDATE portal_acesso SET status='revogado', revoked_at=now(), revoked_by=auth.uid()
+  WHERE student_id = p_student_id AND status='ativo';
+END; $$;
+
+-- PÚBLICA — dados somente-leitura do aluno pelo token do portal (sem login).
+-- SECURITY DEFINER contorna a RLS de students/attendance/boletos/classes
+-- de propósito, mas só devolve dados do aluno dono do token (v_row.student_id).
+CREATE OR REPLACE FUNCTION obter_dados_portal(p_token text)
+RETURNS TABLE(
+  first_name text, last_name text, class_name text, level text, modalidade text,
+  class_days text, start_time text, end_time text,
+  frequencia jsonb, boletos jsonb
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_row portal_acesso%ROWTYPE; BEGIN
+  SELECT * INTO v_row FROM portal_acesso WHERE token = p_token AND status='ativo';
+  IF v_row IS NULL THEN RAISE EXCEPTION 'Link inválido ou expirado'; END IF;
+  UPDATE portal_acesso SET last_accessed_at = now() WHERE id = v_row.id;
+  RETURN QUERY
+    SELECT s.first_name, s.last_name, c.name::text, s.level, s.modalidade,
+      c.class_days, c.start_time, c.end_time,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('date', x.date, 'status', x.status) ORDER BY x.date DESC)
+        FROM (SELECT date, status FROM attendance WHERE student_id=s.id AND status<>'pendente' ORDER BY date DESC LIMIT 20) x), '[]'::jsonb),
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('mes_referencia',y.mes_referencia,'ano_referencia',y.ano_referencia,'data_vencimento',y.data_vencimento,'valor',y.valor,'status',y.status,'url_boleto',y.url_boleto) ORDER BY y.ano_referencia DESC, y.mes_referencia DESC)
+        FROM (SELECT mes_referencia,ano_referencia,data_vencimento,valor,status,url_boleto FROM boletos WHERE student_id=s.id ORDER BY ano_referencia DESC, mes_referencia DESC LIMIT 12) y), '[]'::jsonb)
+    FROM students s LEFT JOIN classes c ON c.id = s.class_id
+    WHERE s.id = v_row.student_id;
+END; $$;

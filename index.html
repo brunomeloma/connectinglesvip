@@ -340,7 +340,7 @@ tr:hover td{background:#fdf9f0}
 .doc-detail-row span:last-child{color:var(--gray-900);font-weight:500;text-align:right}
 
 /* PÁGINA PÚBLICA DE ASSINATURA */
-#sign-page{display:none;min-height:100vh;background:#f0ede8;padding:24px 14px}
+#sign-page,#portal-page{display:none;min-height:100vh;background:#f0ede8;padding:24px 14px}
 .sign-wrap{max-width:760px;margin:0 auto}
 .sign-header{text-align:center;padding:18px 0 22px}
 .sign-header .login-logo{font-size:12px;font-weight:600;letter-spacing:3px;color:var(--brand-dark);text-transform:uppercase}
@@ -519,6 +519,18 @@ let currentUser = null;
     </div>
     <div id="sign-content"></div>
     <div class="sign-footer">Este acesso é individual e registrado para fins de segurança jurídica.</div>
+  </div>
+</div>
+
+<!-- ===== PÁGINA PÚBLICA — PORTAL DO RESPONSÁVEL ===== -->
+<div id="portal-page">
+  <div class="sign-wrap">
+    <div class="sign-header">
+      <div class="login-logo">Connect Inglês</div>
+      <div class="sign-brand"><span>VIP</span> — Portal do Responsável</div>
+    </div>
+    <div id="portal-content"></div>
+    <div class="sign-footer">Este link é individual do(a) aluno(a) — não compartilhe com terceiros.</div>
   </div>
 </div>
 
@@ -1630,7 +1642,7 @@ pages.students=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Lista de alunos</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="4">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="5">Ações</th></tr></thead>
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
@@ -1644,8 +1656,9 @@ pages.students=async function({view,id}={}){
               <td><button class="btn-icon" onclick="nav('students',{view:'frequencia',id:'${s.id}'})" title="Histórico de frequência"><i class="fa fa-calendar-check"></i></button></td>
               <td><button class="btn-icon" onclick="nav('students',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
               <td><button class="btn-icon" onclick="imprimirRelatorioAluno('${s.id}')" title="Imprimir relatório"><i class="fa fa-file-pdf"></i></button></td>
+              <td><button class="btn-icon" style="color:var(--brand)" onclick="gerarLinkPortal('${s.id}')" title="Link do portal do responsável"><i class="fa fa-user-shield"></i></button></td>
               <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('students','${s.id}','students')"><i class="fa fa-trash"></i></button></td>
-            </tr>`).join(''):`<tr><td colspan="12"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
+            </tr>`).join(''):`<tr><td colspan="13"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -3559,6 +3572,51 @@ function copiarLinkDocumento(){
   });
 }
 
+function mostrarLinkBox(title,url,waHref){
+  let ov=$('link-box-overlay');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='link-box-overlay';
+    ov.className='confirm-overlay';
+    ov.style.display='none';
+    ov.innerHTML=`<div class="confirm-box" style="max-width:480px">
+      <h4 id="link-box-title"></h4>
+      <div class="doc-link-box">
+        <input type="text" id="link-box-input" readonly>
+        <button class="btn btn-default btn-sm" onclick="copiarLinkBox()"><i class="fa fa-copy"></i> <span id="link-box-copy-label">Copiar</span></button>
+        <a class="btn btn-sm" id="link-box-wa" style="background:#25D366;color:#fff" target="_blank"><i class="fab fa-whatsapp"></i> Enviar</a>
+      </div>
+      <div class="confirm-actions" style="margin-top:14px"><button class="btn btn-default" onclick="$('link-box-overlay').style.display='none'">Fechar</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+  }
+  $('link-box-title').textContent=title;
+  $('link-box-input').value=url;
+  $('link-box-wa').href=waHref;
+  ov.style.display='flex';
+}
+function copiarLinkBox(){
+  const input=$('link-box-input');
+  if(!input) return;
+  navigator.clipboard.writeText(input.value).then(()=>{
+    const label=$('link-box-copy-label');
+    if(label){label.textContent='Copiado!';setTimeout(()=>{label.textContent='Copiar';},2000);}
+  });
+}
+
+async function gerarLinkPortal(studentId){
+  const{data:s}=await sb.from('students').select('first_name,last_name,whatsapp,mobile_number').eq('id',studentId).single();
+  const{data:token,error}=await sb.rpc('gerar_link_portal',{p_student_id:studentId});
+  if(error){alert('Erro ao gerar link: '+error.message);return;}
+  const url=location.origin+location.pathname+'?portal='+token;
+  const nomeAluno=esc(s?.first_name)+' '+esc(s?.last_name);
+  const msg=encodeURIComponent(`Olá! Segue o link do portal do(a) aluno(a) ${nomeAluno} na Connect Inglês VIP, onde você acompanha frequência, boletos e próxima aula:\n${url}`);
+  let numero=(s?.whatsapp||s?.mobile_number||'').replace(/\D/g,'');
+  if(numero&&!numero.startsWith('55')) numero='55'+numero;
+  const waHref=numero?`https://wa.me/${numero}?text=${msg}`:`https://wa.me/?text=${msg}`;
+  mostrarLinkBox('Portal do responsável — '+nomeAluno,url,waHref);
+}
+
 function verDetalhesDocumento(id){
   const d=_docsCache.find(x=>x.id===id);
   if(!d) return;
@@ -3752,6 +3810,88 @@ async function submeterAssinatura(){
     return;
   }
   renderSignResult('ok','Documento assinado com sucesso!',`Obrigado, ${name}. O documento foi assinado em ${new Date().toLocaleString('pt-BR')} e o registro fica disponível para a Connect Inglês VIP.`);
+}
+
+// --- PÁGINA PÚBLICA: PORTAL DO RESPONSÁVEL (sem login, via token na URL) ---
+async function initPortalPage(token){
+  $('login-page').style.display='none';
+  $('app').style.display='none';
+  $('portal-page').style.display='block';
+
+  const{data,error}=await sb.rpc('obter_dados_portal',{p_token:token});
+  const info=Array.isArray(data)?data[0]:data;
+  if(error||!info){
+    renderPortalResult('err','Link inválido','Este link do portal não foi encontrado ou foi revogado. Solicite um novo link à secretaria da Connect Inglês VIP.');
+    return;
+  }
+  renderPortalData(info);
+}
+
+function renderPortalResult(type,title,text){
+  $('portal-content').innerHTML=`
+    <div class="sign-card"><div class="sign-result ${type}">
+      <i class="fa ${type==='ok'?'fa-check-circle':'fa-times-circle'}"></i>
+      <h3>${esc(title)}</h3>
+      <p>${esc(text)}</p>
+    </div></div>
+  `;
+}
+
+function proximaAulaTexto(classDays,startTime,endTime){
+  if(!classDays||!startTime) return 'Sem turma/horário definido no momento.';
+  const diasSemana=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const hojeIdx=new Date().getDay();
+  for(let i=0;i<8;i++){
+    const idx=(hojeIdx+i)%7;
+    const abbr=diasSemana[idx];
+    if(classDays.includes(abbr)){
+      const label=i===0?'Hoje':(i===1?'Amanhã':`Em ${i} dias (${abbr})`);
+      return `${label}, ${startTime}${endTime?'–'+endTime:''}`;
+    }
+  }
+  return 'Sem aula programada nos próximos dias.';
+}
+
+function renderPortalData(info){
+  const nomeAluno=`${esc(info.first_name)} ${esc(info.last_name)}`;
+  const freq=info.frequencia||[];
+  const boletos=info.boletos||[];
+  const presencas=freq.filter(f=>f.status==='presente').length;
+  const faltas=freq.filter(f=>f.status==='ausente').length;
+  const pct=freq.length?((presencas/freq.length)*100).toFixed(0):'—';
+  $('portal-content').innerHTML=`
+    <div class="sign-card" style="margin-bottom:16px">
+      <div class="sign-card-head">
+        <h3><i class="fa fa-user-graduate" style="color:var(--brand)"></i> ${nomeAluno}</h3>
+        <p>${info.class_name?esc(info.class_name)+' — ':''}${info.level?esc(info.level):''}${info.modalidade?' · '+esc(info.modalidade):''}</p>
+      </div>
+      <div style="padding:18px 22px">
+        <strong style="font-size:13px;color:var(--gray-700)"><i class="fa fa-calendar-day" style="color:var(--brand)"></i> Próxima aula</strong>
+        <p style="margin-top:6px;font-size:13px;color:var(--gray-900)">${esc(proximaAulaTexto(info.class_days,info.start_time,info.end_time))}</p>
+      </div>
+    </div>
+    <div class="sign-card" style="margin-bottom:16px">
+      <div class="sign-card-head"><h3><i class="fa fa-calendar-check" style="color:var(--brand)"></i> Frequência</h3><p>${presencas} presença(s), ${faltas} falta(s)${freq.length?' — '+pct+'% de frequência (últimas '+freq.length+' aulas)':''}</p></div>
+      <div class="table-wrap">
+        ${freq.length?`<table><thead><tr><th>Data</th><th>Status</th></tr></thead><tbody>${freq.map(f=>`<tr><td>${fdate(f.date)}</td><td><span class="badge status-badge-${f.status}">${FREQ_STATUS_UI[f.status]||esc(f.status)}</span></td></tr>`).join('')}</tbody></table>`:'<div class="empty-state" style="padding:16px"><i class="fa fa-calendar-times"></i>Nenhuma frequência registrada ainda.</div>'}
+      </div>
+    </div>
+    <div class="sign-card">
+      <div class="sign-card-head"><h3><i class="fa fa-file-invoice-dollar" style="color:var(--brand)"></i> Boletos</h3><p>Últimos boletos do aluno</p></div>
+      <div class="table-wrap">
+        ${boletos.length?`<table><thead><tr><th>Referência</th><th>Vencimento</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${boletos.map(b=>{
+          const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+          return `<tr>
+            <td>${meses[b.mes_referencia-1]}/${b.ano_referencia}</td>
+            <td>${fdate(b.data_vencimento)}</td>
+            <td>${fmtBRL(b.valor)}</td>
+            <td>${b.status==='pago'?'<span class="badge badge-success">Pago</span>':'<span class="badge badge-warning">Em aberto</span>'}</td>
+            <td>${b.url_boleto?`<a href="${esc(b.url_boleto)}" target="_blank" class="btn btn-primary btn-sm"><i class="fa fa-external-link-alt"></i> Boleto</a>`:''}</td>
+          </tr>`;
+        }).join('')}</tbody></table>`:'<div class="empty-state" style="padding:16px"><i class="fa fa-file-invoice"></i>Nenhum boleto encontrado.</div>'}
+      </div>
+    </div>
+  `;
 }
 
 // ============================
@@ -4083,6 +4223,8 @@ function saveFilters(keys){keys.forEach(k=>{const el=$(k);if(el)_filters[k]=el.v
 document.addEventListener('DOMContentLoaded',()=>{
   const assinarToken=new URLSearchParams(location.search).get('assinar');
   if(assinarToken){initSignPage(assinarToken);return;}
+  const portalToken=new URLSearchParams(location.search).get('portal');
+  if(portalToken){initPortalPage(portalToken);return;}
   document.addEventListener('keydown',e=>{if(e.key==='Enter'&&$('login-page').style.display!=='none')doLogin();});
   initAuth();
 });
