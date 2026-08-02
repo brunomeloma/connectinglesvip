@@ -4172,7 +4172,7 @@ async function gerarRelatorioFrequencia(){
 async function capAdicionarContato(){
   const nome=$('cap-novo-nome').value.trim();
   const telefone=$('cap-novo-telefone').value.trim();
-  const observacoes=$('cap-novo-obs').value.trim();
+  const observacoes=$('cap-novo-obs')?.value?.trim()||'';
   if(!nome||!telefone){showAlert('page-alert','Informe nome e telefone.','danger');return;}
   const{error}=await sb.from('captacao_contatos').insert({nome,telefone,observacoes:observacoes||null,origem:'manual',created_by:currentUser.id});
   if(error){showAlert('page-alert','Erro ao adicionar contato: '+error.message,'danger');return;}
