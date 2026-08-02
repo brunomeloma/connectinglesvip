@@ -1713,3 +1713,16 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
+
+
+-- #####################################################################
+-- 23. LIMPEZA — remove tabela legada "users" (não usada pelo app)
+-- #####################################################################
+-- O app usa "profiles" (vinculada a auth.users). A tabela "users" era
+-- sobra de um scaffold anterior, com RLS ativado mas sem nenhuma
+-- policy (já bloqueava todo acesso). Confirmado com o usuário que não
+-- há mais uso — removida. CASCADE limpa só as FKs em teachers.user_id
+-- e schools.user_id (também não usadas pelo app), sem apagar dados de
+-- teachers/schools.
+
+DROP TABLE IF EXISTS public.users CASCADE;
