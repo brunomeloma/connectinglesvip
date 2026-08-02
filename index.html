@@ -746,6 +746,7 @@ pages.dashboard=async function(){
       <div class="stat-card c-brown"><i class="fa fa-layer-group stat-icon"></i><div><div class="stat-num">${cl.count??0}</div><div class="stat-label">Turmas ativas</div></div></div>
     </div>
     <div id="dash-aulas-hoje"></div>
+    ${(canManageBilling()||isAdmin())?`<div id="dash-aniversariantes"></div><div id="dash-risco-evasao"></div>`:''}
     <div class="two-col">
       <div class="panel">
         <div class="panel-head"><span class="panel-title">Acesso rápido</span></div>
@@ -772,7 +773,73 @@ pages.dashboard=async function(){
     </div>
   `);
   carregarAulasHoje();
+  if(canManageBilling()||isAdmin()){carregarAniversariantesDash();carregarRiscoEvasaoDash();}
 };
+
+const ANIVERSARIO_MSG='Olá, {nome}! 🎉🎂\nA equipe da *Connect Inglês VIP* deseja um Feliz Aniversário! Que seu dia seja incrível e que este novo ano venha cheio de conquistas. 🎈\nUm abraço da nossa equipe!';
+const RETENCAO_MSG='Olá, {nome}! 😊\nFaz um tempo que não conversamos! Passando para saber como você está e se podemos ajudar em algo — seja dúvidas sobre horários, módulo atual ou plano. Estamos à disposição!';
+
+function enviarAniversarioWpp(studentId,nome,numero){
+  const texto=ANIVERSARIO_MSG.replace(/\{nome\}/g,nome);
+  window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(texto),'_blank');
+  sb.rpc('registrar_cobranca_boleto',{p_student_id:studentId,p_contact_type:'aniversario',p_message:texto,p_channel:'whatsapp'});
+}
+function enviarRetencaoWpp(studentId,nome,numero){
+  const texto=RETENCAO_MSG.replace(/\{nome\}/g,nome);
+  window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(texto),'_blank');
+  sb.rpc('registrar_cobranca_boleto',{p_student_id:studentId,p_contact_type:'retencao',p_message:texto,p_channel:'whatsapp'});
+}
+
+async function carregarAniversariantesDash(){
+  const{data:lista=[]}=await sb.rpc('get_aniversariantes_semana',{p_dias:7});
+  const el=$('dash-aniversariantes');
+  if(!el) return;
+  if(!lista.length){el.innerHTML='';return;}
+  el.innerHTML=`<div class="panel" style="margin-bottom:18px">
+    <div class="panel-head"><span class="panel-title"><i class="fa fa-birthday-cake" style="color:var(--brand)"></i> Aniversariantes da semana</span><span style="font-size:12px;color:var(--gray-500)">${lista.length} aluno(s)</span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Aluno</th><th>WhatsApp</th><th>Data</th><th>Quando</th><th>Ações</th></tr></thead>
+      <tbody>${lista.map(a=>{
+        const numero=(a.whatsapp||a.mobile_number||'').replace(/\D/g,'');
+        const numFmt=numero&&!numero.startsWith('55')?'55'+numero:numero;
+        const quando=a.dias_para_aniversario===0?'Hoje! 🎉':(a.dias_para_aniversario===1?'Amanhã':`Em ${a.dias_para_aniversario} dias`);
+        return `<tr>
+          <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${esc(a.first_name)} ${esc(a.last_name)}</strong></div></td>
+          <td>${numFmt?`<a href="https://wa.me/${numFmt}" target="_blank" style="color:#25D366;font-weight:600"><i class="fab fa-whatsapp"></i> ${esc(a.whatsapp||a.mobile_number||'—')}</a>`:'—'}</td>
+          <td>${new Date(a.date_birth+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}</td>
+          <td><span class="badge ${a.dias_para_aniversario===0?'badge-success':'badge-info'}">${quando}</span></td>
+          <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarAniversarioWpp('${a.id}','${esc(a.first_name)}','${numFmt}')" title="Mandar parabéns"><i class="fab fa-whatsapp"></i> Parabenizar</button>`:'—'}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+
+async function carregarRiscoEvasaoDash(){
+  const{data:lista=[]}=await sb.rpc('get_alunos_risco_evasao',{p_meses:6});
+  const el=$('dash-risco-evasao');
+  if(!el) return;
+  if(!lista.length){el.innerHTML='';return;}
+  el.innerHTML=`<div class="panel" style="margin-bottom:18px">
+    <div class="panel-head"><span class="panel-title"><i class="fa fa-exclamation-triangle" style="color:var(--danger)"></i> Alunos em risco de evasão</span><span style="font-size:12px;color:var(--gray-500)">${lista.length} aluno(s) sem rematrícula há 6+ meses</span></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Aluno</th><th>WhatsApp</th><th>Turma</th><th>Matriculado em</th><th>Sem rematrícula</th><th>Ações</th></tr></thead>
+      <tbody>${lista.map(a=>{
+        const numero=(a.whatsapp||a.mobile_number||'').replace(/\D/g,'');
+        const numFmt=numero&&!numero.startsWith('55')?'55'+numero:numero;
+        return `<tr>
+          <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${esc(a.first_name)} ${esc(a.last_name)}</strong></div></td>
+          <td>${numFmt?`<a href="https://wa.me/${numFmt}" target="_blank" style="color:#25D366;font-weight:600"><i class="fab fa-whatsapp"></i> ${esc(a.whatsapp||a.mobile_number||'—')}</a>`:'—'}</td>
+          <td>${esc(a.class_name)||'—'}</td>
+          <td>${fdate(a.date_joining)}</td>
+          <td><span class="badge badge-danger">${a.meses_sem_rematricula} meses</span></td>
+          <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarRetencaoWpp('${a.id}','${esc(a.first_name)}','${numFmt}')" title="Reengajar via WhatsApp"><i class="fab fa-whatsapp"></i> Reengajar</button>`:'—'}
+          <button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${a.id}'})" title="Ver aluno"><i class="fa fa-eye"></i></button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
 
 async function carregarAulasHoje(){
   const diasSemana=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
