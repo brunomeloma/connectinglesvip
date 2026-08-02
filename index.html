@@ -2043,33 +2043,44 @@ async function classTabHistorico(classId,header){
 const COBRANCA_MSGS={
   vence_hoje:{label:'Boleto vence hoje',type:'cobranca',text:'Olá, {nome}! Tudo bem? 😊\nPassando para lembrar que seu boleto da *Connect Inglês VIP* vence hoje.\n{boleto}\nQualquer dúvida, estamos à disposição!'},
   vencido:{label:'Boleto vencido',type:'boleto_vencido',text:'Olá, {nome}! 🔔\nIdentificamos que seu boleto da *Connect Inglês VIP* venceu em {data}.\nPode verificar por gentileza? Se já pagou, envie o comprovante.\n{boleto}'},
+  vence_em_breve:{label:'Boleto vence em breve',type:'lembrete_vencimento',text:'Olá, {nome}! 😊\nPassando para lembrar que seu boleto da *Connect Inglês VIP* vence em {data}.\n{boleto}\nQualquer dúvida, estamos à disposição!'},
   confirmacao:{label:'Confirmação de pagamento',type:'confirmacao_pagamento',text:'Olá, {nome}! ✅\nConfirmamos o recebimento do seu pagamento referente à *Connect Inglês VIP*. Obrigado!'},
 };
 
 pages.cobrancas=async function(){
   if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const[{data:hoje=[]},{data:vencidos=[]},{data:pagosHoje=[]}]=await Promise.all([
+  const[{data:hoje=[]},{data:vencidos=[]},{data:pagosHoje=[]},{data:emBreve=[]}]=await Promise.all([
     sb.rpc('get_boletos_vencem_hoje'),
     sb.rpc('get_boletos_vencidos'),
     sb.rpc('get_boletos_pagos_hoje'),
+    sb.rpc('get_boletos_vencem_em_breve',{p_dias:7}),
   ]);
 
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>Cobranças</span></div>
     <div class="page-title"><i class="fa fa-calendar-check"></i> Cobranças — Boletos do Dia</div>
     <div id="page-alert" class="alert"></div>
-    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
+    <div class="stat-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="stat-card c-brown"><i class="fa fa-bell stat-icon"></i><div><div class="stat-num">${emBreve.length}</div><div class="stat-label">Vencem em breve</div></div></div>
       <div class="stat-card c-orange"><i class="fa fa-clock stat-icon"></i><div><div class="stat-num">${hoje.length}</div><div class="stat-label">Vencem hoje</div></div></div>
       <div class="stat-card c-dark" style="border-left:3px solid var(--danger)"><i class="fa fa-exclamation-triangle stat-icon" style="color:var(--danger)"></i><div><div class="stat-num">${vencidos.length}</div><div class="stat-label">Vencidos</div></div></div>
       <div class="stat-card c-gold"><i class="fa fa-check-circle stat-icon"></i><div><div class="stat-num">${pagosHoje.length}</div><div class="stat-label">Pagos hoje</div></div></div>
     </div>
 
+    ${emBreve.length?`<div class="panel">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-bell" style="color:var(--brand)"></i> Vencem em breve (próximos 7 dias)</span><span style="font-size:12px;color:var(--gray-500)">${emBreve.length} boleto(s)</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Aluno</th><th>WhatsApp</th><th>Vencimento</th><th>Faltam</th><th>Valor</th><th>Boleto</th><th>Ações</th></tr></thead>
+        <tbody>${emBreve.map(b=>renderBoletoCobranca(b,'em_breve')).join('')}</tbody>
+      </table></div>
+    </div>`:''}
+
     ${hoje.length?`<div class="panel">
       <div class="panel-head"><span class="panel-title"><i class="fa fa-clock" style="color:var(--brand-orange)"></i> Vencem hoje — ${new Date().toLocaleDateString('pt-BR')}</span><span style="font-size:12px;color:var(--gray-500)">${hoje.length} boleto(s)</span></div>
       <div class="table-wrap"><table>
         <thead><tr><th>Aluno</th><th>WhatsApp</th><th>Valor</th><th>Boleto</th><th>Ações</th></tr></thead>
-        <tbody>${hoje.map(b=>renderBoletoCobranca(b,false)).join('')}</tbody>
+        <tbody>${hoje.map(b=>renderBoletoCobranca(b,'hoje')).join('')}</tbody>
       </table></div>
     </div>`:'<div class="panel"><div class="panel-body"><div class="empty-state" style="padding:20px"><i class="fa fa-check-circle" style="color:var(--success)"></i>Nenhum boleto vence hoje. Tudo em dia!</div></div></div>'}
 
@@ -2077,7 +2088,7 @@ pages.cobrancas=async function(){
       <div class="panel-head"><span class="panel-title"><i class="fa fa-exclamation-triangle" style="color:var(--danger)"></i> Boletos vencidos</span><span style="font-size:12px;color:var(--gray-500)">${vencidos.length} boleto(s)</span></div>
       <div class="table-wrap"><table>
         <thead><tr><th>Aluno</th><th>WhatsApp</th><th>Vencimento</th><th>Atraso</th><th>Valor</th><th>Boleto</th><th>Ações</th></tr></thead>
-        <tbody>${vencidos.map(b=>renderBoletoCobranca(b,true)).join('')}</tbody>
+        <tbody>${vencidos.map(b=>renderBoletoCobranca(b,'vencido')).join('')}</tbody>
       </table></div>
     </div>`:''}
 
@@ -2098,15 +2109,19 @@ pages.cobrancas=async function(){
   `);
 };
 
-function renderBoletoCobranca(b,showAtraso){
+function renderBoletoCobranca(b,modo){
   const numero=(b.whatsapp||b.mobile_number||'').replace(/\D/g,'');
   const numFmt=numero&&!numero.startsWith('55')?'55'+numero:numero;
   const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const boletoInfo=b.url_boleto?`Link: ${b.url_boleto}`:(b.codigo_boleto?`Código: ${b.codigo_boleto}`:'');
+  const tipoMsg=modo==='vencido'?'vencido':(modo==='em_breve'?'vence_em_breve':'vence_hoje');
+  let colunasExtra='';
+  if(modo==='vencido') colunasExtra=`<td>${fdate(b.data_vencimento)}</td><td><span class="badge badge-danger">${b.dias_atraso} dia${b.dias_atraso>1?'s':''}</span></td>`;
+  else if(modo==='em_breve') colunasExtra=`<td>${fdate(b.data_vencimento)}</td><td><span class="badge badge-warning">${b.dias_restantes} dia${b.dias_restantes>1?'s':''}</span></td>`;
   return `<tr>
     <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(b.first_name)}</div><strong>${esc(b.first_name)} ${esc(b.last_name)}</strong></div></td>
     <td>${numFmt?`<a href="https://wa.me/${numFmt}" target="_blank" style="color:#25D366;font-weight:600"><i class="fab fa-whatsapp"></i> ${esc(b.whatsapp||b.mobile_number||'—')}</a>`:'—'}</td>
-    ${showAtraso?`<td>${fdate(b.data_vencimento)}</td><td><span class="badge badge-danger">${b.dias_atraso} dia${b.dias_atraso>1?'s':''}</span></td>`:''}
+    ${colunasExtra}
     <td>${fmtBRL(b.valor)}</td>
     <td style="white-space:nowrap;font-size:12px">
       ${b.url_boleto?`<a href="${esc(b.url_boleto)}" target="_blank" class="btn btn-primary btn-sm" style="margin-right:3px"><i class="fa fa-external-link-alt"></i></a>`:''}
@@ -2115,7 +2130,7 @@ function renderBoletoCobranca(b,showAtraso){
     </td>
     <td style="white-space:nowrap">
       <button class="btn btn-success btn-sm" onclick="abrirPgtoModal('${b.id}','aberto','${b.student_id}','${meses[b.mes_referencia-1]}/${b.ano_referencia}')" title="Marcar pago"><i class="fa fa-check"></i></button>
-      <button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarCobrancaWpp('${b.student_id}','${esc(b.first_name)}','${numFmt}','${showAtraso?'vencido':'vence_hoje'}','${fdate(b.data_vencimento)}','${esc(boletoInfo)}')" title="Cobrar WhatsApp"><i class="fab fa-whatsapp"></i></button>
+      <button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarCobrancaWpp('${b.student_id}','${esc(b.first_name)}','${numFmt}','${tipoMsg}','${fdate(b.data_vencimento)}','${esc(boletoInfo)}')" title="Cobrar WhatsApp"><i class="fab fa-whatsapp"></i></button>
       <button class="btn btn-default btn-sm" onclick="nav('financeiro',{view:'aluno',studentId:'${b.student_id}'})" title="Ver boletos"><i class="fa fa-list"></i></button>
     </td>
   </tr>`;

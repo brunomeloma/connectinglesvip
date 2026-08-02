@@ -1771,3 +1771,79 @@ CREATE POLICY "cdc_update" ON captacao_disparo_contatos FOR UPDATE
 -- Performance (achado do advisor): auth.uid() reavaliado por linha.
 DROP POLICY IF EXISTS "profiles_select_own" ON profiles;
 CREATE POLICY "profiles_select_own" ON profiles FOR SELECT USING (id = (select auth.uid()));
+
+
+-- #####################################################################
+-- 25. MELHORIAS — lembrete de vencimento, aniversariantes, risco de evasão
+-- #####################################################################
+
+-- Boletos que vencem nos próximos N dias (padrão 7) — ainda em aberto.
+-- Complementa get_boletos_vencem_hoje/get_boletos_vencidos, que só
+-- cobrem "hoje" e "já venceu": aqui é o aviso PROATIVO, antes de vencer.
+CREATE OR REPLACE FUNCTION get_boletos_vencem_em_breve(p_dias int DEFAULT 7)
+RETURNS TABLE(
+  id uuid, student_id uuid, first_name text, last_name text, whatsapp text, mobile_number text,
+  mes_referencia int, ano_referencia int, data_vencimento date, valor numeric,
+  status text, url_boleto text, codigo_boleto text, observacao text,
+  dias_restantes int, comprovante_path text, comprovante_url text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT b.id, b.student_id, s.first_name, s.last_name, s.whatsapp, s.mobile_number,
+      b.mes_referencia, b.ano_referencia, b.data_vencimento, b.valor,
+      b.status, b.url_boleto, b.codigo_boleto, b.observacao,
+      (b.data_vencimento - CURRENT_DATE)::int,
+      b.comprovante_path, b.comprovante_url
+    FROM boletos b JOIN students s ON s.id=b.student_id
+    WHERE b.data_vencimento > CURRENT_DATE
+      AND b.data_vencimento <= CURRENT_DATE + p_dias
+      AND b.status='aberto'
+    ORDER BY b.data_vencimento;
+END; $$;
+
+-- Aniversariantes dos próximos N dias (padrão 7), independente do ano.
+CREATE OR REPLACE FUNCTION get_aniversariantes_semana(p_dias int DEFAULT 7)
+RETURNS TABLE(
+  id uuid, first_name text, last_name text, date_birth date,
+  whatsapp text, mobile_number text, dias_para_aniversario int
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT s.id, s.first_name, s.last_name, s.date_birth, s.whatsapp, s.mobile_number,
+      ((make_date(EXTRACT(year FROM CURRENT_DATE)::int
+        + CASE WHEN to_char(s.date_birth,'MM-DD') < to_char(CURRENT_DATE,'MM-DD') THEN 1 ELSE 0 END,
+        EXTRACT(month FROM s.date_birth)::int, EXTRACT(day FROM s.date_birth)::int) - CURRENT_DATE))::int
+    FROM students s
+    WHERE s.status = true AND s.date_birth IS NOT NULL
+      AND (
+        make_date(EXTRACT(year FROM CURRENT_DATE)::int
+          + CASE WHEN to_char(s.date_birth,'MM-DD') < to_char(CURRENT_DATE,'MM-DD') THEN 1 ELSE 0 END,
+          EXTRACT(month FROM s.date_birth)::int, EXTRACT(day FROM s.date_birth)::int) - CURRENT_DATE
+      ) BETWEEN 0 AND p_dias
+    ORDER BY dias_para_aniversario;
+END; $$;
+
+-- Alunos ativos sem nenhuma atualização de matrícula há muito tempo
+-- (risco de evasão) — usa date_joining como proxy de "última matrícula/
+-- módulo contratado", já que o sistema não tem um campo de módulo
+-- separado hoje. Sinaliza quem está há mais de p_meses sem
+-- rematrícula registrada.
+CREATE OR REPLACE FUNCTION get_alunos_risco_evasao(p_meses int DEFAULT 6)
+RETURNS TABLE(
+  id uuid, first_name text, last_name text, whatsapp text, mobile_number text,
+  date_joining date, meses_sem_rematricula int, class_name text, modalidade text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT s.id, s.first_name, s.last_name, s.whatsapp, s.mobile_number, s.date_joining,
+      (EXTRACT(year FROM age(CURRENT_DATE, s.date_joining))*12 + EXTRACT(month FROM age(CURRENT_DATE, s.date_joining)))::int,
+      c.name, s.modalidade
+    FROM students s
+    LEFT JOIN classes c ON c.id = s.class_id
+    WHERE s.status = true AND s.date_joining IS NOT NULL
+      AND s.date_joining <= CURRENT_DATE - (p_meses || ' months')::interval
+    ORDER BY s.date_joining;
+END; $$;
