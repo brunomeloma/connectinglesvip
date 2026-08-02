@@ -1646,3 +1646,70 @@ CREATE POLICY "cdc_update" ON captacao_disparo_contatos FOR UPDATE
   USING (EXISTS (SELECT 1 FROM captacao_disparos d WHERE d.id = disparo_id
     AND (has_role(ARRAY['super_admin','direcao']) OR (has_role(ARRAY['captacao']) AND d.created_by = auth.uid()))));
 CREATE POLICY "cdc_delete" ON captacao_disparo_contatos FOR DELETE USING (is_admin());
+
+
+-- #####################################################################
+-- 22. CORREÇÃO CRÍTICA — view resumo_financeiro_aluno vazando dados
+-- financeiros de todos os alunos sem exigir login
+-- #####################################################################
+-- Achado ao conectar diretamente no banco (advisor de segurança do
+-- Supabase): a view resumo_financeiro_aluno (não usada por nenhuma
+-- tela do sistema — provavelmente sobra de um scaffold anterior)
+-- estava com SELECT liberado para anon e authenticated, e como views
+-- em Postgres/Supabase rodam com security_invoker=false por padrão,
+-- ela ignorava completamente as regras de RLS de students/boletos.
+-- Resultado: qualquer pessoa na internet, sem estar logada, conseguia
+-- acessar essa view pela API pública e baixar nome + totais
+-- financeiros (valor pago, em aberto, total) de todos os alunos.
+
+REVOKE ALL ON public.resumo_financeiro_aluno FROM anon, authenticated;
+ALTER VIEW public.resumo_financeiro_aluno SET (security_invoker = true);
+
+-- Reforço: duas funções ficaram sem "SET search_path = public"
+-- (achado do advisor — mutable search_path é uma classe conhecida de
+-- vulnerabilidade em funções Postgres).
+CREATE OR REPLACE FUNCTION public.is_valid_cpf(p_cpf text)
+RETURNS boolean LANGUAGE plpgsql IMMUTABLE SET search_path = public
+AS $$
+DECLARE
+  cpf text;
+  d int[] := ARRAY[]::int[];
+  i int;
+  sum1 int := 0;
+  sum2 int := 0;
+  d1 int;
+  d2 int;
+BEGIN
+  cpf := regexp_replace(coalesce(p_cpf,''), '\D', '', 'g');
+  IF length(cpf) <> 11 THEN RETURN false; END IF;
+  IF cpf ~ '^(\d)\1{10}$' THEN RETURN false; END IF;
+
+  FOR i IN 1..11 LOOP
+    d := d || substring(cpf from i for 1)::int;
+  END LOOP;
+
+  FOR i IN 1..9 LOOP
+    sum1 := sum1 + d[i] * (11 - i);
+  END LOOP;
+  d1 := (sum1 * 10) % 11;
+  IF d1 >= 10 THEN d1 := 0; END IF;
+  IF d1 <> d[10] THEN RETURN false; END IF;
+
+  FOR i IN 1..10 LOOP
+    sum2 := sum2 + d[i] * (12 - i);
+  END LOOP;
+  d2 := (sum2 * 10) % 11;
+  IF d2 >= 10 THEN d2 := 0; END IF;
+  IF d2 <> d[11] THEN RETURN false; END IF;
+
+  RETURN true;
+END; $$;
+
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public
+AS $function$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$function$;
