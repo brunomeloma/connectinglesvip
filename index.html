@@ -954,6 +954,20 @@ pages.captacao=async function(){
       </div>
       <div class="captacao-side">
         <div class="panel">
+          <div class="panel-head"><span class="panel-title">Adicionar / importar contatos</span></div>
+          <div class="panel-body">
+            <div class="field"><label>Nome</label><input id="cap-novo-nome" placeholder="Nome do contato"></div>
+            <div class="field"><label>Telefone / WhatsApp</label><input id="cap-novo-telefone" placeholder="5511999999999"></div>
+            <button class="btn btn-primary" onclick="capAdicionarContato()" style="margin-bottom:10px"><i class="fa fa-plus"></i> Adicionar contato</button>
+            <p class="help-text">Ou cole uma lista abaixo, um contato por linha, no formato <code>Nome, Telefone</code> (aceita colar de um .csv/.txt também):</p>
+            <textarea id="cap-import-texto" style="height:80px" placeholder="Maria Silva, 5511999990000&#10;João Souza, 5511988880000"></textarea>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+              <input type="file" id="cap-import-arquivo" accept=".csv,.txt" onchange="capLerArquivoImportacao()">
+              <button class="btn btn-default" onclick="capImportarContatos()"><i class="fa fa-file-import"></i> Importar lista</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
           <div class="panel-head"><span class="panel-title">Mensagens salvas</span><button class="btn btn-default btn-sm" onclick="capNewTemplate()"><i class="fa fa-plus"></i> Nova</button></div>
           <div class="panel-body">
             <div id="cap-template-list"></div>
@@ -3760,120 +3774,6 @@ async function gerarRelatorioFrequencia(){
   `;
 }
 
-// ============================
-// CAPTAÇÃO DE CLIENTES
-// ============================
-let _capSelecionados=new Set();
-
-async function captacaoLegada({view,id}={}){
-  if(!isAdmin()&&currentUser?.role!=='captacao'){nav('dashboard');return;}
-  if(view==='fila') return captacaoFila(id);
-  _capSelecionados=new Set();
-  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const nome=getFilter('cap-nome')||'';
-  let q=sb.from('captacao_contatos').select('*').order('created_at',{ascending:false});
-  if(nome) q=q.ilike('nome','%'+nome+'%');
-  const[{data:contatos=[]},{data:disparos=[]}]=await Promise.all([
-    q,
-    sb.from('captacao_disparos').select('*').order('created_at',{ascending:false}),
-  ]);
-  const disparosComContagem=await Promise.all(disparos.map(async d=>{
-    const{data:itens=[]}=await sb.from('captacao_disparo_contatos').select('status').eq('disparo_id',d.id);
-    return{...d,enviados:itens.filter(i=>i.status==='enviado').length,pulados:itens.filter(i=>i.status==='pulado').length,pendentes:itens.filter(i=>i.status==='pendente').length};
-  }));
-
-  setContent(`
-    <div class="breadcrumb"><span>Home</span> › <span>Captação</span></div>
-    <div class="page-title"><i class="fa fa-bullhorn"></i> Captação de Clientes</div>
-    <div id="page-alert" class="alert"></div>
-
-    <div class="panel">
-      <div class="panel-head"><span class="panel-title"><i class="fa fa-user-plus" style="color:var(--brand)"></i> Adicionar contato</span></div>
-      <div class="panel-body">
-        <div class="form-row">
-          <div class="form-col"><label>Nome <span class="required">*</span></label><input id="cap-novo-nome" placeholder="Nome do contato"></div>
-          <div class="form-col"><label>Telefone / WhatsApp <span class="required">*</span></label><input id="cap-novo-telefone" placeholder="5511999999999"></div>
-          <div class="form-col"><label>Observações</label><input id="cap-novo-obs" placeholder="Opcional"></div>
-        </div>
-        <button class="btn btn-primary" onclick="capAdicionarContato()"><i class="fa fa-plus"></i> Adicionar</button>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><span class="panel-title"><i class="fa fa-file-import" style="color:var(--brand)"></i> Importar lista de contatos</span></div>
-      <div class="panel-body">
-        <p class="help-text">Cole uma lista com um contato por linha, no formato <code>Nome, Telefone</code>. Também aceita um arquivo .csv/.txt no mesmo formato.</p>
-        <textarea id="cap-import-texto" style="height:100px" placeholder="Maria Silva, 5511999990000&#10;João Souza, 5511988880000"></textarea>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
-          <input type="file" id="cap-import-arquivo" accept=".csv,.txt" onchange="capLerArquivoImportacao()">
-          <button class="btn btn-primary" onclick="capImportarContatos()"><i class="fa fa-file-import"></i> Importar</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><span class="panel-title">Contatos (${contatos.length})</span></div>
-      <div class="panel-body">
-        <div class="form-row">
-          <div class="form-col"><label>Buscar por nome</label><input id="cap-nome" value="${esc(nome)}"></div>
-          <div style="display:flex;gap:6px;align-items:flex-end">
-            <button class="btn btn-primary" onclick="saveFilters(['cap-nome']);nav('captacao')"><i class="fa fa-search"></i> Buscar</button>
-            <button class="btn btn-danger" onclick="clearFilters(['cap-nome']);nav('captacao')">Limpar</button>
-          </div>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th><input type="checkbox" id="cap-select-all" onchange="capToggleTodos(this.checked)"></th><th>Nome</th><th>Telefone</th><th>Observações</th><th>Último contato</th><th>Ações</th></tr></thead>
-          <tbody>${contatos.length?contatos.map(c=>`
-            <tr>
-              <td><input type="checkbox" class="cap-check" value="${c.id}" onchange="capToggleContato('${c.id}',this.checked)"></td>
-              <td>${esc(c.nome)}</td>
-              <td>${esc(c.telefone)}</td>
-              <td>${esc(c.observacoes)||'—'}</td>
-              <td>${c.last_contacted_at?new Date(c.last_contacted_at).toLocaleString('pt-BR'):'—'}</td>
-              <td><button class="btn-icon" style="color:var(--danger)" onclick="capExcluirContato('${c.id}')"><i class="fa fa-trash"></i></button></td>
-            </tr>`).join(''):`<tr><td colspan="6"><div class="empty-state"><i class="fa fa-address-book"></i>Nenhum contato cadastrado</div></td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><span class="panel-title"><i class="fa fa-paper-plane" style="color:var(--brand)"></i> Novo disparo</span></div>
-      <div class="panel-body">
-        <p class="help-text">Selecione os contatos na lista acima. Você pode usar <code>{nome}</code> na mensagem para personalizar com o nome de cada contato.</p>
-        <div class="field"><label>Mensagem <span class="required">*</span></label><textarea id="cap-mensagem" style="height:100px" placeholder="Olá {nome}! Tudo bem?..."></textarea></div>
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span id="cap-contador-selecionados" style="font-size:13px;color:var(--gray-700)">0 contato(s) selecionado(s)</span>
-          <button class="btn btn-primary" onclick="capIniciarDisparo()"><i class="fa fa-paper-plane"></i> Montar fila de envio</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><span class="panel-title">Histórico de disparos</span></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Mensagem</th><th>Total</th><th>Enviados</th><th>Pulados</th><th>Pendentes</th><th>Criado em</th><th>Status</th><th>Ações</th></tr></thead>
-          <tbody>${disparosComContagem.length?disparosComContagem.map(d=>`
-            <tr>
-              <td style="max-width:260px;white-space:normal">${esc(d.mensagem)}</td>
-              <td>${d.total_contatos}</td>
-              <td>${d.enviados}</td>
-              <td>${d.pulados}</td>
-              <td>${d.pendentes}</td>
-              <td>${new Date(d.created_at).toLocaleString('pt-BR')}</td>
-              <td>${d.finalizado_at?'<span class="badge badge-success">Concluído</span>':'<span class="badge badge-warning">Em andamento</span>'}</td>
-              <td>${d.pendentes>0?`<button class="btn btn-primary btn-sm" onclick="nav('captacao',{view:'fila',id:'${d.id}'})"><i class="fa fa-play"></i> Continuar</button>`:''}</td>
-            </tr>`).join(''):`<tr><td colspan="8"><div class="empty-state"><i class="fa fa-paper-plane"></i>Nenhum disparo realizado ainda</div></td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `);
-};
-
 async function capAdicionarContato(){
   const nome=$('cap-novo-nome').value.trim();
   const telefone=$('cap-novo-telefone').value.trim();
@@ -3918,94 +3818,6 @@ async function capImportarContatos(){
   showAlert('page-alert',registros.length+' contato(s) importado(s) com sucesso.','success');
   $('cap-import-texto').value='';
   nav('captacao');
-}
-
-function capToggleContato(id,checked){
-  if(checked) _capSelecionados.add(id); else _capSelecionados.delete(id);
-  const el=$('cap-contador-selecionados');
-  if(el) el.textContent=_capSelecionados.size+' contato(s) selecionado(s)';
-}
-
-function capToggleTodos(checked){
-  document.querySelectorAll('.cap-check').forEach(cb=>{cb.checked=checked;capToggleContato(cb.value,checked);});
-}
-
-async function capIniciarDisparo(){
-  const mensagem=$('cap-mensagem').value.trim();
-  if(!mensagem){showAlert('page-alert','Escreva a mensagem do disparo.','danger');return;}
-  const ids=[...(_capSelecionados||[])];
-  if(!ids.length){showAlert('page-alert','Selecione pelo menos um contato.','danger');return;}
-  const{data:contatos=[],error:e1}=await sb.from('captacao_contatos').select('id,nome,telefone').in('id',ids);
-  if(e1){showAlert('page-alert','Erro ao carregar contatos selecionados: '+e1.message,'danger');return;}
-  const{data:disparo,error:e2}=await sb.from('captacao_disparos').insert({mensagem,total_contatos:contatos.length,created_by:currentUser.id}).select('id').single();
-  if(e2){showAlert('page-alert','Erro ao criar disparo: '+e2.message,'danger');return;}
-  const itens=contatos.map(c=>({disparo_id:disparo.id,contato_id:c.id,contato_nome:c.nome,contato_telefone:c.telefone,status:'pendente'}));
-  const{error:e3}=await sb.from('captacao_disparo_contatos').insert(itens);
-  if(e3){showAlert('page-alert','Erro ao montar a fila: '+e3.message,'danger');return;}
-  nav('captacao',{view:'fila',id:disparo.id});
-}
-
-async function captacaoFila(disparoId){
-  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const[{data:disparo},{data:itens=[]}]=await Promise.all([
-    sb.from('captacao_disparos').select('*').eq('id',disparoId).single(),
-    sb.from('captacao_disparo_contatos').select('*').eq('disparo_id',disparoId).order('contato_nome'),
-  ]);
-  if(!disparo){nav('captacao');return;}
-  const enviados=itens.filter(i=>i.status==='enviado').length;
-  const pulados=itens.filter(i=>i.status==='pulado').length;
-  const atual=itens.find(i=>i.status==='pendente');
-
-  if(!atual){
-    if(!disparo.finalizado_at) await sb.from('captacao_disparos').update({finalizado_at:new Date().toISOString()}).eq('id',disparoId);
-    setContent(`
-      <div class="breadcrumb"><a onclick="nav('captacao')">Captação</a> › <span>Disparo concluído</span></div>
-      <div class="page-title"><i class="fa fa-check-circle" style="color:var(--success)"></i> Disparo concluído</div>
-      <div class="panel"><div class="panel-body">
-        <p><strong>${enviados}</strong> enviado(s), <strong>${pulados}</strong> pulado(s), de ${itens.length} contato(s) no total.</p>
-        <button class="btn btn-primary" onclick="nav('captacao')"><i class="fa fa-arrow-left"></i> Voltar para Captação</button>
-      </div></div>
-    `);
-    return;
-  }
-
-  const mensagemPersonalizada=disparo.mensagem.replace(/\{nome\}/g,atual.contato_nome.split(' ')[0]);
-  let numero=(atual.contato_telefone||'').replace(/\D/g,'');
-  if(numero&&!numero.startsWith('55')) numero='55'+numero;
-  const waHref=numero?`https://wa.me/${numero}?text=${encodeURIComponent(mensagemPersonalizada)}`:'';
-
-  setContent(`
-    <div class="breadcrumb"><a onclick="nav('captacao')">Captação</a> › <span>Fila de envio</span></div>
-    <div class="page-title"><i class="fa fa-paper-plane"></i> Fila de envio</div>
-    <div id="page-alert" class="alert"></div>
-    <div class="panel">
-      <div class="panel-head"><span class="panel-title">Progresso: ${enviados+pulados} de ${itens.length}</span></div>
-      <div class="panel-body">
-        <p><strong>Contato:</strong> ${esc(atual.contato_nome)}</p>
-        <p><strong>Telefone:</strong> ${esc(atual.contato_telefone)}</p>
-        <div class="field"><label>Mensagem</label><textarea readonly style="height:100px">${esc(mensagemPersonalizada)}</textarea></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          ${numero?`<a class="btn" style="background:#25D366;color:#fff" href="${waHref}" target="_blank"><i class="fab fa-whatsapp"></i> Abrir WhatsApp</a>`:'<span style="color:var(--danger);font-size:12px">Contato sem telefone válido</span>'}
-          <button class="btn btn-primary" onclick="capMarcarEnviado('${atual.id}','${disparoId}')"><i class="fa fa-check"></i> Marcar enviado e ir para o próximo</button>
-          <button class="btn btn-default" onclick="capPularContato('${atual.id}','${disparoId}')"><i class="fa fa-forward"></i> Pular</button>
-        </div>
-      </div>
-    </div>
-  `);
-}
-
-async function capMarcarEnviado(itemId,disparoId){
-  const{error}=await sb.from('captacao_disparo_contatos').update({status:'enviado',enviado_at:new Date().toISOString()}).eq('id',itemId);
-  if(error){alert('Erro ao atualizar: '+error.message);return;}
-  const{data:item}=await sb.from('captacao_disparo_contatos').select('contato_id').eq('id',itemId).single();
-  if(item?.contato_id) await sb.from('captacao_contatos').update({last_contacted_at:new Date().toISOString()}).eq('id',item.contato_id);
-  captacaoFila(disparoId);
-}
-
-async function capPularContato(itemId,disparoId){
-  const{error}=await sb.from('captacao_disparo_contatos').update({status:'pulado'}).eq('id',itemId);
-  if(error){alert('Erro ao atualizar: '+error.message);return;}
-  captacaoFila(disparoId);
 }
 
 // ============================
