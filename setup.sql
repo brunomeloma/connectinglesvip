@@ -1803,6 +1803,11 @@ AS $$ BEGIN
 END; $$;
 
 -- Aniversariantes dos próximos N dias (padrão 7), independente do ano.
+-- Usa "date + interval" em vez de make_date() para calcular o próximo
+-- aniversário: make_date(ano,2,29) LANÇA EXCEÇÃO em anos não-bissextos,
+-- o que derrubaria a função inteira (e o painel do dashboard pra todo
+-- mundo) assim que o primeiro aluno nascido em 29/fev fosse cadastrado.
+-- "date + interval" nunca lança erro, apenas ajusta o resultado.
 CREATE OR REPLACE FUNCTION get_aniversariantes_semana(p_dias int DEFAULT 7)
 RETURNS TABLE(
   id uuid, first_name text, last_name text, date_birth date,
@@ -1812,16 +1817,19 @@ AS $$ BEGIN
   IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
   RETURN QUERY
     SELECT s.id, s.first_name, s.last_name, s.date_birth, s.whatsapp, s.mobile_number,
-      ((make_date(EXTRACT(year FROM CURRENT_DATE)::int
-        + CASE WHEN to_char(s.date_birth,'MM-DD') < to_char(CURRENT_DATE,'MM-DD') THEN 1 ELSE 0 END,
-        EXTRACT(month FROM s.date_birth)::int, EXTRACT(day FROM s.date_birth)::int) - CURRENT_DATE))::int
+      (prox.data_prox - CURRENT_DATE)::int
     FROM students s
+    CROSS JOIN LATERAL (
+      SELECT CASE
+        WHEN c.cand >= CURRENT_DATE THEN c.cand
+        ELSE (s.date_birth + make_interval(years =>
+          (EXTRACT(year FROM CURRENT_DATE)::int - EXTRACT(year FROM s.date_birth)::int + 1)))::date
+      END AS data_prox
+      FROM (SELECT (s.date_birth + make_interval(years =>
+        (EXTRACT(year FROM CURRENT_DATE)::int - EXTRACT(year FROM s.date_birth)::int)))::date AS cand) c
+    ) prox
     WHERE s.status = true AND s.date_birth IS NOT NULL
-      AND (
-        make_date(EXTRACT(year FROM CURRENT_DATE)::int
-          + CASE WHEN to_char(s.date_birth,'MM-DD') < to_char(CURRENT_DATE,'MM-DD') THEN 1 ELSE 0 END,
-          EXTRACT(month FROM s.date_birth)::int, EXTRACT(day FROM s.date_birth)::int) - CURRENT_DATE
-      ) BETWEEN 0 AND p_dias
+      AND (prox.data_prox - CURRENT_DATE) BETWEEN 0 AND p_dias
     ORDER BY dias_para_aniversario;
 END; $$;
 
