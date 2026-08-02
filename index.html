@@ -340,7 +340,7 @@ tr:hover td{background:#fdf9f0}
 .doc-detail-row span:last-child{color:var(--gray-900);font-weight:500;text-align:right}
 
 /* PÁGINA PÚBLICA DE ASSINATURA */
-#sign-page,#portal-page{display:none;min-height:100vh;background:#f0ede8;padding:24px 14px}
+#sign-page,#portal-page,#nps-page{display:none;min-height:100vh;background:#f0ede8;padding:24px 14px}
 .sign-wrap{max-width:760px;margin:0 auto}
 .sign-header{text-align:center;padding:18px 0 22px}
 .sign-header .login-logo{font-size:12px;font-weight:600;letter-spacing:3px;color:var(--brand-dark);text-transform:uppercase}
@@ -491,6 +491,7 @@ let currentUser = null;
     <div class="sb-item no-professor no-captacao" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
     <div class="sb-item no-professor no-captacao" data-page="vip" onclick="nav('vip')"><i class="fa fa-star"></i> VIP Online</div>
     <div class="sb-item no-professor no-captacao" data-page="documentos" onclick="nav('documentos')"><i class="fa fa-file-signature"></i> Documentos</div>
+    <div class="sb-item no-professor no-captacao" data-page="nps" onclick="nav('nps')"><i class="fa fa-smile"></i> Pesquisa NPS</div>
     <div class="sb-item no-captacao" data-page="relatorios" onclick="nav('relatorios')"><i class="fa fa-chart-bar"></i> Relatórios</div>
     <div class="sb-item captacao-item" data-page="captacao" onclick="nav('captacao')"><i class="fa fa-bullhorn"></i> Captação</div>
     <div class="sb-logout">
@@ -531,6 +532,18 @@ let currentUser = null;
     </div>
     <div id="portal-content"></div>
     <div class="sign-footer">Este link é individual do(a) aluno(a) — não compartilhe com terceiros.</div>
+  </div>
+</div>
+
+<!-- ===== PÁGINA PÚBLICA — PESQUISA DE SATISFAÇÃO (NPS) ===== -->
+<div id="nps-page">
+  <div class="sign-wrap">
+    <div class="sign-header">
+      <div class="login-logo">Connect Inglês</div>
+      <div class="sign-brand"><span>VIP</span> — Pesquisa de Satisfação</div>
+    </div>
+    <div id="nps-page-content"></div>
+    <div class="sign-footer">Sua resposta é confidencial e ajuda a melhorar nosso atendimento.</div>
   </div>
 </div>
 
@@ -3457,6 +3470,81 @@ function buildContractHtml(type,studentName){
   return contractHeader(studentName,DOCUMENT_LABELS[type])+renderContractBlocks(blocks)+contractFooter();
 }
 
+// --- PESQUISA DE SATISFAÇÃO (NPS) ---
+let _npsAlunosCache=[];
+pages.nps=async function(){
+  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const[{data:alunos=[]},{data:lista=[]}]=await Promise.all([
+    sb.from('students').select('id,first_name,last_name,whatsapp,mobile_number').eq('status',true).order('first_name'),
+    sb.rpc('listar_nps'),
+  ]);
+  _npsAlunosCache=alunos;
+
+  const respondidas=lista.filter(n=>n.status==='respondida');
+  const promotores=respondidas.filter(n=>n.nota>=9).length;
+  const detratores=respondidas.filter(n=>n.nota<=6).length;
+  const nps=respondidas.length?Math.round(((promotores-detratores)/respondidas.length)*100):null;
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Pesquisa NPS</span></div>
+    <div class="page-title"><i class="fa fa-smile"></i> Pesquisa de Satisfação (NPS)</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="stat-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="stat-card c-gold"><i class="fa fa-chart-line stat-icon"></i><div><div class="stat-num">${nps===null?'—':nps}</div><div class="stat-label">Pontuação NPS</div></div></div>
+      <div class="stat-card c-dark"><i class="fa fa-reply stat-icon"></i><div><div class="stat-num">${respondidas.length}</div><div class="stat-label">Respondidas</div></div></div>
+      <div class="stat-card c-orange"><i class="fa fa-clock stat-icon"></i><div><div class="stat-num">${lista.length-respondidas.length}</div><div class="stat-label">Aguardando resposta</div></div></div>
+      <div class="stat-card c-brown"><i class="fa fa-thumbs-up stat-icon"></i><div><div class="stat-num">${promotores}</div><div class="stat-label">Promotores (9-10)</div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Enviar pesquisa</span></div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-col aluno-suggest-wrap">
+            <label>Aluno(a) <span class="required">*</span></label>
+            <input id="nps-student-search" placeholder="Digite o nome do aluno…" autocomplete="off" oninput="alunoAutocomplete('nps-student-search','nps-student-list','nps-student',_npsAlunosCache)" onfocus="alunoAutocomplete('nps-student-search','nps-student-list','nps-student',_npsAlunosCache)" onblur="alunoAutocompleteHide('nps-student-list')">
+            <input type="hidden" id="nps-student">
+            <div id="nps-student-list" class="aluno-suggest-list" style="display:none"></div>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="gerarLinkNps()"><i class="fa fa-link"></i> Gerar link da pesquisa</button>
+        <div id="nps-link-result"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Respostas</span></div>
+      <div class="table-wrap">
+        ${lista.length?`<table>
+          <thead><tr><th>Aluno</th><th>Nota</th><th>Comentário</th><th>Status</th><th>Enviada em</th><th>Respondida em</th></tr></thead>
+          <tbody>${lista.map(n=>`<tr>
+            <td>${esc(n.first_name)} ${esc(n.last_name)}</td>
+            <td>${n.nota===null?'—':`<span class="badge ${n.nota>=9?'badge-success':(n.nota>=7?'badge-warning':'badge-danger')}">${n.nota}</span>`}</td>
+            <td style="max-width:260px;white-space:normal">${esc(n.comentario)||'—'}</td>
+            <td>${n.status==='respondida'?'<span class="badge badge-success">Respondida</span>':'<span class="badge badge-warning">Pendente</span>'}</td>
+            <td>${new Date(n.created_at).toLocaleDateString('pt-BR')}</td>
+            <td>${n.respondido_at?new Date(n.respondido_at).toLocaleDateString('pt-BR'):'—'}</td>
+          </tr>`).join('')}</tbody>
+        </table>`:'<div class="empty-state" style="padding:16px"><i class="fa fa-smile"></i>Nenhuma pesquisa enviada ainda.</div>'}
+      </div>
+    </div>
+  `);
+};
+
+async function gerarLinkNps(){
+  const studentId=$('nps-student').value;
+  if(!studentId){showAlert('page-alert','Selecione o aluno.','danger');return;}
+  const{data:token,error}=await sb.rpc('gerar_link_nps',{p_student_id:studentId});
+  if(error){showAlert('page-alert','Erro ao gerar link: '+error.message,'danger');return;}
+  const url=location.origin+location.pathname+'?nps='+token;
+  const aluno=_npsAlunosCache.find(a=>a.id===studentId);
+  const nomeAluno=esc(aluno?.first_name)+' '+esc(aluno?.last_name);
+  const msg=encodeURIComponent(`Olá! A Connect Inglês VIP gostaria muito de saber sua opinião. Leva menos de 1 minuto:\n${url}`);
+  let numero=(aluno?.whatsapp||aluno?.mobile_number||'').replace(/\D/g,'');
+  if(numero&&!numero.startsWith('55')) numero='55'+numero;
+  const waHref=numero?`https://wa.me/${numero}?text=${msg}`:`https://wa.me/?text=${msg}`;
+  mostrarLinkBox('Pesquisa NPS — '+nomeAluno,url,waHref);
+}
+
 // --- PÁGINA DA SECRETARIA: GERAR LINKS E VER AUDITORIA ---
 let _docsCache=[];
 let _docsAlunosCache=[];
@@ -3894,6 +3982,83 @@ function renderPortalData(info){
   `;
 }
 
+// --- PÁGINA PÚBLICA: PESQUISA DE SATISFAÇÃO / NPS (sem login, via token na URL) ---
+let _npsState={token:null};
+let _npsNota=null;
+
+async function initNpsPage(token){
+  $('login-page').style.display='none';
+  $('app').style.display='none';
+  $('nps-page').style.display='block';
+  _npsState={token};
+
+  const{data,error}=await sb.rpc('abrir_nps',{p_token:token});
+  const info=Array.isArray(data)?data[0]:data;
+  if(error||!info){
+    renderNpsResult('err','Link inválido','Este link de pesquisa não foi encontrado. Verifique se o endereço foi copiado corretamente.');
+    return;
+  }
+  if(info.status==='respondida'){
+    renderNpsResult('ok','Pesquisa já respondida','Obrigado! Sua resposta já foi registrada anteriormente.');
+    return;
+  }
+  renderNpsForm(info);
+}
+
+function renderNpsResult(type,title,text){
+  $('nps-page-content').innerHTML=`
+    <div class="sign-card"><div class="sign-result ${type}">
+      <i class="fa ${type==='ok'?'fa-check-circle':'fa-times-circle'}"></i>
+      <h3>${esc(title)}</h3>
+      <p>${esc(text)}</p>
+    </div></div>
+  `;
+}
+
+function renderNpsForm(info){
+  const nomeAluno=`${esc(info.first_name)} ${esc(info.last_name)}`;
+  $('nps-page-content').innerHTML=`
+    <div class="sign-card">
+      <div class="sign-card-head">
+        <h3><i class="fa fa-smile" style="color:var(--brand)"></i> Sua opinião é muito importante!</h3>
+        <p>Em uma escala de 0 a 10, o quanto você recomendaria a Connect Inglês VIP para um amigo ou familiar? (aluno(a): ${nomeAluno})</p>
+      </div>
+      <div style="padding:20px 22px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:8px">
+          ${Array.from({length:11},(_,i)=>i).map(n=>`<button type="button" class="btn btn-default btn-sm nps-btn" id="nps-btn-${n}" style="min-width:38px;justify-content:center" onclick="selecionarNotaNps(${n})">${n}</button>`).join('')}
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--gray-500);margin-bottom:18px"><span>Pouco provável</span><span>Muito provável</span></div>
+        <div class="field"><label>Comentário (opcional)</label><textarea id="nps-comentario" placeholder="Conte mais sobre sua experiência..."></textarea></div>
+        <div id="nps-alert" class="alert"></div>
+        <button class="btn btn-primary" id="nps-submit-btn" style="width:100%;justify-content:center;padding:11px" onclick="submeterNps()"><i class="fa fa-paper-plane"></i> Enviar resposta</button>
+      </div>
+    </div>
+  `;
+}
+
+function selecionarNotaNps(n){
+  _npsNota=n;
+  document.querySelectorAll('.nps-btn').forEach(b=>{b.classList.remove('btn-primary');b.classList.add('btn-default');});
+  const btn=$('nps-btn-'+n);
+  if(btn){btn.classList.remove('btn-default');btn.classList.add('btn-primary');}
+}
+
+async function submeterNps(){
+  if(_npsNota===null){showAlert('nps-alert','Selecione uma nota de 0 a 10.','danger');return;}
+  const comentario=$('nps-comentario').value.trim();
+  const btn=$('nps-submit-btn');
+  btn.disabled=true;
+  btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Enviando...';
+  const{error}=await sb.rpc('responder_nps',{p_token:_npsState.token,p_nota:_npsNota,p_comentario:comentario||null});
+  if(error){
+    showAlert('nps-alert',error.message||'Erro ao enviar resposta.','danger');
+    btn.disabled=false;
+    btn.innerHTML='<i class="fa fa-paper-plane"></i> Enviar resposta';
+    return;
+  }
+  renderNpsResult('ok','Obrigado pela sua resposta!','Sua opinião foi registrada com sucesso e vai nos ajudar a melhorar cada vez mais.');
+}
+
 // ============================
 // RELATÓRIOS DE FREQUÊNCIA
 // ============================
@@ -4225,6 +4390,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   if(assinarToken){initSignPage(assinarToken);return;}
   const portalToken=new URLSearchParams(location.search).get('portal');
   if(portalToken){initPortalPage(portalToken);return;}
+  const npsToken=new URLSearchParams(location.search).get('nps');
+  if(npsToken){initNpsPage(npsToken);return;}
   document.addEventListener('keydown',e=>{if(e.key==='Enter'&&$('login-page').style.display!=='none')doLogin();});
   initAuth();
 });

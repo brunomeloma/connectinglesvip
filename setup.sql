@@ -1928,3 +1928,85 @@ AS $$ DECLARE v_row portal_acesso%ROWTYPE; BEGIN
     FROM students s LEFT JOIN classes c ON c.id = s.class_id
     WHERE s.id = v_row.student_id;
 END; $$;
+
+
+-- #####################################################################
+-- 27. PESQUISA DE SATISFAÇÃO — NPS (link público por token)
+-- #####################################################################
+
+CREATE TABLE IF NOT EXISTS nps_pesquisas (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id uuid NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  token text NOT NULL UNIQUE,
+  status text NOT NULL DEFAULT 'pendente',
+  nota int,
+  comentario text,
+  created_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now(),
+  respondido_at timestamptz
+);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='nps_pesquisas_status_check') THEN
+    ALTER TABLE nps_pesquisas ADD CONSTRAINT nps_pesquisas_status_check CHECK (status IN ('pendente','respondida'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='nps_pesquisas_nota_check') THEN
+    ALTER TABLE nps_pesquisas ADD CONSTRAINT nps_pesquisas_nota_check CHECK (nota IS NULL OR (nota BETWEEN 0 AND 10));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_nps_student ON nps_pesquisas(student_id);
+CREATE INDEX IF NOT EXISTS idx_nps_created_at ON nps_pesquisas(created_at DESC);
+
+ALTER TABLE nps_pesquisas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "nps_select" ON nps_pesquisas;
+DROP POLICY IF EXISTS "nps_insert" ON nps_pesquisas;
+CREATE POLICY "nps_select" ON nps_pesquisas FOR SELECT USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "nps_insert" ON nps_pesquisas FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+
+-- Gera um novo link de pesquisa NPS para o aluno (uso único).
+CREATE OR REPLACE FUNCTION gerar_link_nps(p_student_id uuid)
+RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_token text; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  v_token := replace(gen_random_uuid()::text,'-','') || replace(gen_random_uuid()::text,'-','');
+  INSERT INTO nps_pesquisas (student_id, token, created_by) VALUES (p_student_id, v_token, auth.uid());
+  RETURN v_token;
+END; $$;
+
+-- Lista pesquisas NPS com nome do aluno, para o painel interno.
+CREATE OR REPLACE FUNCTION listar_nps()
+RETURNS TABLE(
+  id uuid, student_id uuid, first_name text, last_name text,
+  status text, nota int, comentario text, created_at timestamptz, respondido_at timestamptz
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT n.id, n.student_id, s.first_name, s.last_name, n.status, n.nota, n.comentario, n.created_at, n.respondido_at
+    FROM nps_pesquisas n JOIN students s ON s.id = n.student_id
+    ORDER BY n.created_at DESC;
+END; $$;
+
+-- PÚBLICA — abre a pesquisa pelo token (sem login).
+CREATE OR REPLACE FUNCTION abrir_nps(p_token text)
+RETURNS TABLE(first_name text, last_name text, status text)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_row nps_pesquisas%ROWTYPE; BEGIN
+  SELECT * INTO v_row FROM nps_pesquisas WHERE token = p_token;
+  IF v_row IS NULL THEN RAISE EXCEPTION 'Link inválido'; END IF;
+  RETURN QUERY
+    SELECT s.first_name, s.last_name, v_row.status FROM students s WHERE s.id = v_row.student_id;
+END; $$;
+
+-- PÚBLICA — registra a resposta da pesquisa pelo token (sem login).
+CREATE OR REPLACE FUNCTION responder_nps(p_token text, p_nota int, p_comentario text DEFAULT NULL)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_row nps_pesquisas%ROWTYPE; BEGIN
+  SELECT * INTO v_row FROM nps_pesquisas WHERE token = p_token;
+  IF v_row IS NULL THEN RAISE EXCEPTION 'Link inválido'; END IF;
+  IF v_row.status = 'respondida' THEN RAISE EXCEPTION 'Esta pesquisa já foi respondida'; END IF;
+  IF p_nota IS NULL OR p_nota < 0 OR p_nota > 10 THEN RAISE EXCEPTION 'Nota inválida'; END IF;
+  UPDATE nps_pesquisas SET nota = p_nota, comentario = p_comentario, status = 'respondida', respondido_at = now()
+  WHERE id = v_row.id;
+END; $$;
