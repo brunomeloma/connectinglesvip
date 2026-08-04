@@ -250,6 +250,18 @@ tr:hover td{background:#fdf9f0}
 .contact-log-date{color:var(--gray-500);font-size:11px}
 .hidden{display:none!important}
 
+/* BUSCA — TURMAS */
+.turmas-search-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.turmas-search-input{position:relative;flex:1;min-width:240px}
+.turmas-search-input i.fa-search{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--gray-500);font-size:13px;pointer-events:none}
+.turmas-search-input input{width:100%;padding:10px 36px;border:1px solid var(--gray-300);border-radius:24px;font-size:13px;background:var(--gray-50);color:var(--gray-900);transition:all .15s;font-family:'Inter',sans-serif}
+.turmas-search-input input:focus{outline:none;border-color:var(--brand);background:#fff;box-shadow:0 0 0 3px rgba(212,160,23,.14)}
+.turmas-search-input input::placeholder{color:var(--gray-500)}
+.turmas-search-clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:none;border:none;color:var(--gray-500);cursor:pointer;border-radius:50%;font-size:11px}
+.turmas-search-clear:hover{background:var(--gray-200);color:var(--gray-900)}
+.turmas-status-filter{padding:10px 16px;border:1px solid var(--gray-300);border-radius:24px;font-size:13px;background:var(--gray-50);color:var(--gray-900);min-width:150px;font-family:'Inter',sans-serif}
+.turmas-status-filter:focus{outline:none;border-color:var(--brand)}
+
 /* CAPTAÇÃO */
 .captacao-shell{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
 .captacao-hero{background:linear-gradient(135deg,#111,#2b2411);border:1px solid rgba(212,160,23,.25);border-radius:8px;padding:18px;color:#fff;margin-bottom:16px;display:flex;justify-content:space-between;gap:14px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.18)}
@@ -1923,6 +1935,7 @@ async function saveStudent(id){
 }
 
 // --- CLASSES ---
+let _clsCache=[];
 pages.classes=async function({view,id,tab,date}={}){
   if(view==='form') return classForm(id);
   if(view==='detail') return classDetail(id,tab||'info',date);
@@ -1931,37 +1944,77 @@ pages.classes=async function({view,id,tab,date}={}){
   // count students per class
   const counts={};
   for(const c of data){const{data:n}=await sb.rpc('count_students_in_class',{p_class_id:c.id});counts[c.id]=n||0;}
+  _clsCache=data.map(c=>({...c,alunosCount:counts[c.id]||0}));
+
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>Turmas</span></div>
     <div class="page-title"><i class="fa fa-layer-group"></i> Turmas</div>
     <div id="page-alert" class="alert"></div>
     <div class="panel">
       <div class="panel-head"><span class="panel-title">Lista de turmas</span><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'form'})"><i class="fa fa-plus"></i> Criar turma</button></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Professor</th><th>Escola</th><th>Horário</th><th>Nível</th><th>Alunos</th><th>Status</th><th>Ações</th></tr></thead>
-          <tbody>${data.length?data.map((c,i)=>`
-            <tr>
-              <td>${i+1}</td>
-              <td><strong>${esc(c.name)}</strong></td>
-              <td>${c.teacher?esc(c.teacher.first_name)+' '+esc(c.teacher.last_name):'—'}</td>
-              <td>${esc(c.school?.name)||'—'}</td>
-              <td>${esc(c.schedule)||'—'}</td>
-              <td>${level_badge(c.level)}</td>
-              <td><span class="badge badge-info">${counts[c.id]}</span></td>
-              <td>${status_badge(c.status)}</td>
-              <td style="white-space:nowrap">
-                <button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}'})"><i class="fa fa-eye"></i> Ver</button>
-                <button class="btn-icon" onclick="nav('classes',{view:'form',id:'${c.id}'})"><i class="fa fa-pencil-alt"></i></button>
-                <button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('classes','${c.id}','classes')"><i class="fa fa-trash"></i></button>
-              </td>
-            </tr>`).join(''):`<tr><td colspan="10"><div class="empty-state"><i class="fa fa-layer-group"></i>Nenhuma turma cadastrada</div></td></tr>`}
-          </tbody>
-        </table>
+      <div class="panel-body" style="padding-bottom:0">
+        <div class="turmas-search-bar">
+          <div class="turmas-search-input">
+            <i class="fa fa-search"></i>
+            <input id="cls-search" placeholder="Buscar por turma, professor, escola ou nível…" oninput="renderTurmasTable()" autocomplete="off">
+            <button class="turmas-search-clear" id="cls-search-clear" style="display:none" onclick="limparBuscaTurmas()" title="Limpar busca"><i class="fa fa-times"></i></button>
+          </div>
+          <select id="cls-status-filter" class="turmas-status-filter" onchange="renderTurmasTable()">
+            <option value="">Todos os status</option>
+            <option value="1">Somente ativas</option>
+            <option value="0">Somente inativas</option>
+          </select>
+        </div>
       </div>
+      <div id="cls-table-wrap"></div>
     </div>
   `);
+  renderTurmasTable();
 };
+
+function limparBuscaTurmas(){$('cls-search').value='';renderTurmasTable();$('cls-search').focus();}
+
+// Busca em tempo real sobre a lista já carregada (_clsCache) — sem nova
+// consulta ao banco a cada tecla. Filtra por turma, professor, escola ou nível.
+function renderTurmasTable(){
+  const wrap=$('cls-table-wrap');
+  if(!wrap) return;
+  const search=($('cls-search')?.value||'').toLowerCase().trim();
+  const statusFil=$('cls-status-filter')?.value||'';
+  const clearBtn=$('cls-search-clear');
+  if(clearBtn) clearBtn.style.display=search?'flex':'none';
+
+  const filtradas=_clsCache.filter(c=>{
+    if(statusFil==='1'&&c.status!==true) return false;
+    if(statusFil==='0'&&c.status!==false) return false;
+    if(!search) return true;
+    const hay=(c.name+' '+(c.teacher?c.teacher.first_name+' '+c.teacher.last_name:'')+' '+(c.school?.name||'')+' '+(c.level||'')).toLowerCase();
+    return hay.includes(search);
+  });
+
+  wrap.innerHTML=`<div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Nome</th><th>Professor</th><th>Escola</th><th>Horário</th><th>Nível</th><th>Alunos</th><th>Status</th><th>Ações</th></tr></thead>
+      <tbody>${filtradas.length?filtradas.map((c,i)=>`
+        <tr>
+          <td>${i+1}</td>
+          <td><strong>${esc(c.name)}</strong></td>
+          <td>${c.teacher?esc(c.teacher.first_name)+' '+esc(c.teacher.last_name):'—'}</td>
+          <td>${esc(c.school?.name)||'—'}</td>
+          <td>${esc(c.schedule)||'—'}</td>
+          <td>${level_badge(c.level)}</td>
+          <td><span class="badge badge-info">${c.alunosCount}</span></td>
+          <td>${status_badge(c.status)}</td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}'})"><i class="fa fa-eye"></i> Ver</button>
+            <button class="btn-icon" onclick="nav('classes',{view:'form',id:'${c.id}'})"><i class="fa fa-pencil-alt"></i></button>
+            <button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('classes','${c.id}','classes')"><i class="fa fa-trash"></i></button>
+          </td>
+        </tr>`).join(''):`<tr><td colspan="9"><div class="empty-state"><i class="fa fa-${_clsCache.length?'search':'layer-group'}"></i>${_clsCache.length?'Nenhuma turma encontrada para essa busca.':'Nenhuma turma cadastrada'}</div></td></tr>`}
+      </tbody>
+    </table>
+  </div>`;
+}
 
 async function classForm(id){
   const[{data:teachers=[]},{data:schools=[]}]=await Promise.all([sb.from('teachers').select('id,first_name,last_name').eq('status',true),sb.from('schools').select('id,name').eq('status',true)]);
