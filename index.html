@@ -610,6 +610,17 @@ let currentUser = null;
   </div>
 </div>
 
+<!-- MODAL ADICIONAR ALUNO À TURMA -->
+<div class="pgto-overlay" id="addaluno-overlay" style="display:none" onclick="if(event.target===this)closeAddAlunoModal()">
+  <div class="pgto-box">
+    <div class="pgto-header">
+      <h4><i class="fa fa-user-plus" style="color:var(--brand)"></i> Adicionar aluno à turma</h4>
+      <button class="pgto-close" onclick="closeAddAlunoModal()">&#x2715;</button>
+    </div>
+    <div class="pgto-body" id="addaluno-body"></div>
+  </div>
+</div>
+
 <script>
 // ============================
 // UTILS
@@ -866,31 +877,95 @@ async function carregarRiscoEvasaoDash(){
   </div>`;
 }
 
-async function carregarAulasHoje(){
-  const diasSemana=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const hoje=diasSemana[new Date().getDay()];
-  const{data:turmas=[]}=await sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('status',true);
-  const aulasHoje=turmas.filter(t=>(t.class_days||'').includes(hoje));
+// Regra de negócio: base de 20 encontros por turma/módulo. NUNCA bloqueia
+// o lançamento — é só um alerta visual (19 = reta final, >20 = excedido).
+const ENCONTROS_BASE=20;
+function encontroBadge(total){
+  const excedeu=total>ENCONTROS_BASE;
+  const retaFinal=total>=19&&!excedeu;
+  const cls=excedeu?'badge-danger':(retaFinal?'badge-warning':'badge-secondary');
+  const title=excedeu?'Limite de 20 encontros excedido — lançamento continua liberado normalmente':(retaFinal?'Reta final: turma próxima do limite de 20 encontros':'');
+  return `<span class="badge ${cls}" title="${title}">${excedeu?'<i class="fa fa-exclamation-triangle"></i> ':''}${total}/${ENCONTROS_BASE}</span>`;
+}
+
+let _dashAulasState={date:new Date().toISOString().split('T')[0]};
+let _dashAulasCache=[];
+
+async function carregarAulasHoje(dateStr){
+  if(dateStr) _dashAulasState.date=dateStr;
   const el=$('dash-aulas-hoje');
   if(!el) return;
-  if(!aulasHoje.length){
-    el.innerHTML=`<div class="panel" style="margin-bottom:18px"><div class="panel-head"><span class="panel-title"><i class="fa fa-calendar-day" style="color:var(--brand)"></i> Aulas de hoje (${hoje})</span></div><div class="panel-body"><div class="empty-state" style="padding:16px"><i class="fa fa-coffee"></i>Nenhuma aula programada para hoje</div></div></div>`;
-    return;
-  }
+  const diasSemana=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const diaAbbr=diasSemana[new Date(_dashAulasState.date+'T00:00:00').getDay()];
+  _dashAulasState.diaAbbr=diaAbbr;
+
+  const[{data:turmas=[]},{data:encontros=[]}]=await Promise.all([
+    sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('status',true),
+    sb.rpc('get_contagem_encontros'),
+  ]);
+  const encontrosMap={};
+  encontros.forEach(e=>encontrosMap[e.class_id]=e.total_encontros);
+  _dashAulasCache=turmas.filter(t=>(t.class_days||'').includes(diaAbbr)).map(t=>({...t,totalEncontros:encontrosMap[t.id]||0}));
+
+  renderDashAulas();
+}
+
+function dashAulasLabel(){
+  const hojeStr=new Date().toISOString().split('T')[0];
+  const amanha=new Date(hojeStr+'T00:00:00');amanha.setDate(amanha.getDate()+1);
+  const amanhaStr=amanha.toISOString().split('T')[0];
+  if(_dashAulasState.date===hojeStr) return 'hoje';
+  if(_dashAulasState.date===amanhaStr) return 'amanhã';
+  return new Date(_dashAulasState.date+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+}
+
+// Filtro em tempo real: reaproveita o array já carregado (_dashAulasCache),
+// sem nova consulta ao banco — filtra por turma, professor ou nível.
+function renderDashAulas(){
+  const el=$('dash-aulas-hoje');
+  if(!el) return;
+  const search=($('dash-aulas-search')?.value||'').toLowerCase().trim();
+  const lista=_dashAulasCache.filter(t=>{
+    if(!search) return true;
+    const hay=(t.name+' '+(t.teacher?t.teacher.first_name+' '+t.teacher.last_name:'')+' '+(t.level||'')).toLowerCase();
+    return hay.includes(search);
+  });
+  const diaAbbr=_dashAulasState.diaAbbr;
+  const label=dashAulasLabel();
+  const headerTxt=label==='hoje'?`Aulas de hoje (${diaAbbr})`:label==='amanhã'?`Aulas de amanhã (${diaAbbr})`:`Aulas de ${label} (${diaAbbr})`;
+
   el.innerHTML=`<div class="panel" style="margin-bottom:18px">
-    <div class="panel-head"><span class="panel-title"><i class="fa fa-calendar-day" style="color:var(--brand)"></i> Aulas de hoje (${hoje}) — ${aulasHoje.length} turma(s)</span></div>
+    <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+      <span class="panel-title"><i class="fa fa-calendar-day" style="color:var(--brand)"></i> ${headerTxt} — ${lista.length} turma${lista.length!==1?'s':''}</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-icon" onclick="dashMudarDia(-1)" title="Dia anterior"><i class="fa fa-chevron-left"></i></button>
+        <input type="date" id="dash-aulas-date" value="${_dashAulasState.date}" onchange="carregarAulasHoje(this.value)" style="padding:5px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px">
+        <button class="btn-icon" onclick="dashMudarDia(1)" title="Próximo dia"><i class="fa fa-chevron-right"></i></button>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:10px 16px">
+      <input id="dash-aulas-search" placeholder="Buscar por turma, professor ou nível…" value="${esc(search)}" oninput="renderDashAulas()" style="width:100%;max-width:320px;padding:7px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px">
+    </div>
+    ${!lista.length?`<div class="panel-body" style="padding-top:0"><div class="empty-state" style="padding:16px"><i class="fa fa-coffee"></i>${_dashAulasCache.length?'Nenhuma turma encontrada para essa busca.':'Nenhuma aula programada para este dia.'}</div></div>`:`
     <div class="table-wrap"><table>
-      <thead><tr><th>Turma</th><th>Horário</th><th>Professor</th><th>Escola</th><th>Nível</th><th>Ações</th></tr></thead>
-      <tbody>${aulasHoje.map(c=>`<tr>
+      <thead><tr><th>Turma</th><th>Horário</th><th>Professor</th><th>Escola</th><th>Nível</th><th>Encontros</th><th>Ações</th></tr></thead>
+      <tbody>${lista.map(c=>`<tr>
         <td><strong>${esc(c.name)}</strong></td>
         <td><i class="fa fa-clock" style="color:var(--brand)"></i> ${esc(c.start_time)}–${esc(c.end_time)}</td>
         <td>${c.teacher?esc(c.teacher.first_name)+' '+esc(c.teacher.last_name):'—'}</td>
         <td>${esc(c.school?.name)||'—'}</td>
         <td>${level_badge(c.level)}</td>
-        <td><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}',tab:'aula'})"><i class="fa fa-clipboard-check"></i> Chamada</button></td>
+        <td>${encontroBadge(c.totalEncontros)}</td>
+        <td><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}',tab:'aula',date:'${_dashAulasState.date}'})"><i class="fa fa-clipboard-check"></i> Chamada</button></td>
       </tr>`).join('')}</tbody>
-    </table></div>
+    </table></div>`}
   </div>`;
+}
+
+function dashMudarDia(delta){
+  const d=new Date(_dashAulasState.date+'T00:00:00');
+  d.setDate(d.getDate()+delta);
+  carregarAulasHoje(d.toISOString().split('T')[0]);
 }
 
 // --- CAPTAÇÃO ---
@@ -1974,11 +2049,13 @@ async function saveClass(id){
 
 async function classDetail(classId,tab='info',date){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const[{data:c},{data:alunos=[]}]=await Promise.all([
+  const[{data:c},{data:alunos=[]},{data:encontrosData=[]}]=await Promise.all([
     sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('id',classId).single(),
     sb.rpc('get_turma_alunos',{p_class_id:classId}),
+    sb.rpc('get_contagem_encontros'),
   ]);
   if(!c){nav('classes');return;}
+  const totalEncontros=encontrosData.find(e=>e.class_id===classId)?.total_encontros||0;
 
   const diasMap={'Seg':'Segunda','Ter':'Terça','Qua':'Quarta','Qui':'Quinta','Sex':'Sexta','Sáb':'Sábado','Dom':'Domingo'};
   const diasTxt=(c.class_days||'').split(',').map(d=>diasMap[d]||d).join(', ');
@@ -1997,16 +2074,17 @@ async function classDetail(classId,tab='info',date){
     <div class="breadcrumb"><a onclick="nav('classes')">Turmas</a> › <span>${esc(c.name)}</span></div>
     <div class="page-title"><i class="fa fa-layer-group"></i> ${esc(c.name)}</div>
     <div id="page-alert" class="alert"></div>
-    <div class="stat-grid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stat-grid" style="grid-template-columns:repeat(5,1fr)">
       <div class="stat-card c-gold"><i class="fa fa-calendar stat-icon"></i><div><div class="stat-num" style="font-size:16px">${diasTxt||'—'}</div><div class="stat-label">Dias da semana</div></div></div>
       <div class="stat-card c-orange"><i class="fa fa-clock stat-icon"></i><div><div class="stat-num" style="font-size:18px">${horario}</div><div class="stat-label">Horário</div></div></div>
       <div class="stat-card c-dark"><i class="fa fa-users stat-icon"></i><div><div class="stat-num">${alunos.length}</div><div class="stat-label">Alunos matriculados</div></div></div>
       <div class="stat-card c-brown"><i class="fa ${temAulaHoje?'fa-check-circle':'fa-minus-circle'} stat-icon"></i><div><div class="stat-num" style="font-size:16px">${temAulaHoje?'Sim':'Não'}</div><div class="stat-label">Aula hoje?</div></div></div>
+      <div class="stat-card c-gold"><i class="fa fa-clipboard-list stat-icon"></i><div><div class="stat-num" style="font-size:18px">${totalEncontros}/${ENCONTROS_BASE}</div><div class="stat-label">Encontros realizados</div></div></div>
     </div>
     ${tabBar}
   `;
 
-  if(tab==='aula') return classTabAula(c,alunos,classId,date,header);
+  if(tab==='aula') return classTabAula(c,alunos,classId,date,header,totalEncontros);
   if(tab==='historico') return classTabHistorico(classId,header);
 
   setContent(header+`
@@ -2033,13 +2111,16 @@ async function classDetail(classId,tab='info',date){
         </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno matriculado</div></td></tr>'}
         </tbody>
       </table></div>
+      ${(isAdmin()||canManageBilling())?`<div class="panel-footer">
+        <button class="btn btn-primary btn-sm" onclick="abrirModalAdicionarAluno('${classId}')"><i class="fa fa-plus"></i> Adicionar Aluno</button>
+      </div>`:''}
     </div>
   `);
 }
 
 const LESSON_STATUS_UI={realizada:'Realizada',cancelada:'Cancelada',remarcada:'Remarcada'};
 
-async function classTabAula(c,alunos,classId,date,header){
+async function classTabAula(c,alunos,classId,date,header,totalEncontros=0){
   const selDate=date||new Date().toISOString().split('T')[0];
   const[{data:lesson},{data:presencas=[]},{data:teachers=[]}]=await Promise.all([
     sb.from('class_lessons').select('*').eq('class_id',classId).eq('lesson_date',selDate).maybeSingle(),
@@ -2051,9 +2132,18 @@ async function classTabAula(c,alunos,classId,date,header){
   const tOpts=teachers.map(t=>`<option value="${t.id}" ${teacherId===t.id?'selected':''}>${esc(t.first_name)} ${esc(t.last_name)}</option>`).join('');
   const statusAula=lesson?.status||'realizada';
 
+  // Se esta aula ainda não foi lançada, mostra qual número de encontro ela
+  // seria — só pra avisar (19 = reta final, >20 = excedeu), nunca bloqueia.
+  const numeroEncontro=lesson?null:totalEncontros+1;
+  const alertaEncontro=numeroEncontro===19
+    ?`<div class="help-text" style="color:var(--warning);margin-top:8px"><i class="fa fa-flag-checkered"></i> Esta será a 19ª aula realizada — reta final antes da base de ${ENCONTROS_BASE} encontros.</div>`
+    :(numeroEncontro>ENCONTROS_BASE
+      ?`<div class="help-text" style="color:var(--danger);margin-top:8px"><i class="fa fa-exclamation-triangle"></i> Esta será a ${numeroEncontro}ª aula — já passou da base de ${ENCONTROS_BASE} encontros, mas o lançamento segue liberado normalmente.</div>`
+      :'');
+
   setContent(header+`
     <div class="panel">
-      <div class="panel-head"><span class="panel-title"><i class="fa fa-clipboard-check" style="color:var(--brand)"></i> ${lesson?'Editar aula':'Registrar aula'} — ${fdate(selDate)}</span></div>
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-clipboard-check" style="color:var(--brand)"></i> ${lesson?'Editar aula':'Registrar aula'} — ${fdate(selDate)}</span>${encontroBadge(totalEncontros)}</div>
       <div class="panel-body">
         <div class="form-row">
           <div class="form-col"><label>Data da aula <span class="required">*</span></label><input id="aula-date" type="date" value="${selDate}" onchange="nav('classes',{view:'detail',id:'${classId}',tab:'aula',date:this.value})"></div>
@@ -2064,6 +2154,7 @@ async function classTabAula(c,alunos,classId,date,header){
         </div>
         <div class="field"><label>Conteúdo ministrado</label><textarea id="aula-content" placeholder="Ex: Present Simple — afirmativa e negativa">${esc(lesson?.content)}</textarea></div>
         <div class="field"><label>Observações</label><textarea id="aula-notes">${esc(lesson?.notes)}</textarea></div>
+        ${alertaEncontro}
       </div>
     </div>
     <div class="panel">
@@ -2128,6 +2219,95 @@ async function classTabHistorico(classId,header){
       </div>
     </div>
   `);
+}
+
+// --- ADICIONAR ALUNO À TURMA (busca rápida + atalho de cadastro) ---
+let _addAlunoCtx={classId:null,todosAlunos:[],naTurmaIds:[]};
+
+async function abrirModalAdicionarAluno(classId){
+  $('addaluno-body').innerHTML=`<div class="loading"><i class="fa fa-spinner"></i></div>`;
+  $('addaluno-overlay').style.display='flex';
+  const[{data:todos=[]},{data:naTurma=[]}]=await Promise.all([
+    sb.from('students').select('id,first_name,last_name,mobile_number,class_id').eq('status',true).order('first_name'),
+    sb.rpc('get_turma_alunos',{p_class_id:classId}),
+  ]);
+  _addAlunoCtx={classId,todosAlunos:todos,naTurmaIds:naTurma.map(a=>a.id)};
+  renderAddAlunoSearch();
+}
+function closeAddAlunoModal(){$('addaluno-overlay').style.display='none';}
+
+function renderAddAlunoSearch(termoInicial){
+  $('addaluno-body').innerHTML=`
+    <div class="field"><label>Buscar aluno pelo nome</label><input id="addaluno-search" placeholder="Digite o nome do aluno…" value="${esc(termoInicial||'')}" oninput="filtrarAddAluno()" autocomplete="off"></div>
+    <div id="addaluno-results"></div>
+  `;
+  $('addaluno-search').focus();
+  filtrarAddAluno();
+}
+
+// Filtro em tempo real sobre a lista já carregada — sem nova consulta a cada tecla.
+function filtrarAddAluno(){
+  const termo=($('addaluno-search')?.value||'').toLowerCase().trim();
+  const{todosAlunos,naTurmaIds}=_addAlunoCtx;
+  const disponiveis=todosAlunos.filter(a=>!naTurmaIds.includes(a.id));
+  const encontrados=termo?disponiveis.filter(a=>(a.first_name+' '+a.last_name).toLowerCase().includes(termo)):disponiveis.slice(0,20);
+  const results=$('addaluno-results');
+  if(!results) return;
+  if(!encontrados.length){
+    results.innerHTML=`
+      <div class="empty-state" style="padding:16px"><i class="fa fa-user-slash"></i>Nenhum aluno encontrado${termo?` para "${esc(termo)}"`:''}.</div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="abrirCadastroRapidoAluno()"><i class="fa fa-user-plus"></i> Cadastrar novo aluno</button>
+    `;
+    return;
+  }
+  results.innerHTML=`<div class="aluno-suggest-list" style="position:static;max-height:260px;box-shadow:none;border-top:1px solid var(--gray-200)">
+    ${encontrados.map(a=>`<div class="aluno-suggest-item" style="display:flex;justify-content:space-between;align-items:center" onclick="vincularAlunoATurma('${a.id}')">
+      <span>${esc(a.first_name)} ${esc(a.last_name)}</span>
+      ${a.class_id?'<span class="badge badge-secondary" style="font-size:10px">já tem turma — será remanejado</span>':''}
+    </div>`).join('')}
+  </div>
+  <button class="btn btn-default btn-sm" style="width:100%;justify-content:center;margin-top:8px" onclick="abrirCadastroRapidoAluno()"><i class="fa fa-user-plus"></i> Não achou? Cadastrar novo aluno</button>`;
+}
+
+async function vincularAlunoATurma(studentId){
+  const{classId}=_addAlunoCtx;
+  const{error}=await sb.from('students').update({class_id:classId}).eq('id',studentId);
+  if(error){alert('Erro ao vincular aluno: '+error.message);return;}
+  closeAddAlunoModal();
+  await pages.classes({view:'detail',id:classId});
+}
+
+function abrirCadastroRapidoAluno(){
+  const termo=$('addaluno-search')?.value?.trim()||'';
+  const partes=termo.split(/\s+/).filter(Boolean);
+  const fn=partes[0]||'';
+  const ln=partes.slice(1).join(' ')||'';
+  $('addaluno-body').innerHTML=`
+    <p class="help-text" style="margin-bottom:10px">Cadastro rápido — dá pra completar os demais dados depois em Aluno → Editar.</p>
+    <div class="field"><label>Primeiro nome <span class="required">*</span></label><input id="qa-fn" value="${esc(fn)}"></div>
+    <div class="field"><label>Sobrenome <span class="required">*</span></label><input id="qa-ln" value="${esc(ln)}"></div>
+    <div class="field"><label>Celular <span class="required">*</span></label><input id="qa-mobile" placeholder="(99) 99999-9999"></div>
+    <div id="addaluno-alert" class="alert"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-default" onclick="renderAddAlunoSearch('${esc(termo)}')"><i class="fa fa-arrow-left"></i> Voltar à busca</button>
+      <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="salvarCadastroRapidoAluno()"><i class="fa fa-save"></i> Cadastrar e vincular</button>
+    </div>
+  `;
+}
+
+async function salvarCadastroRapidoAluno(){
+  const fn=$('qa-fn').value.trim();
+  const ln=$('qa-ln').value.trim();
+  const mobile=$('qa-mobile').value.trim();
+  if(!fn||!ln||!mobile){showAlert('addaluno-alert','Preencha nome, sobrenome e celular.','danger');return;}
+  const{classId}=_addAlunoCtx;
+  const{error}=await sb.from('students').insert({
+    first_name:fn,last_name:ln,mobile_number:mobile,
+    class_id:classId,date_joining:new Date().toISOString().split('T')[0],status:true,
+  });
+  if(error){showAlert('addaluno-alert','Erro ao cadastrar: '+error.message,'danger');return;}
+  closeAddAlunoModal();
+  await pages.classes({view:'detail',id:classId});
 }
 
 // ============================
@@ -2266,12 +2446,14 @@ pages.professores=async function({tab}={}){
   _profTab='lancar'; profLancar(tabBar);
 };
 
+let _plClasses=[];
 async function profLancar(tabBar){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const [{data:teachers=[]},{data:classes=[]}]=await Promise.all([
     sb.from('teachers').select('id,first_name,last_name').eq('status',true).order('first_name'),
     sb.from('classes').select('id,name,teacher_id,teacher:teachers(id,first_name,last_name)').eq('status',true).order('name'),
   ]);
+  _plClasses=classes;
   const hoje=new Date().toISOString().split('T')[0];
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>Controle de Professores</span></div>
@@ -2285,7 +2467,7 @@ async function profLancar(tabBar){
           <div>
             <div class="field"><label>Data da aula <span class="required">*</span></label><input id="pl-data" type="date" value="${hoje}"></div>
             <div class="field"><label>Turma</label>
-              <select id="pl-class" onchange="profPreencherProfResponsavel(this.value,${JSON.stringify(classes.map(c=>({id:c.id,teacher_id:c.teacher_id,teacher:c.teacher})))})">
+              <select id="pl-class" onchange="profPreencherProfResponsavel(this.value)">
                 <option value="">— Nenhuma (fora de turma) —</option>
                 ${classes.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}
               </select>
@@ -2348,9 +2530,9 @@ function profAtualizarContaPagamento(tipo, selectId){
   // Todos os tipos contam por padrão — o usuário decide manualmente
 }
 
-function profPreencherProfResponsavel(classId, classes){
+function profPreencherProfResponsavel(classId){
   if(!classId) return;
-  const cl=classes.find(c=>c.id===classId);
+  const cl=_plClasses.find(c=>c.id===classId);
   const profId=cl?.teacher?.id||'';
   const sel=$('pl-teacher');
   if(sel) sel.value=profId;
@@ -2848,7 +3030,7 @@ async function finAluno(studentId){
           <span>Verifique os meses destacados em vermelho na tabela abaixo.</span>
         </div>
         <div class="banner-vencidos-actions">
-          <button class="btn btn-success btn-sm" onclick="marcarVencidosComoPago('${student.id}',${JSON.stringify(ids)})">
+          <button class="btn btn-success btn-sm" onclick="marcarVencidosComoPago('${student.id}','${ids.join(',')}')">
             <i class="fa fa-check-circle"></i> Marcar ${plural?'todos':'como'} pago${plural?'s':''}
           </button>
         </div>
@@ -3101,8 +3283,9 @@ async function confirmarPagamentoModal(){
   nav('financeiro',{view:'aluno',studentId});
 }
 
-async function marcarVencidosComoPago(studentId, ids){
-  if(!ids||!ids.length) return;
+async function marcarVencidosComoPago(studentId, idsStr){
+  const ids=(idsStr||'').split(',').filter(Boolean);
+  if(!ids.length) return;
   const plural=ids.length>1;
   showConfirm(async()=>{
     const{error}=await sb.rpc('marcar_vencidos_pago',{p_boleto_ids:ids});

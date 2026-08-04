@@ -2018,3 +2018,24 @@ AS $$ DECLARE v_row nps_pesquisas%ROWTYPE; BEGIN
   UPDATE nps_pesquisas SET nota = p_nota, comentario = p_comentario, status = 'respondida', respondido_at = now()
   WHERE id = v_row.id;
 END; $$;
+
+
+-- #####################################################################
+-- 28. CONTADOR DE ENCONTROS POR TURMA (regra flexível — nunca bloqueia)
+-- #####################################################################
+-- Base de 20 encontros por turma/módulo, usada só pra sinalização visual
+-- no painel inicial e na tela de chamada (19 = reta final, >20 =
+-- excedeu). Conta apenas aulas com status='realizada' em class_lessons —
+-- nunca impede o lançamento de uma nova aula, mesmo passando de 20.
+
+CREATE OR REPLACE FUNCTION get_contagem_encontros()
+RETURNS TABLE(class_id uuid, total_encontros bigint)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT cl.class_id, count(*)::bigint
+    FROM class_lessons cl
+    WHERE cl.status = 'realizada'
+    GROUP BY cl.class_id;
+END; $$;
