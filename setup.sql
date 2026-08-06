@@ -2186,13 +2186,13 @@ END; $$;
 -- PÚBLICA — dados da aula de uma turma numa data (lançamento existente,
 -- se houver) + lista de alunos matriculados com a presença atual.
 CREATE OR REPLACE FUNCTION professor_turma_aula(p_teacher_id uuid, p_token text, p_class_id uuid, p_lesson_date date)
-RETURNS TABLE(lesson_id uuid, status text, content text, notes text, alunos jsonb)
+RETURNS TABLE(lesson_id uuid, teacher_id uuid, status text, content text, notes text, alunos jsonb)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$ DECLARE v_lesson class_lessons%ROWTYPE; BEGIN
   IF NOT _professor_sessao_valida(p_teacher_id, p_token) THEN RAISE EXCEPTION 'Sessão inválida. Volte e faça login novamente.'; END IF;
   SELECT * INTO v_lesson FROM class_lessons WHERE class_id=p_class_id AND lesson_date=p_lesson_date;
   RETURN QUERY
-    SELECT v_lesson.id, COALESCE(v_lesson.status,'realizada'), v_lesson.content, v_lesson.notes,
+    SELECT v_lesson.id, v_lesson.teacher_id, COALESCE(v_lesson.status,'realizada'), v_lesson.content, v_lesson.notes,
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
           'id', s.id, 'first_name', s.first_name, 'last_name', s.last_name,
           'status', COALESCE(a.status, 'presente')
@@ -2200,6 +2200,32 @@ AS $$ DECLARE v_lesson class_lessons%ROWTYPE; BEGIN
         FROM students s
         LEFT JOIN attendance a ON a.student_id = s.id AND a.class_id = p_class_id AND a.date = p_lesson_date
         WHERE s.class_id = p_class_id AND s.status = true), '[]'::jsonb);
+END; $$;
+
+-- PÚBLICA — o professor que registrou a aula repassa para outro professor
+-- (ex: marcou a aula mas não vai conseguir dar). Conteúdo e presença já
+-- preenchidos continuam intactos; o pagamento é recalculado na hora para
+-- o novo professor via sync_pagamento_aula.
+CREATE OR REPLACE FUNCTION professor_repassar_aula(p_teacher_id uuid, p_token text, p_lesson_id uuid, p_novo_teacher_id uuid)
+RETURNS TABLE(first_name text, last_name text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_lesson class_lessons%ROWTYPE; v_novo teachers%ROWTYPE; BEGIN
+  IF NOT _professor_sessao_valida(p_teacher_id, p_token) THEN RAISE EXCEPTION 'Sessão inválida. Volte e faça login novamente.'; END IF;
+
+  SELECT * INTO v_lesson FROM class_lessons WHERE id = p_lesson_id;
+  IF v_lesson IS NULL THEN RAISE EXCEPTION 'Aula não encontrada'; END IF;
+  IF v_lesson.teacher_id IS DISTINCT FROM p_teacher_id THEN
+    RAISE EXCEPTION 'Só quem registrou esta aula pode repassá-la para outro professor.';
+  END IF;
+  IF p_novo_teacher_id = p_teacher_id THEN RAISE EXCEPTION 'Escolha um professor diferente de você.'; END IF;
+
+  SELECT * INTO v_novo FROM teachers WHERE id = p_novo_teacher_id AND status = true;
+  IF v_novo IS NULL THEN RAISE EXCEPTION 'Professor não encontrado'; END IF;
+
+  UPDATE class_lessons SET teacher_id = p_novo_teacher_id, updated_at = now() WHERE id = p_lesson_id;
+  PERFORM sync_pagamento_aula(p_lesson_id);
+
+  RETURN QUERY SELECT v_novo.first_name, v_novo.last_name;
 END; $$;
 
 -- PÚBLICA — registra/atualiza a aula e a frequência via portal do professor.

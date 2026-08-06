@@ -4381,6 +4381,7 @@ async function submeterNps(){
 // resultante fica salvo no localStorage deste aparelho, então só pede o PIN
 // de novo se for um dispositivo novo ou depois de um reset de PIN.
 let _profState={teacherId:null,teacherName:'',token:null};
+let _profListaCache=[];
 
 function profTokenKey(teacherId){return 'prof_token_'+teacherId;}
 
@@ -4398,6 +4399,7 @@ async function profRenderSelecao(){
     $('prof-content').innerHTML=`<div class="sign-card"><div class="sign-result err"><i class="fa fa-times-circle"></i><h3>Erro ao carregar</h3><p>${esc(error.message)}</p></div></div>`;
     return;
   }
+  _profListaCache=professores;
   $('prof-content').innerHTML=`
     <div class="sign-card">
       <div class="sign-card-head"><h3><i class="fa fa-user-check" style="color:var(--brand)"></i> Quem é você?</h3><p>Toque no seu nome para continuar</p></div>
@@ -4513,6 +4515,7 @@ async function profAbrirTurma(classId,className,date){
         <div class="field"><label>Observações</label><textarea id="prof-aula-notes">${esc(info?.notes)}</textarea></div>
       </div>
     </div>
+    ${(lessonId&&info?.teacher_id===_profState.teacherId)?profRepasseHtml(lessonId):''}
     <div class="sign-card">
       <div class="sign-card-head"><h3><i class="fa fa-user-graduate" style="color:var(--brand)"></i> Frequência dos alunos</h3></div>
       <div class="table-wrap">
@@ -4535,6 +4538,32 @@ async function profAbrirTurma(classId,className,date){
     </div>
   `;
   _profState.turmaAtual={classId,className};
+}
+
+function profRepasseHtml(lessonId){
+  const outros=_profListaCache.filter(p=>p.id!==_profState.teacherId);
+  if(!outros.length) return '';
+  return `
+    <div class="sign-card" style="margin-bottom:16px;border-color:var(--warning)">
+      <div class="sign-card-head"><h3><i class="fa fa-people-arrows" style="color:var(--warning)"></i> Não vou dar esta aula</h3><p>Repasse para o professor que vai dar de verdade — o conteúdo e a presença já preenchidos continuam aqui, e o pagamento passa a contar para ele(a).</p></div>
+      <div style="padding:16px 22px;display:flex;gap:8px;flex-wrap:wrap">
+        <select id="prof-repasse-select" style="flex:1;min-width:180px">
+          ${outros.map(p=>`<option value="${p.id}">${esc(p.first_name)} ${esc(p.last_name)}</option>`).join('')}
+        </select>
+        <button class="btn btn-default" onclick="profRepassarAula('${lessonId}')"><i class="fa fa-people-arrows"></i> Repassar</button>
+      </div>
+    </div>
+  `;
+}
+
+async function profRepassarAula(lessonId){
+  const novoTeacherId=$('prof-repasse-select').value;
+  if(!novoTeacherId)return;
+  const{teacherId,token}=_profState;
+  const{data,error}=await sb.rpc('professor_repassar_aula',{p_teacher_id:teacherId,p_token:token,p_lesson_id:lessonId,p_novo_teacher_id:novoTeacherId});
+  if(error){showAlert('prof-content-alert',error.message||'Erro ao repassar aula.','danger');return;}
+  const novo=Array.isArray(data)?data[0]:data;
+  $('prof-content').innerHTML=`<div class="sign-card"><div class="sign-result ok"><i class="fa fa-check-circle"></i><h3>Aula repassada!</h3><p>Agora é com ${esc(novo?.first_name)} ${esc(novo?.last_name)}. Avise ele(a) para entrar no portal e conferir o conteúdo e a presença.</p></div></div><button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px" onclick="profRenderVoltarTurmas()"><i class="fa fa-arrow-left"></i> Voltar às turmas</button>`;
 }
 
 async function profRenderVoltarTurmas(){
