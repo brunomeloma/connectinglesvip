@@ -918,6 +918,12 @@ function encontroBadge(total){
   return `<span class="badge ${cls}" title="${title}">${excedeu?'<i class="fa fa-exclamation-triangle"></i> ':''}${total}/${ENCONTROS_BASE}</span>`;
 }
 
+function dashStatusBadge(ok,title){
+  return ok
+    ? `<span class="badge badge-success" title="${esc(title||'')}"><i class="fa fa-check"></i> Sim</span>`
+    : `<span class="badge badge-danger" title="${esc(title||'')}"><i class="fa fa-times"></i> Não</span>`;
+}
+
 let _dashAulasState={date:new Date().toISOString().split('T')[0]};
 let _dashAulasCache=[];
 
@@ -929,13 +935,22 @@ async function carregarAulasHoje(dateStr){
   const diaAbbr=diasSemana[new Date(_dashAulasState.date+'T00:00:00').getDay()];
   _dashAulasState.diaAbbr=diaAbbr;
 
-  const[{data:turmas=[]},{data:encontros=[]}]=await Promise.all([
+  const admin=isAdmin();
+  const[{data:turmas=[]},{data:encontros=[]},{data:lancadas=[]},{data:pagas=[]}]=await Promise.all([
     sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('status',true),
     sb.rpc('get_contagem_encontros'),
+    admin?sb.from('class_lessons').select('id,class_id,status').eq('lesson_date',_dashAulasState.date):Promise.resolve({data:[]}),
+    admin?sb.from('teacher_lessons').select('class_lesson_id').eq('lesson_date',_dashAulasState.date).not('class_lesson_id','is',null):Promise.resolve({data:[]}),
   ]);
   const encontrosMap={};
   encontros.forEach(e=>encontrosMap[e.class_id]=e.total_encontros);
-  _dashAulasCache=turmas.filter(t=>(t.class_days||'').includes(diaAbbr)).map(t=>({...t,totalEncontros:encontrosMap[t.id]||0}));
+  const lancadasMap={};
+  lancadas.forEach(l=>lancadasMap[l.class_id]=l);
+  const pagasSet=new Set(pagas.map(p=>p.class_lesson_id));
+  _dashAulasCache=turmas.filter(t=>(t.class_days||'').includes(diaAbbr)).map(t=>{
+    const lesson=lancadasMap[t.id];
+    return {...t,totalEncontros:encontrosMap[t.id]||0,aulaLancada:!!lesson,horaContabilizada:lesson?pagasSet.has(lesson.id):false};
+  });
 
   renderDashAulas();
 }
@@ -978,7 +993,7 @@ function renderDashAulas(){
     </div>
     ${!lista.length?`<div class="panel-body" style="padding-top:0"><div class="empty-state" style="padding:16px"><i class="fa fa-coffee"></i>${_dashAulasCache.length?'Nenhuma turma encontrada para essa busca.':'Nenhuma aula programada para este dia.'}</div></div>`:`
     <div class="table-wrap"><table>
-      <thead><tr><th>Turma</th><th>Horário</th><th>Professor</th><th>Escola</th><th>Nível</th><th>Encontros</th><th>Ações</th></tr></thead>
+      <thead><tr><th>Turma</th><th>Horário</th><th>Professor</th><th>Escola</th><th>Nível</th><th>Encontros</th>${isAdmin()?'<th>Aula lançada?</th><th>Hora contabilizada?</th>':''}<th>Ações</th></tr></thead>
       <tbody>${lista.map(c=>`<tr>
         <td><strong>${esc(c.name)}</strong></td>
         <td><i class="fa fa-clock" style="color:var(--brand)"></i> ${esc(c.start_time)}–${esc(c.end_time)}</td>
@@ -986,6 +1001,7 @@ function renderDashAulas(){
         <td>${esc(c.school?.name)||'—'}</td>
         <td>${level_badge(c.level)}</td>
         <td>${encontroBadge(c.totalEncontros)}</td>
+        ${isAdmin()?`<td>${dashStatusBadge(c.aulaLancada)}</td><td>${dashStatusBadge(c.horaContabilizada,c.aulaLancada&&!c.horaContabilizada?'Aula lançada sem professor definido — horas ainda não contam para pagamento':'')}</td>`:''}
         <td><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}',tab:'aula',date:'${_dashAulasState.date}'})"><i class="fa fa-clipboard-check"></i> Chamada</button></td>
       </tr>`).join('')}</tbody>
     </table></div>`}
