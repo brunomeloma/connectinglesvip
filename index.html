@@ -352,7 +352,13 @@ tr:hover td{background:#fdf9f0}
 .doc-detail-row span:last-child{color:var(--gray-900);font-weight:500;text-align:right}
 
 /* PÁGINA PÚBLICA DE ASSINATURA */
-#sign-page,#portal-page,#nps-page{display:none;min-height:100vh;background:#f0ede8;padding:24px 14px}
+#sign-page,#portal-page,#nps-page,#prof-page{display:none;min-height:100vh;background:#f0ede8;padding:24px 14px}
+.prof-pick-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.prof-pick-card{background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:.15s}
+.prof-pick-card:hover{border-color:var(--brand);box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.prof-pin-input{font-size:28px;letter-spacing:12px;text-align:center;width:100%;padding:12px;border:1px solid var(--gray-300);border-radius:8px}
+.prof-turma-card{background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:14px 16px;cursor:pointer;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;transition:.15s}
+.prof-turma-card:hover{border-color:var(--brand);box-shadow:0 2px 10px rgba(0,0,0,.08)}
 .sign-wrap{max-width:760px;margin:0 auto}
 .sign-header{text-align:center;padding:18px 0 22px}
 .sign-header .login-logo{font-size:12px;font-weight:600;letter-spacing:3px;color:var(--brand-dark);text-transform:uppercase}
@@ -556,6 +562,18 @@ let currentUser = null;
     </div>
     <div id="nps-page-content"></div>
     <div class="sign-footer">Sua resposta é confidencial e ajuda a melhorar nosso atendimento.</div>
+  </div>
+</div>
+
+<!-- ===== PÁGINA PÚBLICA — PORTAL DO PROFESSOR (link único compartilhado) ===== -->
+<div id="prof-page">
+  <div class="sign-wrap">
+    <div class="sign-header">
+      <div class="login-logo">Connect Inglês</div>
+      <div class="sign-brand"><span>VIP</span> — Portal do Professor</div>
+    </div>
+    <div id="prof-content"></div>
+    <div class="sign-footer">Este link é de uso da equipe de professores — seu PIN é pessoal, não compartilhe.</div>
   </div>
 </div>
 
@@ -1622,6 +1640,16 @@ pages.teachers=async function({view,id}={}){
     <div class="page-title"><i class="fa fa-chalkboard-teacher"></i> Professor</div>
     <div id="page-alert" class="alert"></div>
     <div class="panel">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-link"></i> Portal do Professor</span></div>
+      <div class="panel-body">
+        <p class="help-text">Envie este mesmo link para todos os professores. Cada um escolhe o próprio nome e cadastra um PIN de 4 dígitos no primeiro acesso — sem precisar de login individual.</p>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input id="prof-link-box" readonly value="${location.origin}/?professor=1" style="flex:1;background:var(--gray-50)">
+          <button class="btn btn-primary" onclick="copiarLinkProfessor()"><i class="fa fa-copy"></i> Copiar link</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
       <div class="panel-head"><span class="panel-title">Busca</span></div>
       <div class="panel-body">
         <div class="form-row">
@@ -1635,7 +1663,7 @@ pages.teachers=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Lista de professores</span><button class="btn btn-primary btn-sm" onclick="nav('teachers',{view:'form'})"><i class="fa fa-plus"></i> Adicionar professor</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Celular</th><th>Qualificação</th><th>Adesão</th><th>Status</th><th colspan="2">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Celular</th><th>Qualificação</th><th>Adesão</th><th>Status</th><th colspan="3">Ações</th></tr></thead>
           <tbody>${data.length?data.map((t,i)=>`
             <tr>
               <td>${i+1}</td>
@@ -1645,14 +1673,28 @@ pages.teachers=async function({view,id}={}){
               <td>${fdate(t.date_joining)}</td>
               <td>${status_badge(t.status)}</td>
               <td><button class="btn-icon" onclick="nav('teachers',{view:'form',id:'${t.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
+              <td><button class="btn-icon" title="Resetar PIN do Portal do Professor" onclick="resetarPinProfessor('${t.id}','${esc(t.first_name)} ${esc(t.last_name)}')"><i class="fa fa-key"></i></button></td>
               <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('teachers','${t.id}','teachers')"><i class="fa fa-trash"></i></button></td>
-            </tr>`).join(''):`<tr><td colspan="8"><div class="empty-state"><i class="fa fa-chalkboard-teacher"></i>Nenhum professor cadastrado</div></td></tr>`}
+            </tr>`).join(''):`<tr><td colspan="9"><div class="empty-state"><i class="fa fa-chalkboard-teacher"></i>Nenhum professor cadastrado</div></td></tr>`}
           </tbody>
         </table>
       </div>
     </div>
   `);
 };
+
+function copiarLinkProfessor(){
+  const box=$('prof-link-box');
+  box.select();
+  navigator.clipboard?.writeText(box.value).then(()=>showAlert('page-alert','Link copiado!','success')).catch(()=>document.execCommand('copy'));
+}
+
+async function resetarPinProfessor(teacherId,teacherName){
+  if(!confirm(`Resetar o PIN de ${teacherName}? Ele(a) vai precisar cadastrar um novo PIN no próximo acesso ao Portal do Professor, em todos os aparelhos.`))return;
+  const{error}=await sb.rpc('resetar_pin_professor',{p_teacher_id:teacherId});
+  if(error){showAlert('page-alert','Erro ao resetar PIN: '+error.message,'danger');return;}
+  showAlert('page-alert','PIN resetado com sucesso.','success');
+}
 
 async function teacherForm(id){
   let t={};
@@ -4315,6 +4357,190 @@ async function submeterNps(){
 }
 
 // ============================
+// PORTAL DO PROFESSOR (link único compartilhado + seleção de nome + PIN)
+// ============================
+// Não é um login de verdade (sem auth.users): todos os professores usam o
+// mesmo link público (?professor=1), escolhem o próprio nome numa lista e
+// confirmam um PIN de 4 dígitos (criado na primeira vez). O token de sessão
+// resultante fica salvo no localStorage deste aparelho, então só pede o PIN
+// de novo se for um dispositivo novo ou depois de um reset de PIN.
+let _profState={teacherId:null,teacherName:'',token:null};
+
+function profTokenKey(teacherId){return 'prof_token_'+teacherId;}
+
+async function initProfPage(){
+  $('login-page').style.display='none';
+  $('app').style.display='none';
+  $('prof-page').style.display='block';
+  await profRenderSelecao();
+}
+
+async function profRenderSelecao(){
+  $('prof-content').innerHTML=`<div class="loading"><i class="fa fa-spinner"></i></div>`;
+  const{data:professores=[],error}=await sb.rpc('listar_professores_portal');
+  if(error){
+    $('prof-content').innerHTML=`<div class="sign-card"><div class="sign-result err"><i class="fa fa-times-circle"></i><h3>Erro ao carregar</h3><p>${esc(error.message)}</p></div></div>`;
+    return;
+  }
+  $('prof-content').innerHTML=`
+    <div class="sign-card">
+      <div class="sign-card-head"><h3><i class="fa fa-user-check" style="color:var(--brand)"></i> Quem é você?</h3><p>Toque no seu nome para continuar</p></div>
+      <div style="padding:18px 22px">
+        <div class="prof-pick-list">
+          ${professores.map(p=>`<div class="prof-pick-card" onclick="profSelecionar('${p.id}','${esc(p.first_name)} ${esc(p.last_name)}')"><div class="t-avatar" style="margin:0 auto 8px">${avatar(p.first_name)}</div><strong>${esc(p.first_name)} ${esc(p.last_name)}</strong></div>`).join('')||'<div class="empty-state"><i class="fa fa-chalkboard-teacher"></i>Nenhum professor cadastrado ainda.</div>'}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function profSelecionar(teacherId,teacherName){
+  _profState={teacherId,teacherName,token:null};
+  const tokenSalvo=localStorage.getItem(profTokenKey(teacherId));
+  if(tokenSalvo){
+    _profState.token=tokenSalvo;
+    const{data,error}=await sb.rpc('professor_minhas_turmas',{p_teacher_id:teacherId,p_token:tokenSalvo});
+    if(!error){profRenderApp(data||[]);return;}
+    localStorage.removeItem(profTokenKey(teacherId));
+  }
+  profRenderPin();
+}
+
+async function profRenderPin(){
+  const{teacherId,teacherName}=_profState;
+  const{data:temPin}=await sb.rpc('professor_tem_pin',{p_teacher_id:teacherId});
+  $('prof-content').innerHTML=`
+    <div class="sign-card">
+      <div class="sign-card-head">
+        <h3><i class="fa fa-lock" style="color:var(--brand)"></i> Olá, ${esc(teacherName)}!</h3>
+        <p>${temPin?'Digite seu PIN de 4 dígitos para entrar.':'Primeira vez neste aparelho: crie um PIN de 4 dígitos. Você vai usar sempre para entrar.'}</p>
+      </div>
+      <div style="padding:20px 22px">
+        <input id="prof-pin" class="prof-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autofocus>
+        <div id="prof-pin-alert" class="alert" style="margin-top:12px"></div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px;margin-top:8px" onclick="profConfirmarPin()"><i class="fa fa-arrow-right"></i> ${temPin?'Entrar':'Criar PIN e entrar'}</button>
+        <button class="btn btn-default" style="width:100%;justify-content:center;margin-top:8px" onclick="profRenderSelecao()"><i class="fa fa-arrow-left"></i> Não é você? Voltar</button>
+      </div>
+    </div>
+  `;
+  $('prof-pin').focus();
+  $('prof-pin').addEventListener('keydown',e=>{if(e.key==='Enter')profConfirmarPin();});
+}
+
+async function profConfirmarPin(){
+  const pin=$('prof-pin').value.trim();
+  if(!/^\d{4}$/.test(pin)){showAlert('prof-pin-alert','O PIN deve ter exatamente 4 números.','danger');return;}
+  const{teacherId}=_profState;
+  const{data,error}=await sb.rpc('professor_portal_login',{p_teacher_id:teacherId,p_pin:pin});
+  if(error){showAlert('prof-pin-alert',error.message||'Erro ao entrar.','danger');return;}
+  const info=Array.isArray(data)?data[0]:data;
+  localStorage.setItem(profTokenKey(teacherId),info.token);
+  _profState.token=info.token;
+  const{data:turmas=[]}=await sb.rpc('professor_minhas_turmas',{p_teacher_id:teacherId,p_token:info.token});
+  profRenderApp(turmas);
+}
+
+function profSair(){
+  if(_profState.teacherId)localStorage.removeItem(profTokenKey(_profState.teacherId));
+  _profState={teacherId:null,teacherName:'',token:null};
+  profRenderSelecao();
+}
+
+function profRenderApp(turmas){
+  const minhas=turmas.filter(t=>t.is_own);
+  const outras=turmas.filter(t=>!t.is_own);
+  const cardTurma=t=>`<div class="prof-turma-card" onclick="profAbrirTurma('${t.id}','${esc(t.name)}')">
+    <div><strong>${esc(t.name)}</strong><div class="help-text" style="margin-top:2px">${esc(t.level)||''}${t.modalidade?' · '+esc(t.modalidade):''}${t.class_days?' · '+esc(t.class_days):''}${t.start_time?' '+t.start_time:''}</div></div>
+    <i class="fa fa-chevron-right" style="color:var(--gray-400)"></i>
+  </div>`;
+  $('prof-content').innerHTML=`
+    <div class="sign-card" style="margin-bottom:16px">
+      <div class="sign-card-head" style="display:flex;justify-content:space-between;align-items:center">
+        <div><h3><i class="fa fa-chalkboard-teacher" style="color:var(--brand)"></i> Olá, ${esc(_profState.teacherName)}!</h3><p>Escolha uma turma para registrar a aula</p></div>
+        <button class="btn btn-default btn-sm" onclick="profSair()"><i class="fa fa-right-from-bracket"></i> Trocar</button>
+      </div>
+      <div style="padding:18px 22px">
+        <strong style="font-size:12px;color:var(--gray-500);text-transform:uppercase">Suas turmas</strong>
+        <div style="margin-top:10px">${minhas.length?minhas.map(cardTurma).join(''):'<div class="empty-state" style="padding:16px"><i class="fa fa-chalkboard"></i>Nenhuma turma sua no momento.</div>'}</div>
+        ${outras.length?`<details style="margin-top:16px"><summary style="cursor:pointer;font-size:12px;color:var(--gray-500);text-transform:uppercase">Dar aula de substituição em outra turma</summary><div style="margin-top:10px">${outras.map(cardTurma).join('')}</div></details>`:''}
+      </div>
+    </div>
+  `;
+}
+
+async function profAbrirTurma(classId,className,date){
+  const selDate=date||new Date().toISOString().split('T')[0];
+  $('prof-content').innerHTML=`<div class="loading"><i class="fa fa-spinner"></i></div>`;
+  const{teacherId,token}=_profState;
+  const{data,error}=await sb.rpc('professor_turma_aula',{p_teacher_id:teacherId,p_token:token,p_class_id:classId,p_lesson_date:selDate});
+  if(error){
+    $('prof-content').innerHTML=`<div class="sign-card"><div class="sign-result err"><i class="fa fa-times-circle"></i><h3>Sessão expirada</h3><p>${esc(error.message)}</p></div></div><button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px" onclick="profRenderSelecao()"><i class="fa fa-arrow-left"></i> Voltar</button>`;
+    return;
+  }
+  const info=Array.isArray(data)?data[0]:data;
+  const alunos=info?.alunos||[];
+  const lessonId=info?.lesson_id||null;
+  $('prof-content').innerHTML=`
+    <div class="sign-card" style="margin-bottom:16px">
+      <div class="sign-card-head" style="display:flex;justify-content:space-between;align-items:center">
+        <div><h3><i class="fa fa-clipboard-check" style="color:var(--brand)"></i> ${esc(className)}</h3><p>${lessonId?'Editar aula':'Registrar aula'} — ${fdate(selDate)}</p></div>
+        <button class="btn btn-default btn-sm" onclick="profRenderVoltarTurmas()"><i class="fa fa-arrow-left"></i> Voltar</button>
+      </div>
+      <div style="padding:18px 22px">
+        <div class="form-row">
+          <div class="form-col"><label>Data da aula</label><input id="prof-aula-date" type="date" value="${selDate}" onchange="profAbrirTurma('${classId}','${esc(className)}',this.value)"></div>
+          <div class="form-col"><label>Status</label><select id="prof-aula-status">
+            ${Object.entries(LESSON_STATUS_UI).map(([k,l])=>`<option value="${k}" ${(info?.status||'realizada')===k?'selected':''}>${l}</option>`).join('')}
+          </select></div>
+        </div>
+        <div class="field"><label>Conteúdo ministrado</label><textarea id="prof-aula-content" placeholder="Ex: Present Simple — afirmativa e negativa">${esc(info?.content)}</textarea></div>
+        <div class="field"><label>Observações</label><textarea id="prof-aula-notes">${esc(info?.notes)}</textarea></div>
+      </div>
+    </div>
+    <div class="sign-card">
+      <div class="sign-card-head"><h3><i class="fa fa-user-graduate" style="color:var(--brand)"></i> Frequência dos alunos</h3></div>
+      <div class="table-wrap">
+        ${alunos.length?`<table><thead><tr><th>Aluno</th><th>Presença</th></tr></thead><tbody>${alunos.map(a=>`
+          <tr>
+            <td>${esc(a.first_name)} ${esc(a.last_name)}</td>
+            <td>
+              <select class="prof-presenca-select" data-student="${a.id}" style="padding:4px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px">
+                <option value="presente" ${a.status==='presente'?'selected':''}>✅ Presente</option>
+                <option value="ausente" ${a.status==='ausente'?'selected':''}>❌ Ausente</option>
+                <option value="justificado" ${a.status==='justificado'?'selected':''}>📋 Justificado</option>
+              </select>
+            </td>
+          </tr>`).join('')}</tbody></table>`:'<div class="empty-state" style="padding:20px"><i class="fa fa-user-graduate"></i>Nenhum aluno matriculado nesta turma</div>'}
+      </div>
+      <div id="prof-content-alert" class="alert" style="margin:0 22px"></div>
+      <div style="padding:16px 22px">
+        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="profSalvarAula('${classId}','${esc(className)}')" ${alunos.length?'':'disabled'}><i class="fa fa-save"></i> Salvar aula e frequência</button>
+      </div>
+    </div>
+  `;
+  _profState.turmaAtual={classId,className};
+}
+
+async function profRenderVoltarTurmas(){
+  const{teacherId,token}=_profState;
+  const{data:turmas=[]}=await sb.rpc('professor_minhas_turmas',{p_teacher_id:teacherId,p_token:token});
+  profRenderApp(turmas);
+}
+
+async function profSalvarAula(classId,className){
+  const date=$('prof-aula-date').value;
+  const status=$('prof-aula-status').value;
+  const content=$('prof-aula-content').value.trim();
+  const notes=$('prof-aula-notes').value.trim();
+  const presencas=[...document.querySelectorAll('.prof-presenca-select')].map(sel=>({student_id:sel.dataset.student,status:sel.value}));
+  const{teacherId,token}=_profState;
+  const{error}=await sb.rpc('professor_registrar_aula',{p_teacher_id:teacherId,p_token:token,p_class_id:classId,p_lesson_date:date,p_status:status,p_content:content||null,p_notes:notes||null,p_presencas:presencas});
+  if(error){showAlert('prof-content-alert',error.message||'Erro ao salvar aula.','danger');return;}
+  showAlert('prof-content-alert','Aula e frequência salvas com sucesso!','success');
+  setTimeout(()=>profAbrirTurma(classId,className,date),900);
+}
+
+// ============================
 // RELATÓRIOS DE FREQUÊNCIA
 // ============================
 pages.relatorios=async function(){
@@ -4647,6 +4873,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   if(portalToken){initPortalPage(portalToken);return;}
   const npsToken=new URLSearchParams(location.search).get('nps');
   if(npsToken){initNpsPage(npsToken);return;}
+  const profPortal=new URLSearchParams(location.search).get('professor');
+  if(profPortal){initProfPage();return;}
   document.addEventListener('keydown',e=>{if(e.key==='Enter'&&$('login-page').style.display!=='none')doLogin();});
   initAuth();
 });

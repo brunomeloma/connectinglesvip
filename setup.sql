@@ -2093,3 +2093,147 @@ AS $$ BEGIN
   IF NOT has_role(ARRAY['super_admin','direcao','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
   DELETE FROM class_lessons WHERE id = p_lesson_id;
 END; $$;
+
+
+-- #####################################################################
+-- 30. PORTAL DO PROFESSOR (link público único + seleção de nome + PIN)
+-- #####################################################################
+-- Em vez de um login individual por professor (email/senha), todos usam
+-- o MESMO link público (?professor=1). O professor escolhe o próprio
+-- nome numa lista e confirma um PIN de 4 dígitos — criado na primeira
+-- vez que ele usa o link, só pra evitar que alguém escolha o nome de
+-- outro colega por engano/brincadeira. O token de sessão fica salvo no
+-- localStorage do aparelho, então só pede o PIN de novo num aparelho
+-- novo (ou depois de um reset de PIN pela secretaria/admin).
+-- Não usa auth.users — por isso todas as RPCs aqui validam a sessão
+-- manualmente (teacher_id + token) em vez de auth.uid()/has_role.
+
+ALTER TABLE teachers ADD COLUMN IF NOT EXISTS access_pin_hash text;
+
+CREATE TABLE IF NOT EXISTS professor_portal_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  teacher_id uuid NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+  token text NOT NULL UNIQUE,
+  created_at timestamptz DEFAULT now(),
+  last_used_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_pps_teacher ON professor_portal_sessions(teacher_id);
+
+ALTER TABLE professor_portal_sessions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "pps_select" ON professor_portal_sessions;
+CREATE POLICY "pps_select" ON professor_portal_sessions FOR SELECT USING (has_role(ARRAY['super_admin','direcao']));
+-- Sem policies de insert/update/delete diretas: só é possível escrever
+-- aqui através das RPCs SECURITY DEFINER abaixo.
+
+-- Helper interno — confere se teacher_id+token corresponde a uma sessão válida.
+CREATE OR REPLACE FUNCTION _professor_sessao_valida(p_teacher_id uuid, p_token text)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$ SELECT EXISTS(SELECT 1 FROM professor_portal_sessions WHERE teacher_id=p_teacher_id AND token=p_token); $$;
+
+-- PÚBLICA — lista de professores ativos, pra tela de "quem é você?".
+CREATE OR REPLACE FUNCTION listar_professores_portal()
+RETURNS TABLE(id uuid, first_name text, last_name text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$ SELECT id, first_name, last_name FROM teachers WHERE status = true ORDER BY first_name; $$;
+
+-- PÚBLICA — diz se o professor já tem PIN cadastrado (pra UI decidir o texto certo).
+CREATE OR REPLACE FUNCTION professor_tem_pin(p_teacher_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$ SELECT access_pin_hash IS NOT NULL FROM teachers WHERE id = p_teacher_id AND status = true; $$;
+
+-- PÚBLICA — login por PIN. Se for a primeira vez (sem PIN cadastrado),
+-- o PIN informado vira o PIN definitivo do professor.
+CREATE OR REPLACE FUNCTION professor_portal_login(p_teacher_id uuid, p_pin text)
+RETURNS TABLE(token text, first_name text, last_name text, pin_criado boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_teacher teachers%ROWTYPE; v_token text; v_criado boolean := false; BEGIN
+  IF p_pin !~ '^[0-9]{4}$' THEN RAISE EXCEPTION 'O PIN deve ter exatamente 4 dígitos'; END IF;
+  SELECT * INTO v_teacher FROM teachers WHERE id = p_teacher_id AND status = true;
+  IF v_teacher IS NULL THEN RAISE EXCEPTION 'Professor não encontrado'; END IF;
+
+  IF v_teacher.access_pin_hash IS NULL THEN
+    UPDATE teachers SET access_pin_hash = extensions.crypt(p_pin, extensions.gen_salt('bf')) WHERE id = p_teacher_id;
+    v_criado := true;
+  ELSIF v_teacher.access_pin_hash <> extensions.crypt(p_pin, v_teacher.access_pin_hash) THEN
+    RAISE EXCEPTION 'PIN incorreto';
+  END IF;
+
+  v_token := replace(gen_random_uuid()::text,'-','') || replace(gen_random_uuid()::text,'-','');
+  INSERT INTO professor_portal_sessions (teacher_id, token) VALUES (p_teacher_id, v_token);
+
+  RETURN QUERY SELECT v_token, v_teacher.first_name, v_teacher.last_name, v_criado;
+END; $$;
+
+-- PÚBLICA — turmas visíveis ao professor logado: as suas primeiro
+-- (is_own=true), depois as demais (pra permitir dar aula de substituição).
+CREATE OR REPLACE FUNCTION professor_minhas_turmas(p_teacher_id uuid, p_token text)
+RETURNS TABLE(id uuid, name text, level text, modalidade text, class_days text, start_time text, end_time text, is_own boolean)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT _professor_sessao_valida(p_teacher_id, p_token) THEN RAISE EXCEPTION 'Sessão inválida. Volte e faça login novamente.'; END IF;
+  RETURN QUERY
+    SELECT c.id, c.name::text, c.level, c.modalidade, c.class_days, c.start_time, c.end_time,
+      (c.teacher_id = p_teacher_id)
+    FROM classes c
+    WHERE c.status = true
+    ORDER BY (c.teacher_id = p_teacher_id) DESC, c.name;
+END; $$;
+
+-- PÚBLICA — dados da aula de uma turma numa data (lançamento existente,
+-- se houver) + lista de alunos matriculados com a presença atual.
+CREATE OR REPLACE FUNCTION professor_turma_aula(p_teacher_id uuid, p_token text, p_class_id uuid, p_lesson_date date)
+RETURNS TABLE(lesson_id uuid, status text, content text, notes text, alunos jsonb)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_lesson class_lessons%ROWTYPE; BEGIN
+  IF NOT _professor_sessao_valida(p_teacher_id, p_token) THEN RAISE EXCEPTION 'Sessão inválida. Volte e faça login novamente.'; END IF;
+  SELECT * INTO v_lesson FROM class_lessons WHERE class_id=p_class_id AND lesson_date=p_lesson_date;
+  RETURN QUERY
+    SELECT v_lesson.id, COALESCE(v_lesson.status,'realizada'), v_lesson.content, v_lesson.notes,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object(
+          'id', s.id, 'first_name', s.first_name, 'last_name', s.last_name,
+          'status', COALESCE(a.status, 'presente')
+        ) ORDER BY s.first_name)
+        FROM students s
+        LEFT JOIN attendance a ON a.student_id = s.id AND a.class_id = p_class_id AND a.date = p_lesson_date
+        WHERE s.class_id = p_class_id AND s.status = true), '[]'::jsonb);
+END; $$;
+
+-- PÚBLICA — registra/atualiza a aula e a frequência via portal do professor.
+-- teacher_id sempre recebe quem está logado no portal (não o titular da
+-- turma) — é o que faz a regra de substituição funcionar: o pagamento
+-- (seção 31) sempre segue quem efetivamente deu a aula.
+CREATE OR REPLACE FUNCTION professor_registrar_aula(
+  p_teacher_id uuid, p_token text, p_class_id uuid, p_lesson_date date,
+  p_status text DEFAULT 'realizada', p_content text DEFAULT NULL, p_notes text DEFAULT NULL,
+  p_presencas jsonb DEFAULT '[]'::jsonb
+) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_id uuid; r jsonb; BEGIN
+  IF NOT _professor_sessao_valida(p_teacher_id, p_token) THEN RAISE EXCEPTION 'Sessão inválida. Volte e faça login novamente.'; END IF;
+  IF p_status NOT IN ('realizada','cancelada','remarcada') THEN RAISE EXCEPTION 'Status de aula inválido'; END IF;
+
+  INSERT INTO class_lessons (class_id, lesson_date, teacher_id, status, content, notes)
+  VALUES (p_class_id, p_lesson_date, p_teacher_id, p_status, p_content, p_notes)
+  ON CONFLICT (class_id, lesson_date) DO UPDATE SET
+    teacher_id = p_teacher_id, status = EXCLUDED.status, content = EXCLUDED.content,
+    notes = EXCLUDED.notes, updated_at = now()
+  RETURNING id INTO v_id;
+
+  FOR r IN SELECT * FROM jsonb_array_elements(p_presencas) LOOP
+    INSERT INTO attendance (class_id, student_id, date, status, lesson_id, confirmed)
+    VALUES (p_class_id, (r->>'student_id')::uuid, p_lesson_date, r->>'status', v_id, true)
+    ON CONFLICT (class_id, student_id, date) DO UPDATE SET
+      status = EXCLUDED.status, lesson_id = EXCLUDED.lesson_id, confirmed = true;
+  END LOOP;
+
+  RETURN v_id;
+END; $$;
+
+-- Admin/secretaria — reseta o PIN de um professor (ex: esqueceu o PIN)
+-- e derruba as sessões ativas dele em todos os aparelhos.
+CREATE OR REPLACE FUNCTION resetar_pin_professor(p_teacher_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  UPDATE teachers SET access_pin_hash = NULL WHERE id = p_teacher_id;
+  DELETE FROM professor_portal_sessions WHERE teacher_id = p_teacher_id;
+END; $$;
