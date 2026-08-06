@@ -2083,14 +2083,18 @@ AS $$ DECLARE v_id uuid; v_conflict uuid; BEGIN
     RETURNING id INTO v_id;
   END IF;
 
+  PERFORM sync_pagamento_aula(v_id);
   RETURN v_id;
 END; $$;
 
--- Excluir um registro de aula lançado errado (não desfaz pagamentos já confirmados)
+-- Excluir um registro de aula lançado errado (não desfaz pagamentos já confirmados:
+-- se já existir lançamento de pagamento pago vinculado, ele só é desvinculado,
+-- não apagado; se ainda não foi pago, o lançamento automático some junto).
 CREATE OR REPLACE FUNCTION deletar_aula_turma(p_lesson_id uuid)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
   IF NOT has_role(ARRAY['super_admin','direcao','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  DELETE FROM teacher_lessons WHERE class_lesson_id = p_lesson_id AND paid IS NOT TRUE;
   DELETE FROM class_lessons WHERE id = p_lesson_id;
 END; $$;
 
@@ -2225,6 +2229,7 @@ AS $$ DECLARE v_id uuid; r jsonb; BEGIN
       status = EXCLUDED.status, lesson_id = EXCLUDED.lesson_id, confirmed = true;
   END LOOP;
 
+  PERFORM sync_pagamento_aula(v_id);
   RETURN v_id;
 END; $$;
 
@@ -2236,4 +2241,73 @@ AS $$ BEGIN
   IF NOT has_role(ARRAY['super_admin','direcao','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
   UPDATE teachers SET access_pin_hash = NULL WHERE id = p_teacher_id;
   DELETE FROM professor_portal_sessions WHERE teacher_id = p_teacher_id;
+END; $$;
+
+
+-- #####################################################################
+-- 31. AUTOMAÇÃO DE PAGAMENTO — lançar horas ao registrar a aula
+-- #####################################################################
+-- Antes, a secretaria lançava a aula em class_lessons e DEPOIS lançava
+-- o pagamento do professor separado em teacher_lessons — trabalho em
+-- dobro e risco de esquecer. Agora, toda vez que uma aula é registrada
+-- (pela equipe ou pelo próprio professor no portal), o sistema já joga
+-- as horas automaticamente no extrato de pagamento do professor que
+-- efetivamente ministrou (class_lessons.teacher_id) — mesmo que seja
+-- diferente do titular da turma (classes.teacher_id), o que cobre a
+-- regra de substituição: o pagamento sempre segue quem deu a aula.
+--
+-- class_lesson_id liga 1-para-1 um lançamento automático de
+-- teacher_lessons ao class_lessons que o originou (índice único
+-- parcial permite, ao mesmo tempo, muitos lançamentos manuais antigos
+-- com class_lesson_id NULL). Reeditar/apagar a aula atualiza/remove
+-- esse lançamento automaticamente — mas NUNCA mexe num lançamento que
+-- já foi marcado como pago (paid=true), pra não bagunçar um pagamento
+-- já confirmado.
+
+ALTER TABLE teacher_lessons ADD COLUMN IF NOT EXISTS class_lesson_id uuid REFERENCES class_lessons(id) ON DELETE SET NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tl_class_lesson_unique ON teacher_lessons(class_lesson_id) WHERE class_lesson_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION sync_pagamento_aula(p_lesson_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_lesson class_lessons%ROWTYPE;
+  v_class classes%ROWTYPE;
+  v_existing teacher_lessons%ROWTYPE;
+  v_hours numeric(4,2);
+  v_lesson_type text;
+  v_tl_status text;
+  v_counts boolean;
+BEGIN
+  SELECT * INTO v_lesson FROM class_lessons WHERE id = p_lesson_id;
+  IF v_lesson IS NULL OR v_lesson.teacher_id IS NULL THEN RETURN; END IF;
+
+  SELECT * INTO v_class FROM classes WHERE id = v_lesson.class_id;
+  IF v_class IS NULL THEN RETURN; END IF;
+
+  SELECT * INTO v_existing FROM teacher_lessons WHERE class_lesson_id = p_lesson_id;
+  IF v_existing.paid IS TRUE THEN RETURN; END IF;
+
+  BEGIN
+    v_hours := GREATEST(0.5, ROUND(EXTRACT(EPOCH FROM (v_class.end_time::time - v_class.start_time::time)) / 3600.0, 2));
+  EXCEPTION WHEN OTHERS THEN
+    v_hours := NULL;
+  END;
+  IF v_hours IS NULL OR v_hours <= 0 THEN v_hours := 1; END IF;
+
+  v_lesson_type := CASE WHEN v_lesson.teacher_id IS DISTINCT FROM v_class.teacher_id THEN 'substituicao' ELSE 'aula_normal' END;
+
+  IF v_lesson.status = 'realizada' THEN
+    v_tl_status := 'realizada'; v_counts := true;
+  ELSE
+    v_tl_status := 'cancelada'; v_counts := false;
+  END IF;
+
+  INSERT INTO teacher_lessons (class_id, teacher_id, actual_teacher_id, lesson_date, lesson_type, status, hours, counts_for_payment, class_lesson_id)
+  VALUES (v_lesson.class_id, v_lesson.teacher_id, v_lesson.teacher_id, v_lesson.lesson_date, v_lesson_type, v_tl_status, v_hours, v_counts, p_lesson_id)
+  ON CONFLICT (class_lesson_id) WHERE class_lesson_id IS NOT NULL DO UPDATE SET
+    teacher_id = EXCLUDED.teacher_id, actual_teacher_id = EXCLUDED.actual_teacher_id,
+    lesson_date = EXCLUDED.lesson_date, lesson_type = EXCLUDED.lesson_type,
+    status = EXCLUDED.status, hours = EXCLUDED.hours, counts_for_payment = EXCLUDED.counts_for_payment
+  WHERE teacher_lessons.paid IS NOT TRUE;
 END; $$;
