@@ -2199,7 +2199,13 @@ async function classTabAula(c,alunos,classId,date,header,totalEncontros=0){
       <div class="panel-head"><span class="panel-title"><i class="fa fa-clipboard-check" style="color:var(--brand)"></i> ${lesson?'Editar aula':'Registrar aula'} — ${fdate(selDate)}</span>${encontroBadge(totalEncontros)}</div>
       <div class="panel-body">
         <div class="form-row">
-          <div class="form-col"><label>Data da aula <span class="required">*</span></label><input id="aula-date" type="date" value="${selDate}" onchange="nav('classes',{view:'detail',id:'${classId}',tab:'aula',date:this.value})"></div>
+          <div class="form-col"><label>Data da aula <span class="required">*</span></label>
+            <div style="display:flex;gap:6px">
+              <input id="aula-date" type="date" value="${selDate}">
+              <button type="button" class="btn btn-default btn-sm" title="Ver/lançar aula de outra data" onclick="nav('classes',{view:'detail',id:'${classId}',tab:'aula',date:$('aula-date').value})"><i class="fa fa-magnifying-glass"></i></button>
+            </div>
+            ${lesson?'<div class="help-text">Alterar a data aqui e salvar move esta mesma aula para a nova data. Use a lupa só para ver/lançar a aula de outro dia sem mexer nesta.</div>':''}
+          </div>
           <div class="form-col"><label>Professor que ministrou</label><select id="aula-teacher"><option value="">Não definido</option>${tOpts}</select></div>
           <div class="form-col"><label>Status da aula</label><select id="aula-status">
             ${Object.entries(LESSON_STATUS_UI).map(([k,l])=>`<option value="${k}" ${statusAula===k?'selected':''}>${l}</option>`).join('')}
@@ -2227,27 +2233,37 @@ async function classTabAula(c,alunos,classId,date,header,totalEncontros=0){
             </td>
           </tr>`}).join('')}</tbody></table>`:'<div class="empty-state" style="padding:20px"><i class="fa fa-user-graduate"></i>Nenhum aluno matriculado nesta turma</div>'}
       </div>
-      <div class="panel-footer">
-        <button class="btn btn-primary" onclick="salvarAulaEFrequencia('${classId}','${selDate}')" ${alunos.length?'':'disabled'}><i class="fa fa-save"></i> Salvar aula e frequência</button>
+      <div class="panel-footer" style="display:flex;justify-content:space-between">
+        <div>${(lesson&&(isAdmin()||isSecretaria()))?`<button class="btn btn-danger" onclick="excluirAulaTurma('${classId}','${lesson.id}','${selDate}')"><i class="fa fa-trash"></i> Excluir esta aula</button>`:''}</div>
+        <button class="btn btn-primary" onclick="salvarAulaEFrequencia('${classId}','${lesson?.id||''}')" ${alunos.length?'':'disabled'}><i class="fa fa-save"></i> Salvar aula e frequência</button>
       </div>
     </div>
   `);
 }
 
-async function salvarAulaEFrequencia(classId,date){
+async function salvarAulaEFrequencia(classId,lessonId){
+  const date=$('aula-date').value;
   const teacherId=$('aula-teacher').value||null;
   const status=$('aula-status').value;
   const content=$('aula-content').value.trim();
   const notes=$('aula-notes').value.trim();
-  const{data:lessonId,error:e1}=await sb.rpc('registrar_aula_turma',{p_class_id:classId,p_lesson_date:date,p_teacher_id:teacherId,p_status:status,p_content:content||null,p_notes:notes||null});
+  const{data:newLessonId,error:e1}=await sb.rpc('registrar_aula_turma',{p_class_id:classId,p_lesson_date:date,p_teacher_id:teacherId,p_status:status,p_content:content||null,p_notes:notes||null,p_lesson_id:lessonId||null});
   if(e1){showAlert('page-alert','Erro ao salvar aula: '+e1.message,'danger');return;}
   const rows=[...document.querySelectorAll('.aula-presenca-select')].map(sel=>({student_id:sel.dataset.student,status:sel.value}));
   if(rows.length){
-    const{error:e2}=await sb.rpc('salvar_frequencia_aula',{p_lesson_id:lessonId,p_rows:rows});
+    const{error:e2}=await sb.rpc('salvar_frequencia_aula',{p_lesson_id:newLessonId,p_rows:rows});
     if(e2){showAlert('page-alert','Erro ao salvar frequência: '+e2.message,'danger');return;}
   }
   await pages.classes({view:'detail',id:classId,tab:'aula',date});
   showAlert('page-alert','Aula e frequência salvas com sucesso!','success');
+}
+
+async function excluirAulaTurma(classId,lessonId,date){
+  if(!confirm(`Excluir o registro da aula de ${fdate(date)}? Isso apaga também as presenças lançadas nessa aula. Esta ação não pode ser desfeita.`))return;
+  const{error}=await sb.rpc('deletar_aula_turma',{p_lesson_id:lessonId});
+  if(error){showAlert('page-alert','Erro ao excluir aula: '+error.message,'danger');return;}
+  await pages.classes({view:'detail',id:classId,tab:'aula',date});
+  showAlert('page-alert','Aula excluída com sucesso.','success');
 }
 
 async function classTabHistorico(classId,header){
@@ -2265,7 +2281,10 @@ async function classTabHistorico(classId,header){
               <td><span class="badge status-badge-${l.status}">${LESSON_STATUS_UI[l.status]||esc(l.status)}</span></td>
               <td style="max-width:280px;white-space:normal">${esc(l.content)||'—'}</td>
               <td style="white-space:nowrap">✅ ${l.total_presentes} &nbsp;❌ ${l.total_ausentes} &nbsp;📋 ${l.total_justificados} <span style="color:var(--gray-500)">/ ${l.total_alunos}</span></td>
-              <td><button class="btn btn-default btn-sm" onclick="nav('classes',{view:'detail',id:'${classId}',tab:'aula',date:'${l.lesson_date}'})"><i class="fa fa-pencil-alt"></i> Ver/Editar</button></td>
+              <td style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="btn btn-default btn-sm" onclick="nav('classes',{view:'detail',id:'${classId}',tab:'aula',date:'${l.lesson_date}'})"><i class="fa fa-pencil-alt"></i> Ver/Editar</button>
+                ${(isAdmin()||isSecretaria())?`<button class="btn btn-danger btn-sm" onclick="excluirAulaTurma('${classId}','${l.id}','${l.lesson_date}')"><i class="fa fa-trash"></i></button>`:''}
+              </td>
             </tr>`).join('')}
           </tbody>
         </table>`:`<div class="empty-state"><i class="fa fa-history"></i>Nenhuma aula registrada ainda.</div>`}

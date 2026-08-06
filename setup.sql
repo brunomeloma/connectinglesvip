@@ -2039,3 +2039,57 @@ AS $$ BEGIN
     WHERE cl.status = 'realizada'
     GROUP BY cl.class_id;
 END; $$;
+
+
+-- #####################################################################
+-- 29. CORREÇÃO: EDIÇÃO DE AULA (UPDATE em vez de duplicar) + EXCLUSÃO
+-- #####################################################################
+-- Antes, editar a data de uma aula existente sempre fazia
+-- INSERT ... ON CONFLICT(class_id, lesson_date), então trocar a data
+-- "perdia" a identidade do registro original e criava um novo em vez
+-- de mover/atualizar o existente. Agora, quando p_lesson_id é
+-- informado, o registro é atualizado (UPDATE) diretamente por id,
+-- inclusive quando a data muda.
+
+CREATE OR REPLACE FUNCTION registrar_aula_turma(
+  p_class_id uuid, p_lesson_date date, p_teacher_id uuid DEFAULT NULL,
+  p_status text DEFAULT 'realizada', p_content text DEFAULT NULL, p_notes text DEFAULT NULL,
+  p_lesson_id uuid DEFAULT NULL
+) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_id uuid; v_conflict uuid; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria','professor']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF p_status NOT IN ('realizada','cancelada','remarcada') THEN RAISE EXCEPTION 'Status de aula inválido'; END IF;
+
+  IF p_lesson_id IS NOT NULL THEN
+    SELECT id INTO v_conflict FROM class_lessons WHERE class_id=p_class_id AND lesson_date=p_lesson_date AND id<>p_lesson_id;
+    IF v_conflict IS NOT NULL THEN
+      RAISE EXCEPTION 'Já existe uma aula registrada nesta data para esta turma. Edite aquela aula ou escolha outra data.';
+    END IF;
+    UPDATE class_lessons SET
+      lesson_date=p_lesson_date, teacher_id=p_teacher_id, status=p_status,
+      content=p_content, notes=p_notes, updated_at=now()
+    WHERE id=p_lesson_id
+    RETURNING id INTO v_id;
+    IF v_id IS NULL THEN RAISE EXCEPTION 'Aula não encontrada'; END IF;
+    -- Se a data mudou, remove presenças órfãs lançadas na data antiga
+    -- (salvar_frequencia_aula recria tudo na data nova logo em seguida).
+    DELETE FROM attendance WHERE lesson_id=p_lesson_id AND date<>p_lesson_date;
+  ELSE
+    INSERT INTO class_lessons (class_id, lesson_date, teacher_id, status, content, notes, created_by)
+    VALUES (p_class_id, p_lesson_date, p_teacher_id, p_status, p_content, p_notes, auth.uid())
+    ON CONFLICT (class_id, lesson_date) DO UPDATE SET
+      teacher_id=EXCLUDED.teacher_id, status=EXCLUDED.status, content=EXCLUDED.content,
+      notes=EXCLUDED.notes, updated_at=now()
+    RETURNING id INTO v_id;
+  END IF;
+
+  RETURN v_id;
+END; $$;
+
+-- Excluir um registro de aula lançado errado (não desfaz pagamentos já confirmados)
+CREATE OR REPLACE FUNCTION deletar_aula_turma(p_lesson_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  DELETE FROM class_lessons WHERE id = p_lesson_id;
+END; $$;
