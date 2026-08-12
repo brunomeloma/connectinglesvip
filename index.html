@@ -1777,7 +1777,12 @@ pages.students=async function({view,id}={}){
   const[{data:classes=[]},{data:schools=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true)]);
   let q=sb.from('students').select('*,class:classes(name)').order('created_at',{ascending:false});
   if(name) q=q.or(`first_name.ilike.%${name}%,last_name.ilike.%${name}%`);
-  if(classId) q=q.eq('class_id',classId);
+  if(classId){
+    // Filtra por QUALQUER turma do aluno (não só a regular/principal),
+    // pra achar também quem está matriculado só como turma extra (ex: Conversação).
+    const{data:matriculados=[]}=await sb.rpc('get_turma_alunos',{p_class_id:classId});
+    q=q.in('id',matriculados.map(a=>a.id).length?matriculados.map(a=>a.id):['00000000-0000-0000-0000-000000000000']);
+  }
   if(status==='1') q=q.eq('status',true);
   if(status==='0') q=q.eq('status',false);
   const{data=[]}=await q;
@@ -1826,9 +1831,10 @@ pages.students=async function({view,id}={}){
 
 async function studentFrequencia(id){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const[{data:s},{data:rows=[],error}]=await Promise.all([
+  const[{data:s},{data:rows=[],error},{data:turmas=[]}]=await Promise.all([
     sb.from('students').select('id,first_name,last_name,class:classes(name)').eq('id',id).single(),
     sb.rpc('get_frequencia_aluno',{p_student_id:id}),
+    sb.rpc('get_turmas_aluno',{p_student_id:id}),
   ]);
   if(!s){nav('students');return;}
   const totalAulas=rows.length;
@@ -1848,8 +1854,13 @@ async function studentFrequencia(id){
       <div class="stat-card c-brown"><i class="fa fa-percentage stat-icon"></i><div><div class="stat-num">${pct}%</div><div class="stat-label">Frequência</div></div></div>
     </div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">Turma atual</span><button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${id}'})"><i class="fa fa-pencil-alt"></i> Editar aluno</button></div>
-      <div class="panel-body"><p><strong>Turma:</strong> ${esc(s.class?.name)||'Nenhuma'}</p></div>
+      <div class="panel-head"><span class="panel-title">Turmas</span><button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${id}'})"><i class="fa fa-pencil-alt"></i> Editar aluno</button></div>
+      <div class="panel-body">
+        ${turmas.length?turmas.map(t=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          ${t.is_principal?'<span class="badge badge-primary">Regular</span>':'<span class="badge badge-secondary">Extra</span>'}
+          <span>${esc(t.class_name)}</span>${t.level?`<span style="color:var(--gray-500);font-size:12px">${esc(t.level)}</span>`:''}
+        </div>`).join(''):'<p style="color:var(--gray-500)">Nenhuma turma no momento.</p>'}
+      </div>
     </div>
     <div class="panel">
       <div class="panel-head"><span class="panel-title">Aulas registradas</span></div>
@@ -1942,6 +1953,12 @@ async function saveStudent(id){
   const doj=$('f-doj').value;
   const mobile=$('f-mobile').value.trim();
   if(!fn||!ln||!doj||!mobile){showAlert('page-alert','Preencha os campos obrigatórios.','danger');return;}
+  const novaTurmaId=$('f-class').value||null;
+  let turmaAnteriorId=null;
+  if(id){
+    const{data:atual}=await sb.from('students').select('class_id').eq('id',id).single();
+    turmaAnteriorId=atual?.class_id||null;
+  }
   const payload={
     first_name:fn,last_name:ln,
     gender:$('f-gender').value||null,
@@ -1950,7 +1967,6 @@ async function saveStudent(id){
     mobile_number:mobile,
     address:$('f-address').value,
     school_id:$('f-school').value||null,
-    class_id:$('f-class').value||null,
     modalidade:$('f-modalidade').value||null,
     level:$('f-level').value||null,
     note:$('f-note').value,
@@ -1973,6 +1989,20 @@ async function saveStudent(id){
     studentId=r.data?.id;
   }
   if(err){showAlert('page-alert','Erro: '+err.message,'danger');return;}
+
+  // Turma regular (principal) é gerenciada via matrícula, não escrita direto
+  // — assim uma troca aqui encerra a matrícula antiga em vez de deixar duas
+  // turmas "regulares" ativas ao mesmo tempo. Outras turmas do aluno
+  // (ex: Conversação) não são afetadas por este campo.
+  if(novaTurmaId!==turmaAnteriorId){
+    if(turmaAnteriorId){
+      await sb.rpc('desmatricular_aluno_turma',{p_student_id:studentId,p_class_id:turmaAnteriorId});
+    }
+    if(novaTurmaId){
+      const{error:eMat}=await sb.rpc('matricular_aluno_turma',{p_student_id:studentId,p_class_id:novaTurmaId,p_principal:true});
+      if(eMat){showAlert('page-alert','Aluno salvo, mas houve erro ao definir a turma: '+eMat.message,'danger');return;}
+    }
+  }
 
   const arquivo=$('f-parent-comprovante')?.files[0];
   const link=$('f-parent-comprovante-link')?.value?.trim();
@@ -2211,15 +2241,19 @@ async function classDetail(classId,tab='info',date){
     <div class="panel">
       <div class="panel-head"><span class="panel-title">Alunos matriculados</span></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Aluno</th><th>Modalidade</th><th>Celular</th><th>WhatsApp</th><th>Nível</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Aluno</th><th>Modalidade</th><th>Celular</th><th>WhatsApp</th><th>Nível</th><th>Turma</th><th>Ações</th></tr></thead>
         <tbody>${alunos.length?alunos.map(a=>`<tr>
           <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${esc(a.first_name)} ${esc(a.last_name)}</strong></div></td>
           <td>${modalidade_badge(a.modalidade)}</td>
           <td>${esc(a.mobile_number)||'—'}</td>
           <td>${esc(a.whatsapp)||'—'}</td>
           <td>${level_badge(a.level)}</td>
-          <td><button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${a.id}'})"><i class="fa fa-pencil-alt"></i> Editar</button></td>
-        </tr>`).join(''):'<tr><td colspan="6"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno matriculado</div></td></tr>'}
+          <td>${a.is_principal?'<span class="badge badge-primary">Regular</span>':'<span class="badge badge-secondary">Extra</span>'}</td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${a.id}'})"><i class="fa fa-pencil-alt"></i> Editar</button>
+            ${(isAdmin()||canManageBilling())?`<button class="btn-icon" style="color:var(--danger)" onclick="removerAlunoDaTurma('${a.id}','${classId}','${esc(a.first_name)} ${esc(a.last_name)}')" title="Remover desta turma"><i class="fa fa-user-minus"></i></button>`:''}
+          </td>
+        </tr>`).join(''):'<tr><td colspan="7"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno matriculado</div></td></tr>'}
         </tbody>
       </table></div>
       ${(isAdmin()||canManageBilling())?`<div class="panel-footer">
@@ -2393,17 +2427,26 @@ function filtrarAddAluno(){
   results.innerHTML=`<div class="aluno-suggest-list" style="position:static;max-height:260px;box-shadow:none;border-top:1px solid var(--gray-200)">
     ${encontrados.map(a=>`<div class="aluno-suggest-item" style="display:flex;justify-content:space-between;align-items:center" onclick="vincularAlunoATurma('${a.id}')">
       <span>${esc(a.first_name)} ${esc(a.last_name)}</span>
-      ${a.class_id?'<span class="badge badge-secondary" style="font-size:10px">já tem turma — será remanejado</span>':''}
+      ${a.class_id?'<span class="badge badge-secondary" style="font-size:10px">já tem outra turma — será adicionado também nesta</span>':''}
     </div>`).join('')}
   </div>
   <button class="btn btn-default btn-sm" style="width:100%;justify-content:center;margin-top:8px" onclick="abrirCadastroRapidoAluno()"><i class="fa fa-user-plus"></i> Não achou? Cadastrar novo aluno</button>`;
 }
 
+// Matricula o aluno nesta turma via RPC (não sobrescreve outras turmas
+// que ele já tenha — só vira a "principal" se ele ainda não tiver nenhuma).
 async function vincularAlunoATurma(studentId){
   const{classId}=_addAlunoCtx;
-  const{error}=await sb.from('students').update({class_id:classId}).eq('id',studentId);
+  const{error}=await sb.rpc('matricular_aluno_turma',{p_student_id:studentId,p_class_id:classId});
   if(error){alert('Erro ao vincular aluno: '+error.message);return;}
   closeAddAlunoModal();
+  await pages.classes({view:'detail',id:classId});
+}
+
+async function removerAlunoDaTurma(studentId,classId,nome){
+  if(!confirm(`Remover ${nome} desta turma? As outras turmas dele(a), se houver, não são afetadas.`))return;
+  const{error}=await sb.rpc('desmatricular_aluno_turma',{p_student_id:studentId,p_class_id:classId});
+  if(error){alert('Erro ao remover aluno da turma: '+error.message);return;}
   await pages.classes({view:'detail',id:classId});
 }
 
@@ -2431,11 +2474,13 @@ async function salvarCadastroRapidoAluno(){
   const mobile=$('qa-mobile').value.trim();
   if(!fn||!ln||!mobile){showAlert('addaluno-alert','Preencha nome, sobrenome e celular.','danger');return;}
   const{classId}=_addAlunoCtx;
-  const{error}=await sb.from('students').insert({
+  const{data:novo,error}=await sb.from('students').insert({
     first_name:fn,last_name:ln,mobile_number:mobile,
-    class_id:classId,date_joining:new Date().toISOString().split('T')[0],status:true,
-  });
+    date_joining:new Date().toISOString().split('T')[0],status:true,
+  }).select('id').single();
   if(error){showAlert('addaluno-alert','Erro ao cadastrar: '+error.message,'danger');return;}
+  const{error:eMatricula}=await sb.rpc('matricular_aluno_turma',{p_student_id:novo.id,p_class_id:classId});
+  if(eMatricula){showAlert('addaluno-alert','Aluno cadastrado, mas houve erro ao matricular na turma: '+eMatricula.message,'danger');return;}
   closeAddAlunoModal();
   await pages.classes({view:'detail',id:classId});
 }

@@ -2337,3 +2337,178 @@ BEGIN
     status = EXCLUDED.status, hours = EXCLUDED.hours, counts_for_payment = EXCLUDED.counts_for_payment
   WHERE teacher_lessons.paid IS NOT TRUE;
 END; $$;
+
+
+-- #####################################################################
+-- 32. MATRÍCULA N:N — um aluno pode estar em várias turmas ao mesmo tempo
+-- #####################################################################
+-- Antes, students.class_id era uma FK única (1 aluno = no máximo 1
+-- turma), então "adicionar" um aluno numa segunda turma (ex: Turma de
+-- Conversação) sobrescrevia a turma regular dele. Agora existe a tabela
+-- de matrícula class_enrollments (N:N de verdade): um aluno pode ter
+-- várias matrículas ativas ao mesmo tempo, uma delas marcada como
+-- "principal" (is_principal).
+--
+-- students.class_id é mantido só como um cache de conveniência da
+-- matrícula PRINCIPAL (é o que todo o resto do sistema — relatórios,
+-- boletos, filtros — já espera como "a turma" do aluno) e passa a ser
+-- escrito exclusivamente pelas RPCs abaixo, nunca mais direto pelo
+-- frontend. Matricular numa turma extra (não-principal) NUNCA toca
+-- nesse campo nem remove a matrícula principal existente.
+
+CREATE TABLE IF NOT EXISTS class_enrollments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id uuid NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  class_id uuid NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  is_principal boolean NOT NULL DEFAULT false,
+  status text NOT NULL DEFAULT 'ativa',
+  enrolled_at date NOT NULL DEFAULT CURRENT_DATE,
+  ended_at date,
+  created_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='ce_status_check') THEN
+    ALTER TABLE class_enrollments ADD CONSTRAINT ce_status_check CHECK (status IN ('ativa','encerrada'));
+  END IF;
+END $$;
+
+-- Só pode existir 1 matrícula ATIVA por (aluno, turma) — mas o mesmo
+-- aluno pode ter matrículas ativas em turmas diferentes ao mesmo tempo,
+-- e o histórico de matrículas encerradas nunca é apagado.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ce_student_class_ativa ON class_enrollments(student_id, class_id) WHERE status='ativa';
+CREATE INDEX IF NOT EXISTS idx_ce_student ON class_enrollments(student_id);
+CREATE INDEX IF NOT EXISTS idx_ce_class ON class_enrollments(class_id);
+
+ALTER TABLE class_enrollments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "ce_select" ON class_enrollments;
+DROP POLICY IF EXISTS "ce_insert" ON class_enrollments;
+DROP POLICY IF EXISTS "ce_update" ON class_enrollments;
+DROP POLICY IF EXISTS "ce_delete" ON class_enrollments;
+CREATE POLICY "ce_select" ON class_enrollments FOR SELECT USING (auth.uid() IS NOT NULL);
+CREATE POLICY "ce_insert" ON class_enrollments FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "ce_update" ON class_enrollments FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "ce_delete" ON class_enrollments FOR DELETE USING (is_admin());
+
+-- Backfill: toda matrícula "implícita" que já existia via students.class_id
+-- vira a matrícula principal ativa correspondente (reexecutável — só
+-- insere o que ainda não existe).
+INSERT INTO class_enrollments (student_id, class_id, is_principal, status, enrolled_at)
+SELECT s.id, s.class_id, true, 'ativa', COALESCE(s.date_joining, CURRENT_DATE)
+FROM students s
+WHERE s.class_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM class_enrollments ce WHERE ce.student_id=s.id AND ce.class_id=s.class_id AND ce.status='ativa');
+
+-- Matricula um aluno numa turma. Se for a matrícula PRINCIPAL (primeira
+-- turma do aluno, ou p_principal=true explicitamente), sincroniza
+-- students.class_id e desmarca a principal anterior. Caso contrário
+-- (aluno já tem uma principal e p_principal não foi forçado), só cria
+-- o vínculo extra — é o caso de "adicionar também na Conversação" sem
+-- mexer na turma regular.
+CREATE OR REPLACE FUNCTION matricular_aluno_turma(p_student_id uuid, p_class_id uuid, p_principal boolean DEFAULT NULL)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_id uuid; v_tem_principal boolean; v_faz_principal boolean; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+
+  SELECT EXISTS(SELECT 1 FROM class_enrollments WHERE student_id=p_student_id AND is_principal=true AND status='ativa')
+  INTO v_tem_principal;
+  v_faz_principal := COALESCE(p_principal, NOT v_tem_principal);
+
+  INSERT INTO class_enrollments (student_id, class_id, is_principal, status, created_by)
+  VALUES (p_student_id, p_class_id, v_faz_principal, 'ativa', auth.uid())
+  ON CONFLICT (student_id, class_id) WHERE status='ativa' DO UPDATE SET is_principal = v_faz_principal
+  RETURNING id INTO v_id;
+
+  IF v_faz_principal THEN
+    UPDATE class_enrollments SET is_principal=false WHERE student_id=p_student_id AND id<>v_id AND is_principal=true;
+    UPDATE students SET class_id=p_class_id WHERE id=p_student_id;
+  END IF;
+
+  RETURN v_id;
+END; $$;
+
+-- Encerra a matrícula de um aluno numa turma específica (não mexe nas
+-- outras turmas dele). Se a matrícula encerrada era a principal, limpa
+-- students.class_id (fica "sem turma regular" até alguém definir outra).
+CREATE OR REPLACE FUNCTION desmatricular_aluno_turma(p_student_id uuid, p_class_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_era_principal boolean; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+
+  SELECT is_principal INTO v_era_principal FROM class_enrollments
+  WHERE student_id=p_student_id AND class_id=p_class_id AND status='ativa';
+  IF v_era_principal IS NULL THEN RETURN; END IF;
+
+  UPDATE class_enrollments SET status='encerrada', ended_at=CURRENT_DATE, is_principal=false
+  WHERE student_id=p_student_id AND class_id=p_class_id AND status='ativa';
+
+  IF v_era_principal THEN
+    UPDATE students SET class_id=NULL WHERE id=p_student_id;
+  END IF;
+END; $$;
+
+-- Todas as turmas ativas de um aluno (a principal primeiro).
+CREATE OR REPLACE FUNCTION get_turmas_aluno(p_student_id uuid)
+RETURNS TABLE(enrollment_id uuid, class_id uuid, class_name text, level text, modalidade text, is_principal boolean, enrolled_at date)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT ce.id, c.id, c.name::text, c.level, c.modalidade, ce.is_principal, ce.enrolled_at
+    FROM class_enrollments ce JOIN classes c ON c.id = ce.class_id
+    WHERE ce.student_id = p_student_id AND ce.status = 'ativa'
+    ORDER BY ce.is_principal DESC, c.name;
+END; $$;
+
+-- Todos os alunos ativos de uma turma (via matrícula N:N — inclui quem
+-- está nessa turma como extra/secundária, ex: Conversação). Reaproveita
+-- o nome e as colunas da função antiga, só troca a origem dos dados;
+-- por isso precisa de DROP antes (adicionar is_principal muda o tipo
+-- de retorno, e CREATE OR REPLACE não permite isso).
+DROP FUNCTION IF EXISTS get_turma_alunos(uuid);
+CREATE FUNCTION get_turma_alunos(p_class_id uuid)
+RETURNS TABLE(
+  id uuid, first_name text, last_name text,
+  modalidade text, level text, mobile_number text, whatsapp text, is_principal boolean
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor']) THEN
+    RAISE EXCEPTION 'Permissão negada';
+  END IF;
+  RETURN QUERY
+    SELECT s.id, s.first_name, s.last_name, s.modalidade, s.level, s.mobile_number, s.whatsapp, ce.is_principal
+    FROM students s
+    JOIN class_enrollments ce ON ce.student_id = s.id AND ce.class_id = p_class_id AND ce.status = 'ativa'
+    WHERE s.status = true
+    ORDER BY s.first_name;
+END; $$;
+
+CREATE OR REPLACE FUNCTION count_students_in_class(p_class_id uuid)
+RETURNS integer LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+  SELECT count(*)::integer FROM class_enrollments ce
+  JOIN students s ON s.id = ce.student_id
+  WHERE ce.class_id = p_class_id AND ce.status = 'ativa' AND s.status = true;
+$$;
+
+-- O Portal do Professor também precisa enxergar a matrícula N:N: a
+-- lista de presença de uma aula tem que incluir todo mundo matriculado
+-- naquela turma (inclusive quem está lá só como turma extra).
+CREATE OR REPLACE FUNCTION professor_turma_aula(p_teacher_id uuid, p_token text, p_class_id uuid, p_lesson_date date)
+RETURNS TABLE(lesson_id uuid, teacher_id uuid, status text, content text, notes text, alunos jsonb)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_lesson class_lessons%ROWTYPE; BEGIN
+  IF NOT _professor_sessao_valida(p_teacher_id, p_token) THEN RAISE EXCEPTION 'Sessão inválida. Volte e faça login novamente.'; END IF;
+  SELECT * INTO v_lesson FROM class_lessons WHERE class_id=p_class_id AND lesson_date=p_lesson_date;
+  RETURN QUERY
+    SELECT v_lesson.id, v_lesson.teacher_id, COALESCE(v_lesson.status,'realizada'), v_lesson.content, v_lesson.notes,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object(
+          'id', s.id, 'first_name', s.first_name, 'last_name', s.last_name,
+          'status', COALESCE(a.status, 'presente')
+        ) ORDER BY s.first_name)
+        FROM students s
+        JOIN class_enrollments ce ON ce.student_id = s.id AND ce.class_id = p_class_id AND ce.status = 'ativa'
+        LEFT JOIN attendance a ON a.student_id = s.id AND a.class_id = p_class_id AND a.date = p_lesson_date
+        WHERE s.status = true), '[]'::jsonb);
+END; $$;
