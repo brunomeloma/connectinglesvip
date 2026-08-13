@@ -940,7 +940,7 @@ async function carregarAulasHoje(dateStr){
     sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('status',true),
     sb.rpc('get_contagem_encontros'),
     admin?sb.from('class_lessons').select('id,class_id,status').eq('lesson_date',_dashAulasState.date):Promise.resolve({data:[]}),
-    admin?sb.from('teacher_lessons').select('class_lesson_id').eq('lesson_date',_dashAulasState.date).not('class_lesson_id','is',null):Promise.resolve({data:[]}),
+    admin?sb.from('teacher_lessons').select('class_lesson_id').eq('lesson_date',_dashAulasState.date).eq('counts_for_payment',true).not('class_lesson_id','is',null):Promise.resolve({data:[]}),
   ]);
   const encontrosMap={};
   encontros.forEach(e=>encontrosMap[e.class_id]=e.total_encontros);
@@ -2596,7 +2596,7 @@ function enviarCobrancaWpp(studentId,nome,numero,tipo,dataVenc,boletoInfo){
 // CONTROLE DE PROFESSORES
 // ============================
 
-const LESSON_STATUS_LABELS={realizada:'Realizada',nao_realizada:'Não realizada',cancelada:'Cancelada',falta:'Falta',justificada:'Justificada'};
+const LESSON_STATUS_LABELS={realizada:'Realizada',nao_realizada:'Não realizada',cancelada:'Cancelada',falta:'Falta',justificada:'Justificada',remarcada:'Remarcada - Aguardando Reposição'};
 const LESSON_TYPE_LABELS={aula_normal:'Aula normal',substituicao:'Substituição',reuniao:'Reunião',evento:'Evento',treinamento:'Treinamento',outro:'Outro'};
 
 let _profTab='lancar';
@@ -2756,6 +2756,7 @@ async function profHistorico(tabBar){
   ]);
   const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const totalHoras=aulas.filter(a=>a.status==='realizada'&&a.counts_for_payment).reduce((s,a)=>s+parseFloat(a.hours||0),0);
+  const aguardandoReposicao=aulas.filter(a=>a.status==='remarcada');
 
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>Controle de Professores</span></div>
@@ -2781,10 +2782,11 @@ async function profHistorico(tabBar){
         </div>
       </div>
     </div>
-    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
+    <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
       <div class="stat-card c-gold"><i class="fa fa-chalkboard-teacher stat-icon"></i><div><div class="stat-num">${aulas.length}</div><div class="stat-label">Lançamentos</div></div></div>
       <div class="stat-card c-dark"><i class="fa fa-clock stat-icon"></i><div><div class="stat-num">${totalHoras.toFixed(1)}h</div><div class="stat-label">Horas p/ pagamento</div></div></div>
       <div class="stat-card c-orange"><i class="fa fa-check-circle stat-icon"></i><div><div class="stat-num">${aulas.filter(a=>a.status==='realizada'&&a.counts_for_payment).length}</div><div class="stat-label">Atividades que contam</div></div></div>
+      <div class="stat-card c-brown"><i class="fa fa-history stat-icon"></i><div><div class="stat-num">${aguardandoReposicao.length}</div><div class="stat-label">Aguardando reposição (R$ 0,00)</div></div></div>
     </div>
     <div class="panel">
       <div class="panel-head">

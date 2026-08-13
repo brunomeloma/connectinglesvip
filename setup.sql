@@ -2512,3 +2512,78 @@ AS $$ DECLARE v_lesson class_lessons%ROWTYPE; BEGIN
         LEFT JOIN attendance a ON a.student_id = s.id AND a.class_id = p_class_id AND a.date = p_lesson_date
         WHERE s.status = true), '[]'::jsonb);
 END; $$;
+
+
+-- #####################################################################
+-- 33. AULA REMARCADA NUNCA CONTA COMO PAGAMENTO (status próprio)
+-- #####################################################################
+-- Antes, sync_pagamento_aula já deixava counts_for_payment=false pra
+-- qualquer status de class_lessons diferente de 'realizada' — ou seja,
+-- uma aula remarcada já não entrava no valor a pagar. Mas o status
+-- sincronizado em teacher_lessons colapsava 'remarcada' e 'cancelada'
+-- no mesmo valor ('cancelada'), então o extrato do professor não
+-- conseguia distinguir "aula cancelada" de "aula remarcada, aguardando
+-- reposição". Agora 'remarcada' é um status próprio em teacher_lessons
+-- (mesmo texto, mesmo R$ 0,00 — só muda o rótulo mostrado).
+--
+-- Ciclo de vida (já funciona de ponta a ponta com isso):
+--  1. Aula é remarcada -> class_lessons.status='remarcada' -> sync cria/
+--     atualiza o lançamento com status='remarcada', counts_for_payment=
+--     false (R$ 0,00, não entra na soma do mês).
+--  2. A reposição é dada numa data nova -> registrar_aula_turma (ou o
+--     Portal do Professor) cria um NOVO registro em class_lessons para
+--     essa data com status='realizada' -> sync cria o lançamento
+--     correspondente com counts_for_payment=true.
+--  3. Esse novo lançamento já entra automaticamente na próxima soma do
+--     pagamento (get_relatorio_pagamento_professor/get_aulas_mes*).
+
+ALTER TABLE teacher_lessons DROP CONSTRAINT IF EXISTS tl_status_check;
+ALTER TABLE teacher_lessons ADD CONSTRAINT tl_status_check
+  CHECK (status IN ('realizada','nao_realizada','cancelada','falta','justificada','remarcada'));
+
+CREATE OR REPLACE FUNCTION sync_pagamento_aula(p_lesson_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_lesson class_lessons%ROWTYPE;
+  v_class classes%ROWTYPE;
+  v_existing teacher_lessons%ROWTYPE;
+  v_hours numeric(4,2);
+  v_lesson_type text;
+  v_tl_status text;
+  v_counts boolean;
+BEGIN
+  SELECT * INTO v_lesson FROM class_lessons WHERE id = p_lesson_id;
+  IF v_lesson IS NULL OR v_lesson.teacher_id IS NULL THEN RETURN; END IF;
+
+  SELECT * INTO v_class FROM classes WHERE id = v_lesson.class_id;
+  IF v_class IS NULL THEN RETURN; END IF;
+
+  SELECT * INTO v_existing FROM teacher_lessons WHERE class_lesson_id = p_lesson_id;
+  IF v_existing.paid IS TRUE THEN RETURN; END IF;
+
+  BEGIN
+    v_hours := GREATEST(0.5, ROUND(EXTRACT(EPOCH FROM (v_class.end_time::time - v_class.start_time::time)) / 3600.0, 2));
+  EXCEPTION WHEN OTHERS THEN
+    v_hours := NULL;
+  END;
+  IF v_hours IS NULL OR v_hours <= 0 THEN v_hours := 1; END IF;
+
+  v_lesson_type := CASE WHEN v_lesson.teacher_id IS DISTINCT FROM v_class.teacher_id THEN 'substituicao' ELSE 'aula_normal' END;
+
+  IF v_lesson.status = 'realizada' THEN
+    v_tl_status := 'realizada'; v_counts := true;
+  ELSIF v_lesson.status = 'remarcada' THEN
+    v_tl_status := 'remarcada'; v_counts := false;
+  ELSE
+    v_tl_status := 'cancelada'; v_counts := false;
+  END IF;
+
+  INSERT INTO teacher_lessons (class_id, teacher_id, actual_teacher_id, lesson_date, lesson_type, status, hours, counts_for_payment, class_lesson_id)
+  VALUES (v_lesson.class_id, v_lesson.teacher_id, v_lesson.teacher_id, v_lesson.lesson_date, v_lesson_type, v_tl_status, v_hours, v_counts, p_lesson_id)
+  ON CONFLICT (class_lesson_id) WHERE class_lesson_id IS NOT NULL DO UPDATE SET
+    teacher_id = EXCLUDED.teacher_id, actual_teacher_id = EXCLUDED.actual_teacher_id,
+    lesson_date = EXCLUDED.lesson_date, lesson_type = EXCLUDED.lesson_type,
+    status = EXCLUDED.status, hours = EXCLUDED.hours, counts_for_payment = EXCLUDED.counts_for_payment
+  WHERE teacher_lessons.paid IS NOT TRUE;
+END; $$;
