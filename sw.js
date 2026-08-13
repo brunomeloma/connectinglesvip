@@ -31,10 +31,10 @@ self.addEventListener('fetch', (event) => {
       fetch(req)
         .then((res) => {
           const clone = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', clone));
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
           return res;
         })
-        .catch(() => caches.match('/index.html'))
+        .catch(() => caches.match(req).then((cached) => cached || caches.match('/index.html')))
     );
     return;
   }
