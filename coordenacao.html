@@ -391,6 +391,8 @@
   .badge-confirmado{ background:var(--ok-bg); color:var(--ok-ink); }
   .icon-btn.whats-row{ color:var(--whats); }
   .icon-btn.whats-row:hover{ color:var(--whats); background:var(--surface); opacity:.8; }
+  .icon-btn.mail-row{ color:var(--accent); }
+  .icon-btn.mail-row:hover{ color:var(--accent); background:var(--surface); opacity:.8; }
 
   .dash-grid{ display:grid; gap:14px; grid-template-columns:1fr; }
   @media (min-width:760px){ .dash-grid{ grid-template-columns:1fr 1fr; } }
@@ -1141,6 +1143,7 @@
                 </div>
               </div>
               <div style="display:flex;gap:2px">
+                ${a.email ? `<a class="icon-btn mail-row" href="mailto:${esc(a.email)}?subject=${encodeURIComponent('Orientação de TCC II')}" aria-label="Enviar e-mail para ${esc(a.nome)}" title="Enviar e-mail">${ICONS.mail}</a>` : ''}
                 <button class="icon-btn" data-edit-alunotcc="${a.id}" aria-label="Editar aluno">${ICONS.edit}</button>
                 <button class="icon-btn" data-del-alunotcc="${a.id}" aria-label="Remover aluno">${ICONS.trash}</button>
               </div>
@@ -1368,30 +1371,35 @@
   }
 
   function renderMensagens(){
-    const list = state.mensagem.destinatarioTipo === 'lider' ? state.lideres : state.professores;
+    const tipo = state.mensagem.destinatarioTipo;
+    const list = tipo === 'lider' ? state.lideres : tipo === 'prof' ? state.professores : state.alunosTcc;
     const selected = list.find(x => String(x.id) === String(state.mensagem.id));
-    const hasPhone = !!(selected && selected.telefone);
+    const isEmail = tipo === 'aluno';
+    const hasContato = !!(selected && (isEmail ? selected.email : selected.telefone));
     return `
     <div class="panel single">
       <div class="card">
-        <h2>${ICONS.send} Enviar mensagem rápida via WhatsApp</h2>
+        <h2>${ICONS.send} Enviar mensagem rápida</h2>
         <div class="toggle-group" style="margin-bottom:12px">
-          <button type="button" class="toggle" id="tog-lider" aria-pressed="${state.mensagem.destinatarioTipo==='lider'}">Para líder de turma</button>
-          <button type="button" class="toggle" id="tog-prof" aria-pressed="${state.mensagem.destinatarioTipo==='prof'}">Para professor</button>
+          <button type="button" class="toggle" id="tog-lider" aria-pressed="${tipo==='lider'}">Para líder de turma</button>
+          <button type="button" class="toggle" id="tog-prof" aria-pressed="${tipo==='prof'}">Para professor</button>
+          <button type="button" class="toggle" id="tog-aluno" aria-pressed="${tipo==='aluno'}">Para aluno de TCC (e-mail)</button>
         </div>
         <div class="field">
           <label>Destinatário</label>
           <select id="m-dest">
             <option value="">-- Selecione --</option>
-            ${list.map(x => `<option value="${x.id}" ${String(state.mensagem.id)===String(x.id)?'selected':''}>${state.mensagem.destinatarioTipo==='lider' ? esc(x.periodo)+' — '+esc(x.nome) : esc(x.nome)}</option>`).join('')}
+            ${list.map(x => `<option value="${x.id}" ${String(state.mensagem.id)===String(x.id)?'selected':''}>${tipo==='lider' ? esc(x.periodo)+' — '+esc(x.nome) : esc(x.nome)}</option>`).join('')}
           </select>
         </div>
         <div class="field">
           <label>Mensagem / lembrete</label>
           <textarea id="m-texto" placeholder="Digite o aviso ou lembrete...">${esc(state.mensagem.texto)}</textarea>
         </div>
-        ${selected && !hasPhone ? `<p class="note">Esse destinatário não tem telefone cadastrado — edite o cadastro antes de enviar.</p>` : ''}
-        <a class="btn btn-whats" id="m-send" href="#" target="_blank" rel="noopener noreferrer" ${hasPhone ? '' : 'aria-disabled="true"'} style="${hasPhone ? '' : 'pointer-events:none;opacity:.45;'}">${ICONS.send} Abrir no WhatsApp</a>
+        ${selected && !hasContato ? `<p class="note">Esse destinatário não tem ${isEmail ? 'e-mail' : 'telefone'} cadastrado — edite o cadastro antes de enviar.</p>` : ''}
+        ${isEmail
+          ? `<a class="btn btn-primary" id="m-send" href="#" ${hasContato ? '' : 'aria-disabled="true"'} style="${hasContato ? '' : 'pointer-events:none;opacity:.45;'}">${ICONS.mail} Abrir no E-mail</a>`
+          : `<a class="btn btn-whats" id="m-send" href="#" target="_blank" rel="noopener noreferrer" ${hasContato ? '' : 'aria-disabled="true"'} style="${hasContato ? '' : 'pointer-events:none;opacity:.45;'}">${ICONS.send} Abrir no WhatsApp</a>`}
       </div>
     </div>`;
   }
@@ -1793,23 +1801,33 @@
         state.mensagem = { ...state.mensagem, destinatarioTipo:'prof', id:'' };
         renderAll();
       });
+      document.getElementById('tog-aluno').addEventListener('click', ()=>{
+        state.mensagem = { ...state.mensagem, destinatarioTipo:'aluno', id:'' };
+        renderAll();
+      });
       document.getElementById('m-dest').addEventListener('change', e=>{
         state.mensagem.id = e.target.value; renderAll();
       });
       document.getElementById('m-texto').addEventListener('input', e=>{
         state.mensagem.texto = e.target.value;
         const link = document.getElementById('m-send');
-        if (link) link.href = buildWhatsLink();
+        if (link) link.href = buildMensagemLink();
       });
       const link = document.getElementById('m-send');
-      if (link) link.href = buildWhatsLink();
+      if (link) link.href = buildMensagemLink();
     }
   }
 
-  function buildWhatsLink(){
-    const list = state.mensagem.destinatarioTipo === 'lider' ? state.lideres : state.professores;
+  function buildMensagemLink(){
+    const tipo = state.mensagem.destinatarioTipo;
+    const list = tipo === 'lider' ? state.lideres : tipo === 'prof' ? state.professores : state.alunosTcc;
     const selected = list.find(x => String(x.id) === String(state.mensagem.id));
-    const num = (selected && selected.telefone || '').replace(/\D/g,'');
+    if (!selected) return '#';
+    if (tipo === 'aluno') {
+      if (!selected.email) return '#';
+      return `mailto:${selected.email}?subject=${encodeURIComponent('Orientação de TCC II')}&body=${encodeURIComponent(state.mensagem.texto)}`;
+    }
+    const num = (selected.telefone || '').replace(/\D/g,'');
     if (!num) return '#';
     return `https://wa.me/55${num}?text=${encodeURIComponent(state.mensagem.texto)}`;
   }
