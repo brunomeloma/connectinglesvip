@@ -151,6 +151,18 @@
     .panel.single{ grid-template-columns:1fr; max-width:520px; margin:0 auto; }
   }
 
+  /* No celular a grade vem antes do formulário de cadastro (o que o
+     coordenador quer ver primeiro); no desktop o formulário volta a
+     ficar na coluna estreita à esquerda, grade na coluna larga. */
+  .panel-horarios .card-grade{ order:1; }
+  .panel-horarios .card-form{ order:2; }
+  @media (min-width:760px){
+    .panel-horarios .card-form{ order:1; }
+    .panel-horarios .card-grade{ order:2; }
+  }
+  .card-form summary::-webkit-details-marker{ display:none; }
+  .card-form[open] summary span:last-child{ transform:rotate(180deg); }
+
   .card{
     background:var(--surface);
     border:1px solid var(--border);
@@ -293,6 +305,55 @@
     line-height:1.45;
   }
   .error{ color:var(--danger); font-size:.82rem; }
+
+  .filterbar{ display:flex; flex-direction:column; gap:10px; margin-bottom:16px; }
+  .search-wrap{ position:relative; }
+  .search-wrap svg{ position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none; }
+  .search-wrap input{ padding-left:34px; }
+  .daypills{ display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; -webkit-overflow-scrolling:touch; }
+  .daypill{
+    flex:none;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--text-muted);
+    border-radius:999px;
+    padding:6px 13px;
+    font-size:.78rem;
+    font-weight:700;
+    cursor:pointer;
+    white-space:nowrap;
+    font-family:inherit;
+  }
+  .daypill[aria-pressed="true"]{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .daypill:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  .day-group + .day-group{ margin-top:20px; }
+  .day-group-header{
+    font-family:ui-serif,Georgia,"Times New Roman",serif;
+    font-size:1.05rem;
+    font-weight:700;
+    margin:0 0 10px;
+    padding-bottom:6px;
+    border-bottom:1px solid var(--border);
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+  }
+  .day-group-header .count{ font-family:inherit; font-size:.72rem; font-weight:600; color:var(--text-muted); }
+  .time-group + .time-group{ margin-top:14px; }
+  .time-group-header{
+    font-size:.72rem;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    color:var(--text-muted);
+    margin:0 0 6px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .row-compact{ padding:9px 12px; }
+  .row-compact .name{ font-size:.85rem; }
   .gate{
     max-width:360px;
     margin:15vh auto 0;
@@ -355,13 +416,18 @@
     id:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg>',
     swap:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3"/></svg>',
     copy:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
-    edit:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>'
+    edit:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>',
+    search:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+    chevron:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>'
   };
 
   const maskCpf = v => v.replace(/\D/g,'').slice(0,11)
     .replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');
   const maskTelefone = v => v.replace(/\D/g,'').slice(0,11)
     .replace(/(\d{2})(\d)/,'($1) $2').replace(/(\d{5})(\d{1,4})$/,'$1-$2');
+
+  const NOMES_DIA_JS = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+  const diaDeHoje = NOMES_DIA_JS[new Date().getDay()];
 
   let state = {
     senha: sessionStorage.getItem('fest_senha') || '',
@@ -373,7 +439,8 @@
     novoHorario: { id:null, professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' },
     novoLider: { id:null, periodo:'', nome:'', telefone:'' },
     mensagem: { destinatarioTipo:'lider', id:'', texto:'' },
-    substituicao: { professorAusenteId:'', aulaAusenteId:'', data:'', substitutoNome:'', textoEditado:null }
+    substituicao: { professorAusenteId:'', aulaAusenteId:'', data:'', substitutoNome:'', textoEditado:null },
+    filtroHorarios: { busca:'', dia: (diaDeHoje === 'Domingo' || diaDeHoje === 'Sábado') ? 'Todos' : diaDeHoje, formAberto:false }
   };
 
   // Todo acesso passa por essas funções RPC (com senha), nunca direto nas
@@ -484,58 +551,124 @@
     }));
   }
 
+  function horariosFiltrados(){
+    const f = state.filtroHorarios;
+    const buscaLower = f.busca.trim().toLowerCase();
+    let rows = state.horarios.filter(item => {
+      if (f.dia !== 'Todos' && item.dia !== f.dia) return false;
+      if (buscaLower) {
+        const alvo = (item.professor + ' ' + item.turma + ' ' + item.disciplina).toLowerCase();
+        if (!alvo.includes(buscaLower)) return false;
+      }
+      return true;
+    });
+    const ordemDia = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+    rows.sort((a,b) => {
+      const d = ordemDia.indexOf(a.dia) - ordemDia.indexOf(b.dia);
+      if (d !== 0) return d;
+      if (a.horario !== b.horario) return a.horario.localeCompare(b.horario);
+      return a.turma.localeCompare(b.turma, 'pt-BR');
+    });
+    return rows;
+  }
+
+  function renderHorariosResultados(){
+    const rows = horariosFiltrados();
+    if (rows.length === 0) return `<p class="empty" style="margin-top:12px">Nenhum horário encontrado com esse filtro.</p>`;
+    const mostrarCabecalhoDia = state.filtroHorarios.dia === 'Todos';
+    const porDia = [];
+    rows.forEach(item => {
+      let grupo = porDia.find(g => g.dia === item.dia);
+      if (!grupo) { grupo = { dia: item.dia, itens: [] }; porDia.push(grupo); }
+      grupo.itens.push(item);
+    });
+    return porDia.map(grupoDia => {
+      const porHorario = [];
+      grupoDia.itens.forEach(item => {
+        let g = porHorario.find(g => g.horario === item.horario);
+        if (!g) { g = { horario: item.horario, itens: [] }; porHorario.push(g); }
+        g.itens.push(item);
+      });
+      return `
+      <div class="day-group">
+        ${mostrarCabecalhoDia ? `<div class="day-group-header">${esc(grupoDia.dia)}${grupoDia.dia===diaDeHoje ? ' <span class="pill">hoje</span>' : ''} <span class="count">${grupoDia.itens.length} aula${grupoDia.itens.length===1?'':'s'}</span></div>` : ''}
+        ${porHorario.map(g => `
+          <div class="time-group">
+            <div class="time-group-header">${ICONS.clock} ${esc(g.horario)} <span style="font-weight:400">(${g.itens.length})</span></div>
+            <div class="list">
+              ${g.itens.map(item => `
+                <div class="row row-compact">
+                  <div>
+                    <div class="name">${esc(item.turma) || '(sem turma definida)'}</div>
+                    <div class="meta">
+                      <span>${ICONS.users} ${esc(item.professor)}</span>
+                      ${item.disciplina ? `<span>${esc(item.disciplina)}</span>` : ''}
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:2px">
+                    <button class="icon-btn" data-edit-horario="${item.id}" aria-label="Editar horário">${ICONS.edit}</button>
+                    <button class="icon-btn" data-del-horario="${item.id}" aria-label="Remover horário">${ICONS.trash}</button>
+                  </div>
+                </div>`).join('')}
+            </div>
+          </div>`).join('')}
+      </div>`;
+    }).join('');
+  }
+
   function renderHorarios(){
-    const rows = state.horarios;
     const editando = !!state.novoHorario.id;
+    const f = state.filtroHorarios;
+    const ordemDia = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+    const diasComData = ordemDia.filter(d => state.horarios.some(h => h.dia === d));
+
     return `
-    <div class="panel">
-      <form class="card" id="form-horario">
-        <h2>${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Horário' : 'Novo Horário'}</h2>
-        <div class="field">
-          <label>Professor</label>
-          ${state.professores.length === 0 ? `
-            <p class="note">Cadastre um professor na aba "Professores" antes de alocar horários.</p>
-          ` : `
-            <select id="h-professor">
-              <option value="">-- Selecione --</option>
-              ${state.professores.map(p=>`<option value="${esc(p.nome)}" ${state.novoHorario.professor===p.nome?'selected':''}>${esc(p.nome)}</option>`).join('')}
-            </select>
-          `}
+    <div class="panel panel-horarios">
+      <div class="card card-grade">
+        <h2>Grade alocada <span class="pill" style="text-transform:none;font-weight:600">${state.horarios.length}</span></h2>
+        <div class="filterbar">
+          <div class="search-wrap">
+            ${ICONS.search}
+            <input id="h-busca" placeholder="Buscar por professor, turma ou disciplina..." value="${esc(f.busca)}">
+          </div>
+          <div class="daypills">
+            <button type="button" class="daypill" data-dia="Todos" aria-pressed="${f.dia==='Todos'}">Todos os dias</button>
+            ${diasComData.map(d => `<button type="button" class="daypill" data-dia="${d}" aria-pressed="${f.dia===d}">${d}${d===diaDeHoje ? ' • hoje' : ''}</button>`).join('')}
+          </div>
         </div>
-        <div class="field"><label>Dia da semana</label>
-          <select id="h-dia">
-            ${['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'].map(d=>`<option ${state.novoHorario.dia===d?'selected':''}>${d}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field"><label>Horário</label><input id="h-horario" placeholder="Ex: 19:00" value="${esc(state.novoHorario.horario)}"></div>
-        <div class="field"><label>Turma / Período</label><input id="h-turma" placeholder="Ex: 4º Período A - Direito (Noite)" value="${esc(state.novoHorario.turma)}"></div>
-        <div class="field"><label>Disciplina</label><input id="h-disciplina" placeholder="Ex: Direito Penal III" value="${esc(state.novoHorario.disciplina)}"></div>
-        <div class="toggle-group">
-          <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Adicionar à grade'}</button>
-          ${editando ? `<button type="button" class="btn" id="h-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
-        </div>
-      </form>
-      <div class="card">
-        <h2>Grade alocada <span class="pill" style="text-transform:none;font-weight:600">${rows.length}</span></h2>
-        ${rows.length===0 ? `<p class="empty">Nenhum horário cadastrado ainda.</p>` : `
-        <div class="list">
-          ${rows.map(item => `
-            <div class="row">
-              <div>
-                <div class="name">${esc(item.professor)}</div>
-                ${item.disciplina ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">${esc(item.disciplina)}</div>` : ''}
-                <div class="meta">
-                  <span>${ICONS.clock} ${esc(item.dia)} (${esc(item.horario)})</span>
-                  <span>${ICONS.pin} ${esc(item.turma)}</span>
-                </div>
-              </div>
-              <div style="display:flex;gap:2px">
-                <button class="icon-btn" data-edit-horario="${item.id}" aria-label="Editar horário">${ICONS.edit}</button>
-                <button class="icon-btn" data-del-horario="${item.id}" aria-label="Remover horário">${ICONS.trash}</button>
-              </div>
-            </div>`).join('')}
-        </div>`}
+        <div id="h-resultados">${renderHorariosResultados()}</div>
       </div>
+      <details class="card card-form" id="form-horario-details" ${editando ? 'open' : ''}>
+        <summary style="cursor:pointer;font-weight:700;display:flex;align-items:center;gap:8px;list-style:none">
+          ${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Horário' : 'Adicionar novo horário'}
+          <span style="margin-left:auto;color:var(--text-muted)">${ICONS.chevron}</span>
+        </summary>
+        <form id="form-horario" style="margin-top:14px;display:flex;flex-direction:column;gap:12px">
+          <div class="field">
+            <label>Professor</label>
+            ${state.professores.length === 0 ? `
+              <p class="note">Cadastre um professor na aba "Professores" antes de alocar horários.</p>
+            ` : `
+              <select id="h-professor">
+                <option value="">-- Selecione --</option>
+                ${state.professores.map(p=>`<option value="${esc(p.nome)}" ${state.novoHorario.professor===p.nome?'selected':''}>${esc(p.nome)}</option>`).join('')}
+              </select>
+            `}
+          </div>
+          <div class="field"><label>Dia da semana</label>
+            <select id="h-dia">
+              ${['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'].map(d=>`<option ${state.novoHorario.dia===d?'selected':''}>${d}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field"><label>Horário</label><input id="h-horario" placeholder="Ex: 19:00" value="${esc(state.novoHorario.horario)}"></div>
+          <div class="field"><label>Turma / Período</label><input id="h-turma" placeholder="Ex: 4º Período A - Direito (Noite)" value="${esc(state.novoHorario.turma)}"></div>
+          <div class="field"><label>Disciplina</label><input id="h-disciplina" placeholder="Ex: Direito Penal III" value="${esc(state.novoHorario.disciplina)}"></div>
+          <div class="toggle-group">
+            <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Adicionar à grade'}</button>
+            ${editando ? `<button type="button" class="btn" id="h-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
+          </div>
+        </form>
+      </details>
     </div>`;
   }
 
@@ -791,17 +924,16 @@
         state.novoHorario = { id:null, professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' };
         renderAll();
       });
-      panel_query('[data-edit-horario]').forEach(b=>b.addEventListener('click', ()=>{
-        const item = state.horarios.find(h => String(h.id) === b.dataset.editHorario);
-        if (!item) return;
-        state.novoHorario = { id:item.id, professor:item.professor, dia:item.dia, horario:item.horario, turma:item.turma, disciplina:item.disciplina };
+      bindResultadosHorarios();
+      const buscaInput = document.getElementById('h-busca');
+      if (buscaInput) buscaInput.addEventListener('input', e=>{
+        state.filtroHorarios.busca = e.target.value;
+        document.getElementById('h-resultados').innerHTML = renderHorariosResultados();
+        bindResultadosHorarios();
+      });
+      panel_query('.daypill').forEach(b=>b.addEventListener('click', ()=>{
+        state.filtroHorarios.dia = b.dataset.dia;
         renderAll();
-      }));
-      panel_query('[data-del-horario]').forEach(b=>b.addEventListener('click', async ()=>{
-        if (!confirm('Remover este horário da grade?')) return;
-        const { error } = await sb.rpc('fest_delete_horario', { p_senha: state.senha, p_id: b.dataset.delHorario });
-        if (error) { alert(error.message); return; }
-        await carregarDados(state.senha); renderAll();
       }));
     }
     if (state.activeTab === 'professores') {
@@ -981,6 +1113,21 @@
   }
 
   function panel_query(sel){ return Array.from(document.getElementById('tabpanel').querySelectorAll(sel)); }
+
+  function bindResultadosHorarios(){
+    panel_query('[data-edit-horario]').forEach(b=>b.addEventListener('click', ()=>{
+      const item = state.horarios.find(h => String(h.id) === b.dataset.editHorario);
+      if (!item) return;
+      state.novoHorario = { id:item.id, professor:item.professor, dia:item.dia, horario:item.horario, turma:item.turma, disciplina:item.disciplina };
+      renderAll();
+    }));
+    panel_query('[data-del-horario]').forEach(b=>b.addEventListener('click', async ()=>{
+      if (!confirm('Remover este horário da grade?')) return;
+      const { error } = await sb.rpc('fest_delete_horario', { p_senha: state.senha, p_id: b.dataset.delHorario });
+      if (error) { alert(error.message); return; }
+      await carregarDados(state.senha); renderAll();
+    }));
+  }
 
   boot();
 })();
