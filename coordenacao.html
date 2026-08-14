@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Painel da Coordenação — Connect Inglês VIP</title>
+<title>Painel da Coordenação — FEST</title>
 <meta name="robots" content="noindex, nofollow">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -363,7 +363,7 @@
     .replace(/(\d{2})(\d)/,'($1) $2').replace(/(\d{5})(\d{1,4})$/,'$1-$2');
 
   let state = {
-    senha: sessionStorage.getItem('coord_senha') || '',
+    senha: sessionStorage.getItem('fest_senha') || '',
     professores: [],
     horarios: [],
     lideres: [],
@@ -378,7 +378,7 @@
   // Todo acesso passa por essas funções RPC (com senha), nunca direto nas
   // tabelas — a proteção real está no banco (RLS deny-all + senha), não aqui.
   async function carregarDados(senha){
-    const { data, error } = await sb.rpc('coord_listar_tudo', { p_senha: senha });
+    const { data, error } = await sb.rpc('fest_listar_tudo', { p_senha: senha });
     if (error) throw error;
     state.professores = data.professores || [];
     state.horarios = data.horarios || [];
@@ -406,7 +406,7 @@
       try {
         await carregarDados(senha);
         state.senha = senha;
-        sessionStorage.setItem('coord_senha', senha);
+        sessionStorage.setItem('fest_senha', senha);
         document.getElementById('tabs').style.display = '';
         renderAll();
       } catch(err){
@@ -423,7 +423,7 @@
         document.getElementById('tabs').style.display = '';
         renderAll();
       } catch(err){
-        sessionStorage.removeItem('coord_senha');
+        sessionStorage.removeItem('fest_senha');
         state.senha = '';
         renderGate(false, '');
       }
@@ -752,7 +752,7 @@
         }
         const btn = f.querySelector('button[type=submit]');
         btn.disabled = true;
-        const { error } = await sb.rpc('coord_add_horario', {
+        const { error } = await sb.rpc('fest_add_horario', {
           p_senha: state.senha, p_professor: state.novoHorario.professor, p_dia: state.novoHorario.dia,
           p_horario: state.novoHorario.horario, p_turma: state.novoHorario.turma, p_disciplina: state.novoHorario.disciplina
         });
@@ -762,7 +762,7 @@
       });
       panel_query('[data-del-horario]').forEach(b=>b.addEventListener('click', async ()=>{
         if (!confirm('Remover este horário da grade?')) return;
-        const { error } = await sb.rpc('coord_delete_horario', { p_senha: state.senha, p_id: b.dataset.delHorario });
+        const { error } = await sb.rpc('fest_delete_horario', { p_senha: state.senha, p_id: b.dataset.delHorario });
         if (error) { alert(error.message); return; }
         await carregarDados(state.senha); renderAll();
       }));
@@ -789,7 +789,7 @@
         }
         const btn = f.querySelector('button[type=submit]');
         btn.disabled = true;
-        const { error } = await sb.rpc('coord_add_professor', {
+        const { error } = await sb.rpc('fest_add_professor', {
           p_senha: state.senha, p_nome: state.novoProf.nome, p_cpf: state.novoProf.cpf,
           p_data_nasc: state.novoProf.dataNasc, p_email: state.novoProf.email, p_telefone: state.novoProf.telefone
         });
@@ -799,7 +799,7 @@
       });
       panel_query('[data-del-prof]').forEach(b=>b.addEventListener('click', async ()=>{
         if (!confirm('Remover este professor do cadastro?')) return;
-        const { error } = await sb.rpc('coord_delete_professor', { p_senha: state.senha, p_id: b.dataset.delProf });
+        const { error } = await sb.rpc('fest_delete_professor', { p_senha: state.senha, p_id: b.dataset.delProf });
         if (error) { alert(error.message); return; }
         await carregarDados(state.senha); renderAll();
       }));
@@ -820,7 +820,7 @@
         if(!state.novoLider.periodo || !state.novoLider.nome) return;
         const btn = f.querySelector('button[type=submit]');
         btn.disabled = true;
-        const { error } = await sb.rpc('coord_add_lider', {
+        const { error } = await sb.rpc('fest_add_lider', {
           p_senha: state.senha, p_periodo: state.novoLider.periodo, p_nome: state.novoLider.nome, p_telefone: state.novoLider.telefone
         });
         if (error) { alert(error.message); btn.disabled = false; return; }
@@ -829,7 +829,7 @@
       });
       panel_query('[data-del-lider]').forEach(b=>b.addEventListener('click', async ()=>{
         if (!confirm('Remover este líder de turma?')) return;
-        const { error } = await sb.rpc('coord_delete_lider', { p_senha: state.senha, p_id: b.dataset.delLider });
+        const { error } = await sb.rpc('fest_delete_lider', { p_senha: state.senha, p_id: b.dataset.delLider });
         if (error) { alert(error.message); return; }
         await carregarDados(state.senha); renderAll();
       }));
