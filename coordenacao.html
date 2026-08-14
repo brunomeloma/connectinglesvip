@@ -323,7 +323,9 @@
     pin:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>',
     mail:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg>',
     phone:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
-    id:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg>'
+    id:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg>',
+    swap:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3"/></svg>',
+    copy:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
   };
 
   const load = (k, fallback) => { try { const v = JSON.parse(localStorage.getItem(k)); return Array.isArray(v) ? v : fallback; } catch(e){ return fallback; } };
@@ -342,7 +344,8 @@
     novoProf: { nome:'', cpf:'', dataNasc:'', email:'', telefone:'' },
     novoHorario: { professor:'', dia:'Segunda', horario:'', sala:'', disciplina:'' },
     novoLider: { periodo:'', nome:'', telefone:'' },
-    mensagem: { destinatarioTipo:'lider', id:'', texto:'' }
+    mensagem: { destinatarioTipo:'lider', id:'', texto:'' },
+    substituicao: { professorAusenteId:'', aulaAusenteId:'', data:'', substitutoNome:'', textoEditado:null }
   };
 
   function persist(){
@@ -559,8 +562,36 @@
     { id:'horarios', label:'Horários e Salas', icon:ICONS.calendar },
     { id:'professores', label:'Professores', icon:ICONS.users },
     { id:'lideres', label:'Líderes de Turma', icon:ICONS.userCheck },
+    { id:'substituicao', label:'Substituição', icon:ICONS.swap },
     { id:'mensagens', label:'Disparo WhatsApp', icon:ICONS.message }
   ];
+
+  const DIA_SEMANA_NUM = { 'Domingo':0, 'Segunda':1, 'Terça':2, 'Quarta':3, 'Quinta':4, 'Sexta':5, 'Sábado':6 };
+
+  function proximaDataPara(diaNome){
+    const alvo = DIA_SEMANA_NUM[diaNome];
+    if (alvo === undefined) return '';
+    const hoje = new Date();
+    for (let i = 0; i < 7; i++){
+      const d = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + i);
+      if (d.getDay() === alvo) return isoDate(d);
+    }
+    return '';
+  }
+  function isoDate(d){
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  function formatarDataBR(iso){
+    if (!iso) return '';
+    const [a,m,d] = iso.split('-');
+    return `${d}/${m}/${a}`;
+  }
+  function diaSemanaDaData(iso){
+    if (!iso) return '';
+    const [a,m,d] = iso.split('-').map(Number);
+    const dt = new Date(a, m-1, d);
+    return Object.keys(DIA_SEMANA_NUM).find(k => DIA_SEMANA_NUM[k] === dt.getDay());
+  }
 
   function renderTabs(){
     const nav = document.getElementById('tabs');
@@ -685,6 +716,101 @@
     </div>`;
   }
 
+  function calcularSubstituicao(){
+    const s = state.substituicao;
+    const profAusente = state.professores.find(p => String(p.id) === String(s.professorAusenteId));
+    const aulasDoAusente = profAusente ? state.horarios.filter(h => h.professor === profAusente.nome) : [];
+    const aulaAusente = aulasDoAusente.find(h => String(h.id) === String(s.aulaAusenteId));
+
+    let candidatos = [];
+    if (profAusente && aulaAusente) {
+      // Professores que lecionam para a mesma turma...
+      const nomesDaTurma = new Set(
+        state.horarios.filter(h => h.sala === aulaAusente.sala && h.professor !== profAusente.nome).map(h => h.professor)
+      );
+      // ...e que não têm nenhuma aula própria alocada nesse dia+horário exatos.
+      candidatos = Array.from(nomesDaTurma).filter(nome => {
+        const ocupado = state.horarios.some(h => h.professor === nome && h.dia === aulaAusente.dia && h.horario === aulaAusente.horario);
+        return !ocupado;
+      }).map(nome => {
+        const aulaNaTurma = state.horarios.find(h => h.professor === nome && h.sala === aulaAusente.sala);
+        return { nome, disciplina: aulaNaTurma ? aulaNaTurma.disciplina : '' };
+      }).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    }
+
+    const substituto = candidatos.find(c => c.nome === s.substitutoNome);
+
+    let texto = '';
+    if (profAusente && aulaAusente && substituto && s.data) {
+      texto = `Aviso de Alteração na Grade Horária - ${aulaAusente.sala}\n\n` +
+        `Informamos que no dia ${formatarDataBR(s.data)}, no horário das ${aulaAusente.horario}, o(a) Prof.(a) ${profAusente.nome}` +
+        `${aulaAusente.disciplina ? ' (' + aulaAusente.disciplina + ')' : ''} precisará ausentar-se.\n\n` +
+        `A aula será assumida pelo(a) Prof.(a) ${substituto.nome}, que ministrará a disciplina de ${substituto.disciplina || '(a definir)'} neste horário.`;
+    }
+
+    return { profAusente, aulasDoAusente, aulaAusente, candidatos, substituto, texto };
+  }
+
+  function renderSubstituicao(){
+    const s = state.substituicao;
+    const d = calcularSubstituicao();
+    const textoFinal = s.textoEditado !== null ? s.textoEditado : d.texto;
+    const diaEsperado = d.aulaAusente ? d.aulaAusente.dia : '';
+    const diaDaDataEscolhida = s.data ? diaSemanaDaData(s.data) : '';
+    const dataDivergente = d.aulaAusente && s.data && diaDaDataEscolhida !== diaEsperado;
+
+    const lider = d.aulaAusente ? state.lideres.find(l => l.periodo === d.aulaAusente.sala) : null;
+
+    return `
+    <div class="panel single">
+      <div class="card">
+        <h2>${ICONS.swap} Registrar falta e achar substituto</h2>
+        <div class="field">
+          <label>Professor ausente</label>
+          ${state.professores.length === 0 ? `<p class="note">Cadastre professores primeiro.</p>` : `
+          <select id="s-professor">
+            <option value="">-- Selecione --</option>
+            ${state.professores.map(p => `<option value="${p.id}" ${String(s.professorAusenteId)===String(p.id)?'selected':''}>${esc(p.nome)}</option>`).join('')}
+          </select>`}
+        </div>
+        ${d.profAusente ? `
+        <div class="field">
+          <label>Aula que vai faltar</label>
+          ${d.aulasDoAusente.length === 0 ? `<p class="note">Esse professor não tem nenhuma aula alocada na grade.</p>` : `
+          <select id="s-aula">
+            <option value="">-- Selecione --</option>
+            ${d.aulasDoAusente.map(h => `<option value="${h.id}" ${String(s.aulaAusenteId)===String(h.id)?'selected':''}>${esc(h.dia)} ${esc(h.horario)} — ${esc(h.sala)}${h.disciplina ? ' — '+esc(h.disciplina) : ''}</option>`).join('')}
+          </select>`}
+        </div>` : ''}
+        ${d.aulaAusente ? `
+        <div class="field">
+          <label>Data da falta</label>
+          <input type="date" id="s-data" value="${esc(s.data)}">
+          ${dataDivergente ? `<p class="note">Essa data cai numa ${esc(diaDaDataEscolhida)}, mas a aula selecionada é de ${esc(diaEsperado)} — confira a data.</p>` : ''}
+        </div>
+        <div class="field">
+          <label>Substituto (livre nesse horário, já dá aula pra essa turma)</label>
+          ${d.candidatos.length === 0 ? `<p class="note">Nenhum outro professor dessa turma está livre em ${esc(d.aulaAusente.dia)} ${esc(d.aulaAusente.horario)}.</p>` : `
+          <select id="s-substituto">
+            <option value="">-- Selecione --</option>
+            ${d.candidatos.map(c => `<option value="${esc(c.nome)}" ${s.substitutoNome===c.nome?'selected':''}>${esc(c.nome)}${c.disciplina ? ' — '+esc(c.disciplina) : ''}</option>`).join('')}
+          </select>`}
+        </div>` : ''}
+        ${d.substituto && s.data ? `
+        <div class="field">
+          <label>Comunicado (editável)</label>
+          <textarea id="s-texto" rows="6">${esc(textoFinal)}</textarea>
+        </div>
+        <div class="toggle-group">
+          <button type="button" class="btn btn-primary" id="s-copiar">${ICONS.copy} Copiar texto</button>
+          <a class="btn btn-whats" id="s-whats" href="#" target="_blank" rel="noopener noreferrer" ${lider && lider.telefone ? '' : 'aria-disabled="true"'} style="${lider && lider.telefone ? '' : 'pointer-events:none;opacity:.45;'}">${ICONS.send} WhatsApp p/ líder</a>
+        </div>
+        ${!lider ? `<p class="note">Não há líder cadastrado pra turma "${esc(d.aulaAusente.sala)}" — cadastre um na aba Líderes pra habilitar o envio direto.</p>` : ''}
+        ` : ''}
+      </div>
+    </div>`;
+  }
+
   function renderMensagens(){
     const list = state.mensagem.destinatarioTipo === 'lider' ? state.lideres : state.professores;
     const selected = list.find(x => String(x.id) === String(state.mensagem.id));
@@ -720,6 +846,7 @@
     if (state.activeTab === 'horarios') panel.innerHTML = renderHorarios();
     else if (state.activeTab === 'professores') panel.innerHTML = renderProfessores();
     else if (state.activeTab === 'lideres') panel.innerHTML = renderLideres();
+    else if (state.activeTab === 'substituicao') panel.innerHTML = renderSubstituicao();
     else panel.innerHTML = renderMensagens();
     bind();
   }
@@ -809,6 +936,49 @@
         persist(); renderAll();
       }));
     }
+    if (state.activeTab === 'substituicao') {
+      const s = state.substituicao;
+      const profSel = document.getElementById('s-professor');
+      if (profSel) profSel.addEventListener('change', e=>{
+        state.substituicao = { professorAusenteId: e.target.value, aulaAusenteId:'', data:'', substitutoNome:'', textoEditado:null };
+        renderAll();
+      });
+      const aulaSel = document.getElementById('s-aula');
+      if (aulaSel) aulaSel.addEventListener('change', e=>{
+        s.aulaAusenteId = e.target.value;
+        s.substitutoNome = ''; s.textoEditado = null;
+        const aula = state.horarios.find(h => String(h.id) === String(s.aulaAusenteId));
+        s.data = aula ? proximaDataPara(aula.dia) : '';
+        renderAll();
+      });
+      const dataInput = document.getElementById('s-data');
+      if (dataInput) dataInput.addEventListener('input', e=>{
+        s.data = e.target.value; s.textoEditado = null;
+        renderAll();
+      });
+      const substSel = document.getElementById('s-substituto');
+      if (substSel) substSel.addEventListener('change', e=>{
+        s.substitutoNome = e.target.value; s.textoEditado = null;
+        renderAll();
+      });
+      const textoArea = document.getElementById('s-texto');
+      if (textoArea) textoArea.addEventListener('input', e=>{
+        s.textoEditado = e.target.value;
+        const whats = document.getElementById('s-whats');
+        if (whats && !whats.hasAttribute('aria-disabled')) whats.href = buildSubstWhatsLink(e.target.value);
+      });
+      const copiarBtn = document.getElementById('s-copiar');
+      if (copiarBtn) copiarBtn.addEventListener('click', async ()=>{
+        const texto = document.getElementById('s-texto').value;
+        try { await navigator.clipboard.writeText(texto); copiarBtn.textContent = 'Copiado!'; setTimeout(()=>{ copiarBtn.innerHTML = ICONS.copy + ' Copiar texto'; }, 1500); }
+        catch(e){ alert('Não foi possível copiar automaticamente. Selecione o texto manualmente.'); }
+      });
+      const whatsLink = document.getElementById('s-whats');
+      if (whatsLink && !whatsLink.hasAttribute('aria-disabled')) {
+        const texto = document.getElementById('s-texto') ? document.getElementById('s-texto').value : '';
+        whatsLink.href = buildSubstWhatsLink(texto);
+      }
+    }
     if (state.activeTab === 'mensagens') {
       document.getElementById('tog-lider').addEventListener('click', ()=>{
         state.mensagem = { ...state.mensagem, destinatarioTipo:'lider', id:'' };
@@ -829,6 +999,14 @@
       const link = document.getElementById('m-send');
       if (link) link.href = buildWhatsLink();
     }
+  }
+
+  function buildSubstWhatsLink(texto){
+    const d = calcularSubstituicao();
+    const lider = d.aulaAusente ? state.lideres.find(l => l.periodo === d.aulaAusente.sala) : null;
+    const num = (lider && lider.telefone || '').replace(/\D/g,'');
+    if (!num) return '#';
+    return `https://wa.me/55${num}?text=${encodeURIComponent(texto)}`;
   }
 
   function buildWhatsLink(){
