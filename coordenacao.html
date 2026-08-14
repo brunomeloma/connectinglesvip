@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Painel da Coordenação — Connect Inglês VIP</title>
+<title>Painel da Coordenação — FEST</title>
 <meta name="robots" content="noindex, nofollow">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --ground:#F6F4EF;
@@ -150,6 +151,18 @@
     .panel.single{ grid-template-columns:1fr; max-width:520px; margin:0 auto; }
   }
 
+  /* No celular a grade vem antes do formulário de cadastro (o que o
+     coordenador quer ver primeiro); no desktop o formulário volta a
+     ficar na coluna estreita à esquerda, grade na coluna larga. */
+  .panel-horarios .card-grade{ order:1; }
+  .panel-horarios .card-form{ order:2; }
+  @media (min-width:760px){
+    .panel-horarios .card-form{ order:1; }
+    .panel-horarios .card-grade{ order:2; }
+  }
+  .card-form summary::-webkit-details-marker{ display:none; }
+  .card-form[open] summary span:last-child{ transform:rotate(180deg); }
+
   .card{
     background:var(--surface);
     border:1px solid var(--border);
@@ -291,6 +304,79 @@
     padding:10px 12px;
     line-height:1.45;
   }
+  .error{ color:var(--danger); font-size:.82rem; }
+
+  .filterbar{ display:flex; flex-direction:column; gap:10px; margin-bottom:16px; }
+  .search-wrap{ position:relative; }
+  .search-wrap svg{ position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none; }
+  .search-wrap input{ padding-left:34px; }
+  .daypills{ display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; -webkit-overflow-scrolling:touch; }
+  .daypill{
+    flex:none;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--text-muted);
+    border-radius:999px;
+    padding:6px 13px;
+    font-size:.78rem;
+    font-weight:700;
+    cursor:pointer;
+    white-space:nowrap;
+    font-family:inherit;
+  }
+  .daypill[aria-pressed="true"]{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .daypill:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  .day-group + .day-group{ margin-top:20px; }
+  .day-group-header{
+    font-family:ui-serif,Georgia,"Times New Roman",serif;
+    font-size:1.05rem;
+    font-weight:700;
+    margin:0 0 10px;
+    padding-bottom:6px;
+    border-bottom:1px solid var(--border);
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+  }
+  .day-group-header .count{ font-family:inherit; font-size:.72rem; font-weight:600; color:var(--text-muted); }
+  .time-group + .time-group{ margin-top:14px; }
+  .time-group-header{
+    font-size:.72rem;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    color:var(--text-muted);
+    margin:0 0 6px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .row-compact{ padding:9px 12px; }
+  .row-compact .name{ font-size:.85rem; }
+  .gate{
+    max-width:360px;
+    margin:15vh auto 0;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+  .gate h1{
+    font-family:ui-serif,Georgia,"Times New Roman",serif;
+    font-size:1.4rem;
+    margin:0;
+    text-align:center;
+  }
+  .spinner{
+    width:18px; height:18px;
+    border:2px solid var(--border);
+    border-top-color:var(--accent);
+    border-radius:50%;
+    animation:spin .7s linear infinite;
+    display:inline-block;
+  }
+  @media (prefers-reduced-motion: reduce){ .spinner{ animation:none; } }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -301,16 +387,20 @@
       <h1>Painel da Coordenação</h1>
       <p>Gestão de horários, professores e comunicação rápida</p>
     </div>
-    <div class="hero-meta">Dados salvos só neste navegador — não sincroniza entre dispositivos</div>
+    <div class="hero-meta" id="hero-meta">Compartilhado entre todos os dispositivos</div>
   </header>
 
-  <nav class="tabs" id="tabs"></nav>
+  <nav class="tabs" id="tabs" style="display:none"></nav>
 
   <div id="tabpanel"></div>
 </div>
 
 <script>
 (function(){
+  const SUPABASE_URL = 'https://jrkbwzpyzgekycqtmvco.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impya2J3enB5emdla3ljcXRtdmNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NTUwMzAsImV4cCI6MjA5NzEzMTAzMH0.-G7zDgGQ5ha6brAk3rk-hpRaZs36QM_z9dumLDLi0rg';
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
   const ICONS = {
     calendar:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
     users:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
@@ -323,232 +413,91 @@
     pin:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>',
     mail:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg>',
     phone:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
-    id:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg>'
+    id:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg>',
+    swap:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3"/></svg>',
+    copy:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+    edit:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>',
+    search:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
+    chevron:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>'
   };
 
-  const load = (k, fallback) => { try { const v = JSON.parse(localStorage.getItem(k)); return Array.isArray(v) ? v : fallback; } catch(e){ return fallback; } };
-  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){ alert('Não foi possível salvar. O armazenamento do navegador pode estar cheio ou bloqueado.'); } };
-  const genId = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
   const maskCpf = v => v.replace(/\D/g,'').slice(0,11)
     .replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2');
   const maskTelefone = v => v.replace(/\D/g,'').slice(0,11)
     .replace(/(\d{2})(\d)/,'($1) $2').replace(/(\d{5})(\d{1,4})$/,'$1-$2');
 
+  const NOMES_DIA_JS = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+  const diaDeHoje = NOMES_DIA_JS[new Date().getDay()];
+
   let state = {
-    professores: load('coord_professores', []),
-    horarios: load('coord_horarios', []),
-    lideres: load('coord_lideres', []),
+    senha: sessionStorage.getItem('fest_senha') || '',
+    professores: [],
+    horarios: [],
+    lideres: [],
     activeTab: 'horarios',
-    novoProf: { nome:'', cpf:'', dataNasc:'', email:'', telefone:'' },
-    novoHorario: { professor:'', dia:'Segunda', horario:'', sala:'', disciplina:'' },
-    novoLider: { periodo:'', nome:'', telefone:'' },
-    mensagem: { destinatarioTipo:'lider', id:'', texto:'' }
+    novoProf: { id:null, nome:'', cpf:'', dataNasc:'', email:'', telefone:'' },
+    novoHorario: { id:null, professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' },
+    novoLider: { id:null, periodo:'', nome:'', telefone:'' },
+    mensagem: { destinatarioTipo:'lider', id:'', texto:'' },
+    substituicao: { professorAusenteId:'', aulaAusenteId:'', data:'', substitutoNome:'', textoEditado:null },
+    filtroHorarios: { busca:'', dia: (diaDeHoje === 'Domingo' || diaDeHoje === 'Sábado') ? 'Todos' : diaDeHoje, formAberto:false }
   };
 
-  function persist(){
-    save('coord_professores', state.professores);
-    save('coord_horarios', state.horarios);
-    save('coord_lideres', state.lideres);
+  // Todo acesso passa por essas funções RPC (com senha), nunca direto nas
+  // tabelas — a proteção real está no banco (RLS deny-all + senha), não aqui.
+  async function carregarDados(senha){
+    const { data, error } = await sb.rpc('fest_listar_tudo', { p_senha: senha });
+    if (error) throw error;
+    state.professores = data.professores || [];
+    state.horarios = data.horarios || [];
+    state.lideres = data.lideres || [];
   }
 
-  // Seed 2026.2 — só é aplicado numa instalação vazia (nunca sobrescreve dados já lançados).
-  const N = {
-    anne:'Anne Harlle Lima da Silva Moraes', claudio:'Cláudio Marcos Sousa Moraes',
-    erick:'Erick Vinícius Costa de Andrade', fernanda:'Fernanda Pereira da Silva',
-    francisca:'Francisca Cavalcante Silva da Silva', kennedy:'Francisco Kenedy Quinderé Aquino',
-    genival:'Genival Lima da Silva', helwdson:'Hewldson Reis Madeira',
-    hugo:'Hugo Hayran Bezerra Silva', igo:'Igo Teixeira Morais da Luz',
-    karina:'Karina Caldeira Toledo', mara:'Mara Kelcilene Sousa Marane',
-    marcia:'Márcia da Cruz Girardi', marcus:'Marcus Vinícius Lira Eloi',
-    angela:'Maria Ângela Araújo Casanova', marilene:'Marilene Sousa Santos',
-    mirian:'Mirian Baldez de Macedo', rafael:'Raphael Cortez Cruz',
-    rosa:'Rosa de Fátima Tavares Souza', rosyvania:'Rosyvânia Araújo Mendes',
-    tammy:'Tammy Cristina Sousa Franco Oliveira', victor:'Victor Emanuel Silva de Sousa',
-    wilker:'Wilker Batista Cavalcanti', william:'William Lima Freire'
-  };
-  const SEED_HORARIOS_RAW = [
-    // 1º Período - Direito (Noite)
-    [N.fernanda,'Segunda','19:00','1º Período - Direito (Noite)','Métodos e Técnicas de Pesquisa Científica'],
-    [N.genival,'Terça','19:00','1º Período - Direito (Noite)','Fundamentos de Filosofia e de Sociologia'],
-    [N.angela,'Quarta','19:00','1º Período - Direito (Noite)','Introdução ao Estudo do Direito'],
-    [N.tammy,'Quinta','19:00','1º Período - Direito (Noite)','Leitura e Produção de Textos'],
-    [N.claudio,'Sexta','19:00','1º Período - Direito (Noite)','Antropologia Cultural'],
-    [N.genival,'Segunda','20:30','1º Período - Direito (Noite)','Fundamentos de Filosofia e de Sociologia'],
-    [N.claudio,'Terça','20:30','1º Período - Direito (Noite)','Antropologia Cultural'],
-    [N.fernanda,'Quarta','20:30','1º Período - Direito (Noite)','Métodos e Técnicas de Pesquisa Científica'],
-    [N.angela,'Quinta','20:30','1º Período - Direito (Noite)','Introdução ao Estudo do Direito'],
-    [N.tammy,'Sexta','20:30','1º Período - Direito (Noite)','Leitura e Produção de Textos'],
-    // 2º Período - Direito (Noite)
-    [N.mirian,'Segunda','19:00','2º Período - Direito (Noite)','Direito Civil I (Parte Geral)'],
-    [N.karina,'Terça','19:00','2º Período - Direito (Noite)','Direitos Humanos e Diversidades'],
-    [N.rosyvania,'Quarta','19:00','2º Período - Direito (Noite)','Direito Penal I (Teoria do Crime)'],
-    [N.victor,'Quinta','19:00','2º Período - Direito (Noite)','Direito Constitucional I'],
-    [N.victor,'Sexta','19:00','2º Período - Direito (Noite)','Direito Constitucional I'],
-    [N.karina,'Segunda','20:30','2º Período - Direito (Noite)','Direitos Humanos e Diversidades'],
-    [N.erick,'Terça','20:30','2º Período - Direito (Noite)','Processo Civil I (TGP e Conhecimento)'],
-    [N.erick,'Quarta','20:30','2º Período - Direito (Noite)','Processo Civil I (TGP e Conhecimento)'],
-    [N.rosyvania,'Quinta','20:30','2º Período - Direito (Noite)','Direito Penal I (Teoria do Crime)'],
-    [N.mirian,'Sexta','20:30','2º Período - Direito (Noite)','Direito Civil I (Parte Geral)'],
-    // 4º Período A - Direito (Noite)
-    [N.mara,'Segunda','19:00','4º Período A - Direito (Noite)','Direito Penal III (Parte Especial I)'],
-    [N.wilker,'Terça','19:00','4º Período A - Direito (Noite)','Processo Civil II (Recursos)'],
-    [N.mirian,'Quarta','19:00','4º Período A - Direito (Noite)','Direito Civil III (Contratos)'],
-    [N.marcus,'Quinta','19:00','4º Período A - Direito (Noite)','Processo Penal I'],
-    [N.mirian,'Sexta','19:00','4º Período A - Direito (Noite)','Direito Civil III (Contratos)'],
-    [N.wilker,'Segunda','20:30','4º Período A - Direito (Noite)','Processo Civil II (Recursos)'],
-    [N.marcus,'Terça','20:30','4º Período A - Direito (Noite)','Processo Penal I'],
-    [N.rafael,'Quarta','20:30','4º Período A - Direito (Noite)','Direito Constitucional III'],
-    [N.rafael,'Quinta','20:30','4º Período A - Direito (Noite)','Direito Constitucional III'],
-    [N.mara,'Sexta','20:30','4º Período A - Direito (Noite)','Direito Penal III (Parte Especial I)'],
-    // 4º Período B - Direito (Noite)
-    [N.wilker,'Segunda','19:00','4º Período B - Direito (Noite)','Processo Civil II (Recursos)'],
-    [N.mara,'Terça','19:00','4º Período B - Direito (Noite)','Direito Penal III (Parte Especial I)'],
-    [N.mara,'Quarta','19:00','4º Período B - Direito (Noite)','Direito Penal III (Parte Especial I)'],
-    [N.rafael,'Quinta','19:00','4º Período B - Direito (Noite)','Direito Constitucional III'],
-    [N.marcus,'Sexta','19:00','4º Período B - Direito (Noite)','Processo Penal I'],
-    [N.mirian,'Segunda','20:30','4º Período B - Direito (Noite)','Direito Civil III (Contratos)'],
-    [N.wilker,'Terça','20:30','4º Período B - Direito (Noite)','Processo Civil II (Recursos)'],
-    [N.mirian,'Quarta','20:30','4º Período B - Direito (Noite)','Direito Civil III (Contratos)'],
-    [N.marcus,'Quinta','20:30','4º Período B - Direito (Noite)','Processo Penal I'],
-    [N.rafael,'Sexta','20:30','4º Período B - Direito (Noite)','Direito Constitucional III'],
-    // 5º Período - Direito (Noite)
-    [N.erick,'Segunda','19:00','5º Período - Direito (Noite)','Processo Civil III (Execução)'],
-    [N.anne,'Terça','19:00','5º Período - Direito (Noite)','Direito do Trabalho I'],
-    [N.rafael,'Quarta','19:00','5º Período - Direito (Noite)','Direito Penal IV (Parte Especial II)'],
-    [N.kennedy,'Quinta','19:00','5º Período - Direito (Noite)','Direito Civil IV (Responsabilidade Civil e Consumidor)'],
-    [N.rafael,'Sexta','19:00','5º Período - Direito (Noite)','Direito Penal IV (Parte Especial II)'],
-    [N.anne,'Segunda','20:30','5º Período - Direito (Noite)','Direito do Trabalho I'],
-    [N.kennedy,'Terça','20:30','5º Período - Direito (Noite)','Direito Civil IV (Responsabilidade Civil e Consumidor)'],
-    [N.marcus,'Quarta','20:30','5º Período - Direito (Noite)','Processo Penal II'],
-    [N.erick,'Quinta','20:30','5º Período - Direito (Noite)','Processo Civil III (Execução)'],
-    [N.marcus,'Sexta','20:30','5º Período - Direito (Noite)','Processo Penal II'],
-    // 6º Período - Direito (Noite)
-    [N.anne,'Segunda','19:00','6º Período - Direito (Noite)','Direito do Trabalho II'],
-    [N.marcus,'Terça','19:00','6º Período - Direito (Noite)','Direito Penal V (Legislação Penal Especial e Criminologia)'],
-    [N.marcus,'Quarta','19:00','6º Período - Direito (Noite)','Direito Penal V (Legislação Penal Especial e Criminologia)'],
-    [N.erick,'Quinta','19:00','6º Período - Direito (Noite)','Processo Civil IV (Procedimentos Especiais)'],
-    [N.igo,'Sexta','19:00','6º Período - Direito (Noite)','Ética Profissional e do Estagiário'],
-    [N.erick,'Segunda','20:30','6º Período - Direito (Noite)','Processo Civil IV (Procedimentos Especiais)'],
-    [N.anne,'Terça','20:30','6º Período - Direito (Noite)','Direito do Trabalho II'],
-    [N.hugo,'Quarta','20:30','6º Período - Direito (Noite)','Direito Administrativo I'],
-    [N.igo,'Quinta','20:30','6º Período - Direito (Noite)','Ética Profissional e do Estagiário'],
-    [N.hugo,'Sexta','20:30','6º Período - Direito (Noite)','Direito Administrativo I'],
-    // 8º Período - Direito (Noite)
-    [N.karina,'Segunda','19:00','8º Período - Direito (Noite)','Direito Tributário Aplicado'],
-    [N.kennedy,'Terça','19:00','8º Período - Direito (Noite)','Direito Empresarial II (Título de Crédito e Falência)'],
-    [N.hugo,'Quarta','19:00','8º Período - Direito (Noite)','Direito Administrativo II'],
-    [N.marilene,'Quinta','19:00','8º Período - Direito (Noite)','Formas Consensuais de Solução de Conflitos'],
-    [N.hugo,'Sexta','19:00','8º Período - Direito (Noite)','Direito Administrativo II'],
-    [N.mara,'Segunda','20:30','8º Período - Direito (Noite)','Direito Civil VII (Responsabilidade Civil)'],
-    [N.karina,'Terça','20:30','8º Período - Direito (Noite)','Direito Tributário Aplicado'],
-    [N.mara,'Quarta','20:30','8º Período - Direito (Noite)','Direito Civil VII (Responsabilidade Civil)'],
-    [N.kennedy,'Quinta','20:30','8º Período - Direito (Noite)','Direito Empresarial II (Título de Crédito e Falência)'],
-    [N.marilene,'Sexta','20:30','8º Período - Direito (Noite)','Formas Consensuais de Solução de Conflitos'],
-    // 9º Período - Direito (Noite) — Quarta é TCC nos dois horários (sem professor, não cadastrado)
-    [N.victor,'Segunda','19:00','9º Período - Direito (Noite)','Direito Previdenciário'],
-    [N.victor,'Terça','19:00','9º Período - Direito (Noite)','Direito Previdenciário'],
-    [N.igo,'Quinta','19:00','9º Período - Direito (Noite)','Direito Digital'],
-    [N.mara,'Sexta','19:00','9º Período - Direito (Noite)','Direito do Consumidor'],
-    [N.igo,'Segunda','20:30','9º Período - Direito (Noite)','Direito Digital'],
-    [N.mara,'Terça','20:30','9º Período - Direito (Noite)','Direito do Consumidor'],
-    [N.victor,'Quinta','20:30','9º Período - Direito (Noite)','Filosofia e Sociologia do Direito'],
-    [N.victor,'Sexta','20:30','9º Período - Direito (Noite)','Filosofia e Sociologia do Direito'],
-    // 10º Período - Direito (Noite) — Terça e Sexta são TCC nos dois horários
-    [N.francisca,'Segunda','19:00','10º Período - Direito (Noite)','Língua Brasileira de Sinais (Libras)'],
-    [N.victor,'Quarta','19:00','10º Período - Direito (Noite)','Direito Internacional'],
-    [N.angela,'Quinta','19:00','10º Período - Direito (Noite)','Legislação Sócio-Ambiental'],
-    [N.victor,'Segunda','20:30','10º Período - Direito (Noite)','Direito Internacional'],
-    [N.angela,'Quarta','20:30','10º Período - Direito (Noite)','Legislação Sócio-Ambiental'],
-    [N.francisca,'Quinta','20:30','10º Período - Direito (Noite)','Língua Brasileira de Sinais (Libras)'],
-    // 1º Período - Direito (Tarde)
-    [N.genival,'Segunda','14:00','1º Período - Direito (Tarde)','Fundamentos de Filosofia e de Sociologia'],
-    [N.tammy,'Terça','14:00','1º Período - Direito (Tarde)','Leitura e Produção de Textos'],
-    [N.marcia,'Quarta','14:00','1º Período - Direito (Tarde)','Introdução ao Estudo do Direito'],
-    [N.claudio,'Quinta','14:00','1º Período - Direito (Tarde)','Antropologia Cultural'],
-    [N.fernanda,'Sexta','14:00','1º Período - Direito (Tarde)','Métodos e Técnicas de Pesquisa Científica'],
-    [N.fernanda,'Segunda','15:30','1º Período - Direito (Tarde)','Métodos e Técnicas de Pesquisa Científica'],
-    [N.genival,'Terça','15:30','1º Período - Direito (Tarde)','Fundamentos de Filosofia e de Sociologia'],
-    [N.tammy,'Quarta','15:30','1º Período - Direito (Tarde)','Leitura e Produção de Textos'],
-    [N.marcia,'Quinta','15:30','1º Período - Direito (Tarde)','Introdução ao Estudo do Direito'],
-    [N.claudio,'Sexta','15:30','1º Período - Direito (Tarde)','Antropologia Cultural'],
-    // 2º Período - Direito (Tarde)
-    [N.rosa,'Segunda','14:00','2º Período - Direito (Tarde)','Direitos Humanos e Diversidades'],
-    [N.rosa,'Terça','14:00','2º Período - Direito (Tarde)','Direitos Humanos e Diversidades'],
-    [N.rosa,'Quarta','14:00','2º Período - Direito (Tarde)','Direito Civil I (Parte Geral)'],
-    [N.marcia,'Quinta','14:00','2º Período - Direito (Tarde)','Processo Civil I (TGP e Conhecimento)'],
-    [N.igo,'Sexta','14:00','2º Período - Direito (Tarde)','Direito Constitucional I'],
-    [N.igo,'Segunda','15:30','2º Período - Direito (Tarde)','Direito Constitucional I'],
-    [N.helwdson,'Terça','15:30','2º Período - Direito (Tarde)','Direito Penal I (Teoria do Crime)'],
-    [N.helwdson,'Quarta','15:30','2º Período - Direito (Tarde)','Direito Penal I (Teoria do Crime)'],
-    [N.rosa,'Quinta','15:30','2º Período - Direito (Tarde)','Direito Civil I (Parte Geral)'],
-    [N.marcia,'Sexta','15:30','2º Período - Direito (Tarde)','Processo Civil I (TGP e Conhecimento)'],
-    // 4º Período - Direito (Tarde)
-    [N.mirian,'Segunda','14:00','4º Período - Direito (Tarde)','Direito Civil III (Contratos)'],
-    [N.helwdson,'Terça','14:00','4º Período - Direito (Tarde)','Direito Penal III (Parte Especial I)'],
-    [N.helwdson,'Quarta','14:00','4º Período - Direito (Tarde)','Direito Penal III (Parte Especial I)'],
-    [N.marcus,'Quinta','14:00','4º Período - Direito (Tarde)','Processo Penal I'],
-    [N.marcia,'Sexta','14:00','4º Período - Direito (Tarde)','Processo Civil II (Recursos)'],
-    [N.marcia,'Segunda','15:30','4º Período - Direito (Tarde)','Processo Civil II (Recursos)'],
-    [N.wilker,'Terça','15:30','4º Período - Direito (Tarde)','Direito Constitucional III'],
-    [N.mirian,'Quarta','15:30','4º Período - Direito (Tarde)','Direito Civil III (Contratos)'],
-    [N.wilker,'Quinta','15:30','4º Período - Direito (Tarde)','Direito Constitucional III'],
-    [N.marcus,'Sexta','15:30','4º Período - Direito (Tarde)','Processo Penal I'],
-    // 6º Período - Direito (Tarde)
-    [N.marcia,'Segunda','14:00','6º Período - Direito (Tarde)','Direito do Trabalho II'],
-    [N.wilker,'Terça','14:00','6º Período - Direito (Tarde)','Processo Civil IV (Procedimentos Especiais)'],
-    [N.erick,'Quarta','14:00','6º Período - Direito (Tarde)','Direito Penal V (Legislação Penal Especial e Criminologia)'],
-    [N.rosa,'Quinta','14:00','6º Período - Direito (Tarde)','Direito Administrativo I'],
-    [N.wilker,'Sexta','14:00','6º Período - Direito (Tarde)','Processo Civil IV (Procedimentos Especiais)'],
-    [N.rosa,'Segunda','15:30','6º Período - Direito (Tarde)','Direito Administrativo I'],
-    [N.marcia,'Terça','15:30','6º Período - Direito (Tarde)','Direito do Trabalho II'],
-    [N.igo,'Quarta','15:30','6º Período - Direito (Tarde)','Ética Profissional e do Estagiário'],
-    [N.erick,'Quinta','15:30','6º Período - Direito (Tarde)','Direito Penal V (Legislação Penal Especial e Criminologia)'],
-    [N.igo,'Sexta','15:30','6º Período - Direito (Tarde)','Ética Profissional e do Estagiário'],
-    // 8º Período - Direito (Tarde)
-    [N.karina,'Segunda','14:00','8º Período - Direito (Tarde)','Direito Tributário Aplicado'],
-    [N.karina,'Terça','14:00','8º Período - Direito (Tarde)','Direito Tributário Aplicado'],
-    [N.marilene,'Quarta','14:00','8º Período - Direito (Tarde)','Formas Consensuais de Solução de Conflitos'],
-    [N.wilker,'Quinta','14:00','8º Período - Direito (Tarde)','Direito Empresarial II (Título de Crédito e Falência)'],
-    [N.marilene,'Sexta','14:00','8º Período - Direito (Tarde)','Formas Consensuais de Solução de Conflitos'],
-    [N.kennedy,'Segunda','15:30','8º Período - Direito (Tarde)','Direito Civil VII (Responsabilidade Civil)'],
-    [N.rosa,'Terça','15:30','8º Período - Direito (Tarde)','Direito Administrativo II'],
-    [N.rosa,'Quarta','15:30','8º Período - Direito (Tarde)','Direito Administrativo II'],
-    [N.kennedy,'Quinta','15:30','8º Período - Direito (Tarde)','Direito Civil VII (Responsabilidade Civil)'],
-    [N.wilker,'Sexta','15:30','8º Período - Direito (Tarde)','Direito Empresarial II (Título de Crédito e Falência)'],
-    // 10º Período - Direito (Tarde) — Quinta e Sexta são TCC nos dois horários
-    [N.kennedy,'Segunda','14:00','10º Período - Direito (Tarde)','Direito Internacional'],
-    [N.marcia,'Terça','14:00','10º Período - Direito (Tarde)','Legislação Sócio-Ambiental'],
-    [N.francisca,'Quarta','14:00','10º Período - Direito (Tarde)','Língua Brasileira de Sinais (Libras)'],
-    [N.francisca,'Segunda','15:30','10º Período - Direito (Tarde)','Língua Brasileira de Sinais (Libras)'],
-    [N.kennedy,'Terça','15:30','10º Período - Direito (Tarde)','Direito Internacional'],
-    [N.marcia,'Quarta','15:30','10º Período - Direito (Tarde)','Legislação Sócio-Ambiental'],
-    // Economia (extraídas dos mapas individuais — sem grade por período pra conferência cruzada)
-    [N.claudio,'Segunda','19:00','Economia (Noite)','Contabilidade Social'],
-    [N.claudio,'Segunda','20:30','Economia (Noite)','Economia Monetária'],
-    [N.claudio,'Terça','19:00','Economia (Noite)','Microeconomia II'],
-    [N.claudio,'Quarta','20:30','Economia (Noite)','Contabilidade Social'],
-    [N.claudio,'Sexta','20:30','Economia (Noite)','Microeconomia II'],
-    [N.william,'Quarta','19:00','Economia (Noite)','Valuation'],
-    [N.william,'Quinta','19:00','Economia (Noite)','Valuation'],
-    [N.william,'Quinta','20:30','Economia (Noite)','Matemática Financeira'],
-    [N.william,'Sexta','19:00','Economia (Noite)','Matemática Financeira'],
-    // CPA (extraídas do mapa individual do William — sem grade por período)
-    [N.william,'Quarta','20:30','CPA (Noite)','CPA'],
-    [N.william,'Sexta','20:30','CPA (Noite)','CPA'],
-    // Psicologia e Pedagogia — Libras (extraídas do mapa individual da Francisca — sem grade por período)
-    [N.francisca,'Segunda','20:30','8º Período - Pedagogia (Noite)','Língua Brasileira de Sinais (Libras)'],
-    [N.francisca,'Sexta','19:00','8º Período - Pedagogia (Noite)','Língua Brasileira de Sinais (Libras)'],
-    [N.francisca,'Quarta','15:30','8º Período - Psicologia (Tarde)','Língua Brasileira de Sinais (Libras)'],
-    [N.francisca,'Quinta','19:00','8º Período - Psicologia (Noite)','Língua Brasileira de Sinais (Libras)'],
-    [N.francisca,'Sexta','14:00','8º Período - Psicologia (Tarde)','Língua Brasileira de Sinais (Libras)'],
-    [N.francisca,'Sexta','20:30','8º Período - Psicologia (Noite)','Língua Brasileira de Sinais (Libras)']
-  ];
+  function renderGate(loading, erro){
+    document.getElementById('tabs').style.display = 'none';
+    document.getElementById('tabpanel').innerHTML = `
+      <div class="gate">
+        <h1>Painel da Coordenação</h1>
+        <form id="gate-form" class="card" style="display:flex;flex-direction:column;gap:12px;">
+          <div class="field"><label>Senha de acesso</label><input type="password" id="gate-senha" autocomplete="current-password"></div>
+          ${erro ? `<p class="error">${esc(erro)}</p>` : ''}
+          <button type="submit" class="btn btn-primary" ${loading ? 'disabled' : ''}>${loading ? '<span class="spinner"></span> Entrando...' : 'Entrar'}</button>
+        </form>
+      </div>`;
+    const f = document.getElementById('gate-form');
+    const input = document.getElementById('gate-senha');
+    if (!loading) input.focus();
+    f.addEventListener('submit', async e=>{
+      e.preventDefault();
+      const senha = input.value;
+      renderGate(true, '');
+      try {
+        await carregarDados(senha);
+        state.senha = senha;
+        sessionStorage.setItem('fest_senha', senha);
+        document.getElementById('tabs').style.display = '';
+        renderAll();
+      } catch(err){
+        renderGate(false, 'Senha incorreta.');
+      }
+    });
+  }
 
-  function aplicarSeed2026_2(){
-    if (state.professores.length > 0 || state.horarios.length > 0) return;
-    state.professores = Object.values(N).map(nome => ({ id:genId(), nome, cpf:'', dataNasc:'', email:'', telefone:'' }));
-    state.horarios = SEED_HORARIOS_RAW.map(([professor, dia, horario, sala, disciplina]) => ({ id:genId(), professor, dia, horario, sala, disciplina }));
-    persist();
+  async function boot(){
+    if (state.senha) {
+      renderGate(true, '');
+      try {
+        await carregarDados(state.senha);
+        document.getElementById('tabs').style.display = '';
+        renderAll();
+      } catch(err){
+        sessionStorage.removeItem('fest_senha');
+        state.senha = '';
+        renderGate(false, '');
+      }
+    } else {
+      renderGate(false, '');
+    }
   }
 
   function esc(s){
@@ -559,8 +508,36 @@
     { id:'horarios', label:'Horários e Salas', icon:ICONS.calendar },
     { id:'professores', label:'Professores', icon:ICONS.users },
     { id:'lideres', label:'Líderes de Turma', icon:ICONS.userCheck },
+    { id:'substituicao', label:'Substituição', icon:ICONS.swap },
     { id:'mensagens', label:'Disparo WhatsApp', icon:ICONS.message }
   ];
+
+  const DIA_SEMANA_NUM = { 'Domingo':0, 'Segunda':1, 'Terça':2, 'Quarta':3, 'Quinta':4, 'Sexta':5, 'Sábado':6 };
+
+  function proximaDataPara(diaNome){
+    const alvo = DIA_SEMANA_NUM[diaNome];
+    if (alvo === undefined) return '';
+    const hoje = new Date();
+    for (let i = 0; i < 7; i++){
+      const d = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + i);
+      if (d.getDay() === alvo) return isoDate(d);
+    }
+    return '';
+  }
+  function isoDate(d){
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  function formatarDataBR(iso){
+    if (!iso) return '';
+    const [a,m,d] = iso.split('-');
+    return `${d}/${m}/${a}`;
+  }
+  function diaSemanaDaData(iso){
+    if (!iso) return '';
+    const [a,m,d] = iso.split('-').map(Number);
+    const dt = new Date(a, m-1, d);
+    return Object.keys(DIA_SEMANA_NUM).find(k => DIA_SEMANA_NUM[k] === dt.getDay());
+  }
 
   function renderTabs(){
     const nav = document.getElementById('tabs');
@@ -574,66 +551,143 @@
     }));
   }
 
+  function horariosFiltrados(){
+    const f = state.filtroHorarios;
+    const buscaLower = f.busca.trim().toLowerCase();
+    let rows = state.horarios.filter(item => {
+      if (f.dia !== 'Todos' && item.dia !== f.dia) return false;
+      if (buscaLower) {
+        const alvo = (item.professor + ' ' + item.turma + ' ' + item.disciplina).toLowerCase();
+        if (!alvo.includes(buscaLower)) return false;
+      }
+      return true;
+    });
+    const ordemDia = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+    rows.sort((a,b) => {
+      const d = ordemDia.indexOf(a.dia) - ordemDia.indexOf(b.dia);
+      if (d !== 0) return d;
+      if (a.horario !== b.horario) return a.horario.localeCompare(b.horario);
+      return a.turma.localeCompare(b.turma, 'pt-BR');
+    });
+    return rows;
+  }
+
+  function renderHorariosResultados(){
+    const rows = horariosFiltrados();
+    if (rows.length === 0) return `<p class="empty" style="margin-top:12px">Nenhum horário encontrado com esse filtro.</p>`;
+    const mostrarCabecalhoDia = state.filtroHorarios.dia === 'Todos';
+    const porDia = [];
+    rows.forEach(item => {
+      let grupo = porDia.find(g => g.dia === item.dia);
+      if (!grupo) { grupo = { dia: item.dia, itens: [] }; porDia.push(grupo); }
+      grupo.itens.push(item);
+    });
+    return porDia.map(grupoDia => {
+      const porHorario = [];
+      grupoDia.itens.forEach(item => {
+        let g = porHorario.find(g => g.horario === item.horario);
+        if (!g) { g = { horario: item.horario, itens: [] }; porHorario.push(g); }
+        g.itens.push(item);
+      });
+      return `
+      <div class="day-group">
+        ${mostrarCabecalhoDia ? `<div class="day-group-header">${esc(grupoDia.dia)}${grupoDia.dia===diaDeHoje ? ' <span class="pill">hoje</span>' : ''} <span class="count">${grupoDia.itens.length} aula${grupoDia.itens.length===1?'':'s'}</span></div>` : ''}
+        ${porHorario.map(g => `
+          <div class="time-group">
+            <div class="time-group-header">${ICONS.clock} ${esc(g.horario)} <span style="font-weight:400">(${g.itens.length})</span></div>
+            <div class="list">
+              ${g.itens.map(item => `
+                <div class="row row-compact">
+                  <div>
+                    <div class="name">${esc(item.turma) || '(sem turma definida)'}</div>
+                    <div class="meta">
+                      <span>${ICONS.users} ${esc(item.professor)}</span>
+                      ${item.disciplina ? `<span>${esc(item.disciplina)}</span>` : ''}
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:2px">
+                    <button class="icon-btn" data-edit-horario="${item.id}" aria-label="Editar horário">${ICONS.edit}</button>
+                    <button class="icon-btn" data-del-horario="${item.id}" aria-label="Remover horário">${ICONS.trash}</button>
+                  </div>
+                </div>`).join('')}
+            </div>
+          </div>`).join('')}
+      </div>`;
+    }).join('');
+  }
+
   function renderHorarios(){
-    const rows = state.horarios;
+    const editando = !!state.novoHorario.id;
+    const f = state.filtroHorarios;
+    const ordemDia = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+    const diasComData = ordemDia.filter(d => state.horarios.some(h => h.dia === d));
+
     return `
-    <div class="panel">
-      <form class="card" id="form-horario">
-        <h2>${ICONS.plus} Novo Horário</h2>
-        <div class="field">
-          <label>Professor</label>
-          ${state.professores.length === 0 ? `
-            <p class="note">Cadastre um professor na aba "Professores" antes de alocar horários.</p>
-          ` : `
-            <select id="h-professor">
-              <option value="">-- Selecione --</option>
-              ${state.professores.map(p=>`<option value="${esc(p.nome)}" ${state.novoHorario.professor===p.nome?'selected':''}>${esc(p.nome)}</option>`).join('')}
-            </select>
-          `}
+    <div class="panel panel-horarios">
+      <div class="card card-grade">
+        <h2>Grade alocada <span class="pill" style="text-transform:none;font-weight:600">${state.horarios.length}</span></h2>
+        <div class="filterbar">
+          <div class="search-wrap">
+            ${ICONS.search}
+            <input id="h-busca" placeholder="Buscar por professor, turma ou disciplina..." value="${esc(f.busca)}">
+          </div>
+          <div class="daypills">
+            <button type="button" class="daypill" data-dia="Todos" aria-pressed="${f.dia==='Todos'}">Todos os dias</button>
+            ${diasComData.map(d => `<button type="button" class="daypill" data-dia="${d}" aria-pressed="${f.dia===d}">${d}${d===diaDeHoje ? ' • hoje' : ''}</button>`).join('')}
+          </div>
         </div>
-        <div class="field"><label>Dia da semana</label>
-          <select id="h-dia">
-            ${['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'].map(d=>`<option ${state.novoHorario.dia===d?'selected':''}>${d}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field"><label>Horário</label><input id="h-horario" placeholder="Ex: 19:00" value="${esc(state.novoHorario.horario)}"></div>
-        <div class="field"><label>Turma / Período</label><input id="h-sala" placeholder="Ex: 4º Período A - Direito (Noite)" value="${esc(state.novoHorario.sala)}"></div>
-        <div class="field"><label>Disciplina</label><input id="h-disciplina" placeholder="Ex: Direito Penal III" value="${esc(state.novoHorario.disciplina)}"></div>
-        <button type="submit" class="btn btn-primary">Adicionar à grade</button>
-      </form>
-      <div class="card">
-        <h2>Grade alocada <span class="pill" style="text-transform:none;font-weight:600">${rows.length}</span></h2>
-        ${rows.length===0 ? `<p class="empty">Nenhum horário cadastrado ainda.</p>` : `
-        <div class="list">
-          ${rows.map(item => `
-            <div class="row">
-              <div>
-                <div class="name">${esc(item.professor)}</div>
-                ${item.disciplina ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">${esc(item.disciplina)}</div>` : ''}
-                <div class="meta">
-                  <span>${ICONS.clock} ${esc(item.dia)} (${esc(item.horario)})</span>
-                  <span>${ICONS.pin} ${esc(item.sala)}</span>
-                </div>
-              </div>
-              <button class="icon-btn" data-del-horario="${item.id}" aria-label="Remover horário">${ICONS.trash}</button>
-            </div>`).join('')}
-        </div>`}
+        <div id="h-resultados">${renderHorariosResultados()}</div>
       </div>
+      <details class="card card-form" id="form-horario-details" ${editando ? 'open' : ''}>
+        <summary style="cursor:pointer;font-weight:700;display:flex;align-items:center;gap:8px;list-style:none">
+          ${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Horário' : 'Adicionar novo horário'}
+          <span style="margin-left:auto;color:var(--text-muted)">${ICONS.chevron}</span>
+        </summary>
+        <form id="form-horario" style="margin-top:14px;display:flex;flex-direction:column;gap:12px">
+          <div class="field">
+            <label>Professor</label>
+            ${state.professores.length === 0 ? `
+              <p class="note">Cadastre um professor na aba "Professores" antes de alocar horários.</p>
+            ` : `
+              <select id="h-professor">
+                <option value="">-- Selecione --</option>
+                ${state.professores.map(p=>`<option value="${esc(p.nome)}" ${state.novoHorario.professor===p.nome?'selected':''}>${esc(p.nome)}</option>`).join('')}
+              </select>
+            `}
+          </div>
+          <div class="field"><label>Dia da semana</label>
+            <select id="h-dia">
+              ${['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'].map(d=>`<option ${state.novoHorario.dia===d?'selected':''}>${d}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field"><label>Horário</label><input id="h-horario" placeholder="Ex: 19:00" value="${esc(state.novoHorario.horario)}"></div>
+          <div class="field"><label>Turma / Período</label><input id="h-turma" placeholder="Ex: 4º Período A - Direito (Noite)" value="${esc(state.novoHorario.turma)}"></div>
+          <div class="field"><label>Disciplina</label><input id="h-disciplina" placeholder="Ex: Direito Penal III" value="${esc(state.novoHorario.disciplina)}"></div>
+          <div class="toggle-group">
+            <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Adicionar à grade'}</button>
+            ${editando ? `<button type="button" class="btn" id="h-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
+          </div>
+        </form>
+      </details>
     </div>`;
   }
 
   function renderProfessores(){
     const rows = state.professores;
+    const editando = !!state.novoProf.id;
     return `
     <div class="panel">
       <form class="card" id="form-prof">
-        <h2>${ICONS.plus} Cadastrar Professor</h2>
+        <h2>${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Professor' : 'Cadastrar Professor'}</h2>
         <div class="field"><label>Nome completo</label><input id="p-nome" value="${esc(state.novoProf.nome)}"></div>
         <div class="field"><label>CPF</label><input id="p-cpf" value="${esc(state.novoProf.cpf)}"></div>
         <div class="field"><label>Data de nascimento</label><input id="p-data" placeholder="DD/MM/AAAA" value="${esc(state.novoProf.dataNasc)}"></div>
         <div class="field"><label>E-mail</label><input id="p-email" type="email" value="${esc(state.novoProf.email)}"></div>
         <div class="field"><label>Telefone / WhatsApp</label><input id="p-telefone" value="${esc(state.novoProf.telefone)}"></div>
-        <button type="submit" class="btn btn-primary">Salvar professor</button>
+        <div class="toggle-group">
+          <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Salvar professor'}</button>
+          ${editando ? `<button type="button" class="btn" id="p-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
+        </div>
       </form>
       <div class="card">
         <h2>Corpo docente</h2>
@@ -649,7 +703,10 @@
                   <span>${ICONS.phone} ${esc(p.telefone) || 'Não informado'}</span>
                 </div>
               </div>
-              <button class="icon-btn" data-del-prof="${p.id}" aria-label="Remover professor">${ICONS.trash}</button>
+              <div style="display:flex;gap:2px">
+                <button class="icon-btn" data-edit-prof="${p.id}" aria-label="Editar professor">${ICONS.edit}</button>
+                <button class="icon-btn" data-del-prof="${p.id}" aria-label="Remover professor">${ICONS.trash}</button>
+              </div>
             </div>`).join('')}
         </div>`}
       </div>
@@ -658,14 +715,18 @@
 
   function renderLideres(){
     const rows = state.lideres;
+    const editando = !!state.novoLider.id;
     return `
     <div class="panel">
       <form class="card" id="form-lider">
-        <h2>${ICONS.plus} Vincular Líder</h2>
+        <h2>${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Líder' : 'Vincular Líder'}</h2>
         <div class="field"><label>Período / turma</label><input id="l-periodo" placeholder="Ex: 1º Período" value="${esc(state.novoLider.periodo)}"></div>
         <div class="field"><label>Nome do líder</label><input id="l-nome" value="${esc(state.novoLider.nome)}"></div>
         <div class="field"><label>WhatsApp (com DDD)</label><input id="l-telefone" value="${esc(state.novoLider.telefone)}"></div>
-        <button type="submit" class="btn btn-primary">Salvar líder</button>
+        <div class="toggle-group">
+          <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Salvar líder'}</button>
+          ${editando ? `<button type="button" class="btn" id="l-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
+        </div>
       </form>
       <div class="card">
         <h2>Líderes de turma</h2>
@@ -678,9 +739,107 @@
                 <div class="name" style="margin-top:8px">${esc(l.nome)}</div>
                 <div class="meta"><span>${ICONS.phone} ${esc(l.telefone)}</span></div>
               </div>
-              <button class="icon-btn" data-del-lider="${l.id}" aria-label="Remover líder">${ICONS.trash}</button>
+              <div style="display:flex;gap:2px">
+                <button class="icon-btn" data-edit-lider="${l.id}" aria-label="Editar líder">${ICONS.edit}</button>
+                <button class="icon-btn" data-del-lider="${l.id}" aria-label="Remover líder">${ICONS.trash}</button>
+              </div>
             </div>`).join('')}
         </div>`}
+      </div>
+    </div>`;
+  }
+
+  function calcularSubstituicao(){
+    const s = state.substituicao;
+    const profAusente = state.professores.find(p => String(p.id) === String(s.professorAusenteId));
+    const aulasDoAusente = profAusente ? state.horarios.filter(h => h.professor === profAusente.nome) : [];
+    const aulaAusente = aulasDoAusente.find(h => String(h.id) === String(s.aulaAusenteId));
+
+    let candidatos = [];
+    if (profAusente && aulaAusente) {
+      // Professores que lecionam para a mesma turma...
+      const nomesDaTurma = new Set(
+        state.horarios.filter(h => h.turma === aulaAusente.turma && h.professor !== profAusente.nome).map(h => h.professor)
+      );
+      // ...e que não têm nenhuma aula própria alocada nesse dia+horário exatos.
+      candidatos = Array.from(nomesDaTurma).filter(nome => {
+        const ocupado = state.horarios.some(h => h.professor === nome && h.dia === aulaAusente.dia && h.horario === aulaAusente.horario);
+        return !ocupado;
+      }).map(nome => {
+        const aulaNaTurma = state.horarios.find(h => h.professor === nome && h.turma === aulaAusente.turma);
+        return { nome, disciplina: aulaNaTurma ? aulaNaTurma.disciplina : '' };
+      }).sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    }
+
+    const substituto = candidatos.find(c => c.nome === s.substitutoNome);
+
+    let texto = '';
+    if (profAusente && aulaAusente && substituto && s.data) {
+      texto = `Aviso de Alteração na Grade Horária - ${aulaAusente.turma}\n\n` +
+        `Informamos que no dia ${formatarDataBR(s.data)}, no horário das ${aulaAusente.horario}, o(a) Prof.(a) ${profAusente.nome}` +
+        `${aulaAusente.disciplina ? ' (' + aulaAusente.disciplina + ')' : ''} precisará ausentar-se.\n\n` +
+        `A aula será assumida pelo(a) Prof.(a) ${substituto.nome}, que ministrará a disciplina de ${substituto.disciplina || '(a definir)'} neste horário.`;
+    }
+
+    return { profAusente, aulasDoAusente, aulaAusente, candidatos, substituto, texto };
+  }
+
+  function renderSubstituicao(){
+    const s = state.substituicao;
+    const d = calcularSubstituicao();
+    const textoFinal = s.textoEditado !== null ? s.textoEditado : d.texto;
+    const diaEsperado = d.aulaAusente ? d.aulaAusente.dia : '';
+    const diaDaDataEscolhida = s.data ? diaSemanaDaData(s.data) : '';
+    const dataDivergente = d.aulaAusente && s.data && diaDaDataEscolhida !== diaEsperado;
+
+    const lider = d.aulaAusente ? state.lideres.find(l => l.periodo === d.aulaAusente.turma) : null;
+
+    return `
+    <div class="panel single">
+      <div class="card">
+        <h2>${ICONS.swap} Registrar falta e achar substituto</h2>
+        <div class="field">
+          <label>Professor ausente</label>
+          ${state.professores.length === 0 ? `<p class="note">Cadastre professores primeiro.</p>` : `
+          <select id="s-professor">
+            <option value="">-- Selecione --</option>
+            ${state.professores.map(p => `<option value="${p.id}" ${String(s.professorAusenteId)===String(p.id)?'selected':''}>${esc(p.nome)}</option>`).join('')}
+          </select>`}
+        </div>
+        ${d.profAusente ? `
+        <div class="field">
+          <label>Aula que vai faltar</label>
+          ${d.aulasDoAusente.length === 0 ? `<p class="note">Esse professor não tem nenhuma aula alocada na grade.</p>` : `
+          <select id="s-aula">
+            <option value="">-- Selecione --</option>
+            ${d.aulasDoAusente.map(h => `<option value="${h.id}" ${String(s.aulaAusenteId)===String(h.id)?'selected':''}>${esc(h.dia)} ${esc(h.horario)} — ${esc(h.turma)}${h.disciplina ? ' — '+esc(h.disciplina) : ''}</option>`).join('')}
+          </select>`}
+        </div>` : ''}
+        ${d.aulaAusente ? `
+        <div class="field">
+          <label>Data da falta</label>
+          <input type="date" id="s-data" value="${esc(s.data)}">
+          ${dataDivergente ? `<p class="note">Essa data cai numa ${esc(diaDaDataEscolhida)}, mas a aula selecionada é de ${esc(diaEsperado)} — confira a data.</p>` : ''}
+        </div>
+        <div class="field">
+          <label>Substituto (livre nesse horário, já dá aula pra essa turma)</label>
+          ${d.candidatos.length === 0 ? `<p class="note">Nenhum outro professor dessa turma está livre em ${esc(d.aulaAusente.dia)} ${esc(d.aulaAusente.horario)}.</p>` : `
+          <select id="s-substituto">
+            <option value="">-- Selecione --</option>
+            ${d.candidatos.map(c => `<option value="${esc(c.nome)}" ${s.substitutoNome===c.nome?'selected':''}>${esc(c.nome)}${c.disciplina ? ' — '+esc(c.disciplina) : ''}</option>`).join('')}
+          </select>`}
+        </div>` : ''}
+        ${d.substituto && s.data ? `
+        <div class="field">
+          <label>Comunicado (editável)</label>
+          <textarea id="s-texto" rows="6">${esc(textoFinal)}</textarea>
+        </div>
+        <div class="toggle-group">
+          <button type="button" class="btn btn-primary" id="s-copiar">${ICONS.copy} Copiar texto</button>
+          <a class="btn btn-whats" id="s-whats" href="#" target="_blank" rel="noopener noreferrer" ${lider && lider.telefone ? '' : 'aria-disabled="true"'} style="${lider && lider.telefone ? '' : 'pointer-events:none;opacity:.45;'}">${ICONS.send} WhatsApp p/ líder</a>
+        </div>
+        ${!lider ? `<p class="note">Não há líder cadastrado pra turma "${esc(d.aulaAusente.turma)}" — cadastre um na aba Líderes pra habilitar o envio direto.</p>` : ''}
+        ` : ''}
       </div>
     </div>`;
   }
@@ -720,6 +879,7 @@
     if (state.activeTab === 'horarios') panel.innerHTML = renderHorarios();
     else if (state.activeTab === 'professores') panel.innerHTML = renderProfessores();
     else if (state.activeTab === 'lideres') panel.innerHTML = renderLideres();
+    else if (state.activeTab === 'substituicao') panel.innerHTML = renderSubstituicao();
     else panel.innerHTML = renderMensagens();
     bind();
   }
@@ -729,30 +889,51 @@
       const f = document.getElementById('form-horario');
       const profSel = document.getElementById('h-professor');
       if (profSel) profSel.addEventListener('change', e=>{ state.novoHorario.professor = e.target.value; });
-      ['h-dia','h-horario','h-sala','h-disciplina'].forEach(id=>{
+      ['h-dia','h-horario','h-turma','h-disciplina'].forEach(id=>{
         document.getElementById(id).addEventListener('input', e=>{
-          const map = {'h-dia':'dia','h-horario':'horario','h-sala':'sala','h-disciplina':'disciplina'};
+          const map = {'h-dia':'dia','h-horario':'horario','h-turma':'turma','h-disciplina':'disciplina'};
           state.novoHorario[map[id]] = e.target.value;
         });
       });
-      f.addEventListener('submit', e=>{
+      f.addEventListener('submit', async e=>{
         e.preventDefault();
         if(!state.novoHorario.professor || !state.novoHorario.horario) return;
         const conflitoProfessor = state.horarios.some(h => h.professor===state.novoHorario.professor && h.dia===state.novoHorario.dia && h.horario===state.novoHorario.horario);
         if (conflitoProfessor) { alert(state.novoHorario.professor + ' já tem uma aula alocada nesse dia e horário.'); return; }
-        const salaLimpa = state.novoHorario.sala.trim();
-        if (salaLimpa) {
-          const conflitoSala = state.horarios.some(h => h.sala.trim()===salaLimpa && h.dia===state.novoHorario.dia && h.horario===state.novoHorario.horario);
-          if (conflitoSala) { alert('A turma ' + salaLimpa + ' já está ocupada nesse dia e horário.'); return; }
+        const turmaLimpa = state.novoHorario.turma.trim();
+        if (turmaLimpa) {
+          const conflitoTurma = state.horarios.some(h => h.turma.trim()===turmaLimpa && h.dia===state.novoHorario.dia && h.horario===state.novoHorario.horario);
+          if (conflitoTurma) { alert('A turma ' + turmaLimpa + ' já está ocupada nesse dia e horário.'); return; }
         }
-        state.horarios.push({...state.novoHorario, id:genId()});
-        state.novoHorario = { professor:'', dia:'Segunda', horario:'', sala:'', disciplina:'' };
-        persist(); renderAll();
+        const btn = f.querySelector('button[type=submit]');
+        btn.disabled = true;
+        const editando = state.novoHorario.id;
+        const args = {
+          p_senha: state.senha, p_professor: state.novoHorario.professor, p_dia: state.novoHorario.dia,
+          p_horario: state.novoHorario.horario, p_turma: state.novoHorario.turma, p_disciplina: state.novoHorario.disciplina
+        };
+        const { error } = editando
+          ? await sb.rpc('fest_update_horario', { ...args, p_id: editando })
+          : await sb.rpc('fest_add_horario', args);
+        if (error) { alert(error.message); btn.disabled = false; return; }
+        state.novoHorario = { id:null, professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' };
+        await carregarDados(state.senha); renderAll();
       });
-      panel_query('[data-del-horario]').forEach(b=>b.addEventListener('click', ()=>{
-        if (!confirm('Remover este horário da grade?')) return;
-        state.horarios = state.horarios.filter(h=>String(h.id)!==b.dataset.delHorario);
-        persist(); renderAll();
+      const cancelarBtn = document.getElementById('h-cancelar');
+      if (cancelarBtn) cancelarBtn.addEventListener('click', ()=>{
+        state.novoHorario = { id:null, professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' };
+        renderAll();
+      });
+      bindResultadosHorarios();
+      const buscaInput = document.getElementById('h-busca');
+      if (buscaInput) buscaInput.addEventListener('input', e=>{
+        state.filtroHorarios.busca = e.target.value;
+        document.getElementById('h-resultados').innerHTML = renderHorariosResultados();
+        bindResultadosHorarios();
+      });
+      panel_query('.daypill').forEach(b=>b.addEventListener('click', ()=>{
+        state.filtroHorarios.dia = b.dataset.dia;
+        renderAll();
       }));
     }
     if (state.activeTab === 'professores') {
@@ -767,22 +948,44 @@
           e.target.value = v;
         });
       });
-      f.addEventListener('submit', e=>{
+      f.addEventListener('submit', async e=>{
         e.preventDefault();
         if(!state.novoProf.nome) return;
         const cpfLimpo = state.novoProf.cpf.replace(/\D/g,'');
-        if (cpfLimpo && state.professores.some(p => p.cpf.replace(/\D/g,'') === cpfLimpo)) {
+        const editando = state.novoProf.id;
+        if (cpfLimpo && state.professores.some(p => p.cpf.replace(/\D/g,'') === cpfLimpo && String(p.id) !== String(editando))) {
           alert('Já existe um professor cadastrado com esse CPF.');
           return;
         }
-        state.professores.push({...state.novoProf, id:genId()});
-        state.novoProf = { nome:'', cpf:'', dataNasc:'', email:'', telefone:'' };
-        persist(); renderAll();
+        const btn = f.querySelector('button[type=submit]');
+        btn.disabled = true;
+        const args = {
+          p_senha: state.senha, p_nome: state.novoProf.nome, p_cpf: state.novoProf.cpf,
+          p_data_nasc: state.novoProf.dataNasc, p_email: state.novoProf.email, p_telefone: state.novoProf.telefone
+        };
+        const { error } = editando
+          ? await sb.rpc('fest_update_professor', { ...args, p_id: editando })
+          : await sb.rpc('fest_add_professor', args);
+        if (error) { alert(error.message); btn.disabled = false; return; }
+        state.novoProf = { id:null, nome:'', cpf:'', dataNasc:'', email:'', telefone:'' };
+        await carregarDados(state.senha); renderAll();
       });
-      panel_query('[data-del-prof]').forEach(b=>b.addEventListener('click', ()=>{
+      const cancelarBtn = document.getElementById('p-cancelar');
+      if (cancelarBtn) cancelarBtn.addEventListener('click', ()=>{
+        state.novoProf = { id:null, nome:'', cpf:'', dataNasc:'', email:'', telefone:'' };
+        renderAll();
+      });
+      panel_query('[data-edit-prof]').forEach(b=>b.addEventListener('click', ()=>{
+        const item = state.professores.find(p => String(p.id) === b.dataset.editProf);
+        if (!item) return;
+        state.novoProf = { id:item.id, nome:item.nome, cpf:item.cpf, dataNasc:item.data_nasc, email:item.email, telefone:item.telefone };
+        renderAll();
+      }));
+      panel_query('[data-del-prof]').forEach(b=>b.addEventListener('click', async ()=>{
         if (!confirm('Remover este professor do cadastro?')) return;
-        state.professores = state.professores.filter(p=>String(p.id)!==b.dataset.delProf);
-        persist(); renderAll();
+        const { error } = await sb.rpc('fest_delete_professor', { p_senha: state.senha, p_id: b.dataset.delProf });
+        if (error) { alert(error.message); return; }
+        await carregarDados(state.senha); renderAll();
       }));
     }
     if (state.activeTab === 'lideres') {
@@ -796,18 +999,80 @@
           e.target.value = v;
         });
       });
-      f.addEventListener('submit', e=>{
+      f.addEventListener('submit', async e=>{
         e.preventDefault();
         if(!state.novoLider.periodo || !state.novoLider.nome) return;
-        state.lideres.push({...state.novoLider, id:genId()});
-        state.novoLider = { periodo:'', nome:'', telefone:'' };
-        persist(); renderAll();
+        const btn = f.querySelector('button[type=submit]');
+        btn.disabled = true;
+        const editando = state.novoLider.id;
+        const args = { p_senha: state.senha, p_periodo: state.novoLider.periodo, p_nome: state.novoLider.nome, p_telefone: state.novoLider.telefone };
+        const { error } = editando
+          ? await sb.rpc('fest_update_lider', { ...args, p_id: editando })
+          : await sb.rpc('fest_add_lider', args);
+        if (error) { alert(error.message); btn.disabled = false; return; }
+        state.novoLider = { id:null, periodo:'', nome:'', telefone:'' };
+        await carregarDados(state.senha); renderAll();
       });
-      panel_query('[data-del-lider]').forEach(b=>b.addEventListener('click', ()=>{
-        if (!confirm('Remover este líder de turma?')) return;
-        state.lideres = state.lideres.filter(l=>String(l.id)!==b.dataset.delLider);
-        persist(); renderAll();
+      const cancelarBtn = document.getElementById('l-cancelar');
+      if (cancelarBtn) cancelarBtn.addEventListener('click', ()=>{
+        state.novoLider = { id:null, periodo:'', nome:'', telefone:'' };
+        renderAll();
+      });
+      panel_query('[data-edit-lider]').forEach(b=>b.addEventListener('click', ()=>{
+        const item = state.lideres.find(l => String(l.id) === b.dataset.editLider);
+        if (!item) return;
+        state.novoLider = { id:item.id, periodo:item.periodo, nome:item.nome, telefone:item.telefone };
+        renderAll();
       }));
+      panel_query('[data-del-lider]').forEach(b=>b.addEventListener('click', async ()=>{
+        if (!confirm('Remover este líder de turma?')) return;
+        const { error } = await sb.rpc('fest_delete_lider', { p_senha: state.senha, p_id: b.dataset.delLider });
+        if (error) { alert(error.message); return; }
+        await carregarDados(state.senha); renderAll();
+      }));
+    }
+    if (state.activeTab === 'substituicao') {
+      const s = state.substituicao;
+      const profSel = document.getElementById('s-professor');
+      if (profSel) profSel.addEventListener('change', e=>{
+        state.substituicao = { professorAusenteId: e.target.value, aulaAusenteId:'', data:'', substitutoNome:'', textoEditado:null };
+        renderAll();
+      });
+      const aulaSel = document.getElementById('s-aula');
+      if (aulaSel) aulaSel.addEventListener('change', e=>{
+        s.aulaAusenteId = e.target.value;
+        s.substitutoNome = ''; s.textoEditado = null;
+        const aula = state.horarios.find(h => String(h.id) === String(s.aulaAusenteId));
+        s.data = aula ? proximaDataPara(aula.dia) : '';
+        renderAll();
+      });
+      const dataInput = document.getElementById('s-data');
+      if (dataInput) dataInput.addEventListener('input', e=>{
+        s.data = e.target.value; s.textoEditado = null;
+        renderAll();
+      });
+      const substSel = document.getElementById('s-substituto');
+      if (substSel) substSel.addEventListener('change', e=>{
+        s.substitutoNome = e.target.value; s.textoEditado = null;
+        renderAll();
+      });
+      const textoArea = document.getElementById('s-texto');
+      if (textoArea) textoArea.addEventListener('input', e=>{
+        s.textoEditado = e.target.value;
+        const whats = document.getElementById('s-whats');
+        if (whats && !whats.hasAttribute('aria-disabled')) whats.href = buildSubstWhatsLink(e.target.value);
+      });
+      const copiarBtn = document.getElementById('s-copiar');
+      if (copiarBtn) copiarBtn.addEventListener('click', async ()=>{
+        const texto = document.getElementById('s-texto').value;
+        try { await navigator.clipboard.writeText(texto); copiarBtn.textContent = 'Copiado!'; setTimeout(()=>{ copiarBtn.innerHTML = ICONS.copy + ' Copiar texto'; }, 1500); }
+        catch(e){ alert('Não foi possível copiar automaticamente. Selecione o texto manualmente.'); }
+      });
+      const whatsLink = document.getElementById('s-whats');
+      if (whatsLink && !whatsLink.hasAttribute('aria-disabled')) {
+        const texto = document.getElementById('s-texto') ? document.getElementById('s-texto').value : '';
+        whatsLink.href = buildSubstWhatsLink(texto);
+      }
     }
     if (state.activeTab === 'mensagens') {
       document.getElementById('tog-lider').addEventListener('click', ()=>{
@@ -831,6 +1096,14 @@
     }
   }
 
+  function buildSubstWhatsLink(texto){
+    const d = calcularSubstituicao();
+    const lider = d.aulaAusente ? state.lideres.find(l => l.periodo === d.aulaAusente.turma) : null;
+    const num = (lider && lider.telefone || '').replace(/\D/g,'');
+    if (!num) return '#';
+    return `https://wa.me/55${num}?text=${encodeURIComponent(texto)}`;
+  }
+
   function buildWhatsLink(){
     const list = state.mensagem.destinatarioTipo === 'lider' ? state.lideres : state.professores;
     const selected = list.find(x => String(x.id) === String(state.mensagem.id));
@@ -841,8 +1114,22 @@
 
   function panel_query(sel){ return Array.from(document.getElementById('tabpanel').querySelectorAll(sel)); }
 
-  aplicarSeed2026_2();
-  renderAll();
+  function bindResultadosHorarios(){
+    panel_query('[data-edit-horario]').forEach(b=>b.addEventListener('click', ()=>{
+      const item = state.horarios.find(h => String(h.id) === b.dataset.editHorario);
+      if (!item) return;
+      state.novoHorario = { id:item.id, professor:item.professor, dia:item.dia, horario:item.horario, turma:item.turma, disciplina:item.disciplina };
+      renderAll();
+    }));
+    panel_query('[data-del-horario]').forEach(b=>b.addEventListener('click', async ()=>{
+      if (!confirm('Remover este horário da grade?')) return;
+      const { error } = await sb.rpc('fest_delete_horario', { p_senha: state.senha, p_id: b.dataset.delHorario });
+      if (error) { alert(error.message); return; }
+      await carregarDados(state.senha); renderAll();
+    }));
+  }
+
+  boot();
 })();
 </script>
 </body>
