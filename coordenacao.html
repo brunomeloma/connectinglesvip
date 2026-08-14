@@ -517,6 +517,11 @@
   function hojeIso(){
     return isoDate(new Date());
   }
+  function amanhaIso(){
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return isoDate(d);
+  }
 
   let state = {
     senha: sessionStorage.getItem('fest_senha') || '',
@@ -535,6 +540,7 @@
     novoAlunoTcc: { id:null, nome:'', periodo:'10º', tema:'', email:'' },
     filtroAlunosTcc: { busca:'' },
     novoCompromisso: { id:null, titulo:'', data:'', hora:'', descricao:'' },
+    filtroAgenda: { modo: 'todos' },
     filtroHorarios: { busca:'', dia: (diaDeHoje === 'Domingo' || diaDeHoje === 'Sábado') ? 'Todos' : diaDeHoje, formAberto:false },
     grupos: { grupoProfessoresUrl:'', grupoTccUrl:'' },
     gruposEditando: false
@@ -1082,7 +1088,18 @@
   function renderAgenda(){
     const editando = !!state.novoCompromisso.id;
     const hoje = hojeIso();
-    const rows = [...state.compromissos].sort((a,b) => (a.data||'').localeCompare(b.data||'') || (a.hora||'').localeCompare(b.hora||''));
+    const amanha = amanhaIso();
+    const todos = [...state.compromissos].sort((a,b) => (a.data||'').localeCompare(b.data||'') || (a.hora||'').localeCompare(b.hora||''));
+    const countVespera = todos.filter(c => c.data === amanha).length;
+    const modo = state.filtroAgenda.modo;
+    const rows = modo === 'hoje' ? todos.filter(c => c.data === hoje)
+      : modo === 'vespera' ? todos.filter(c => c.data === amanha)
+      : todos;
+    const filtros = [
+      { id:'todos', label:'Todos' },
+      { id:'hoje', label:'Hoje' },
+      { id:'vespera', label:'Véspera (Amanhã)', badge: countVespera }
+    ];
     return `
     <div class="panel">
       <form class="card" id="form-compromisso">
@@ -1097,13 +1114,19 @@
         </div>
       </form>
       <div class="card">
-        <h2>Agenda de compromissos <span class="pill" style="text-transform:none;font-weight:600">${rows.length}</span></h2>
-        ${rows.length===0 ? `<p class="empty">Nenhum compromisso cadastrado.</p>` : `
+        <h2>Agenda de compromissos <span class="pill" style="text-transform:none;font-weight:600">${todos.length}</span></h2>
+        <div class="toggle-group" style="margin-bottom:12px">
+          ${filtros.map(f => `
+            <button type="button" class="toggle" data-agenda-filtro="${f.id}" aria-pressed="${modo===f.id}">
+              ${esc(f.label)}${f.badge ? ` <span class="badge badge-aguardando" style="margin-left:4px">${f.badge}</span>` : ''}
+            </button>`).join('')}
+        </div>
+        ${rows.length===0 ? `<p class="empty">${modo==='vespera' ? 'Nenhum compromisso agendado para amanhã.' : modo==='hoje' ? 'Nenhum compromisso agendado para hoje.' : 'Nenhum compromisso cadastrado.'}</p>` : `
         <div class="list">
           ${rows.map(c => `
             <div class="row">
               <div>
-                <div class="name">${c.data===hoje ? '<span class="badge badge-confirmado">Hoje</span> ' : ''}${esc(formatarDataBR(c.data))}${c.hora ? ' — '+esc(c.hora) : ''} — ${esc(c.titulo)}</div>
+                <div class="name">${c.data===hoje ? '<span class="badge badge-confirmado">Hoje</span> ' : c.data===amanha ? '<span class="badge badge-aguardando">Amanhã</span> ' : ''}${esc(formatarDataBR(c.data))}${c.hora ? ' — '+esc(c.hora) : ''} — ${esc(c.titulo)}</div>
                 ${c.descricao ? `<div class="meta">${esc(c.descricao)}</div>` : ''}
               </div>
               <div style="display:flex;gap:2px">
@@ -1524,6 +1547,10 @@
         const { error } = await sb.rpc('fest_delete_compromisso', { p_senha: state.senha, p_id: b.dataset.delCompromisso });
         if (error) { alert(error.message); return; }
         await carregarDados(state.senha); renderAll();
+      }));
+      panel_query('[data-agenda-filtro]').forEach(b=>b.addEventListener('click', ()=>{
+        state.filtroAgenda.modo = b.dataset.agendaFiltro;
+        renderAll();
       }));
     }
     if (state.activeTab === 'mensagens') {
