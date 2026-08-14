@@ -414,6 +414,25 @@
   }
   .stat-tile .num{ font-family:ui-serif,Georgia,serif; font-size:1.7rem; font-weight:600; font-variant-numeric:tabular-nums; }
   .stat-tile .label{ font-size:.75rem; color:var(--text-muted); margin-top:2px; }
+  .grupos-bar{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+    padding:0 20px 14px;
+  }
+  .grupos-bar .btn{ padding:8px 14px; font-size:.85rem; }
+  .grupos-config{
+    max-width:640px;
+    margin:0 20px 14px;
+    padding:14px 16px;
+    border:1px solid var(--border);
+    border-radius:12px;
+    background:var(--surface-sunken);
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
   .gate{
     max-width:360px;
     margin:15vh auto 0;
@@ -449,6 +468,8 @@
     </div>
     <div class="hero-meta" id="hero-meta">Compartilhado entre todos os dispositivos</div>
   </header>
+
+  <div id="grupos-bar"></div>
 
   <nav class="tabs" id="tabs" style="display:none"></nav>
 
@@ -514,7 +535,9 @@
     novoAlunoTcc: { id:null, nome:'', periodo:'10º', tema:'', email:'' },
     filtroAlunosTcc: { busca:'' },
     novoCompromisso: { id:null, titulo:'', data:'', hora:'', descricao:'' },
-    filtroHorarios: { busca:'', dia: (diaDeHoje === 'Domingo' || diaDeHoje === 'Sábado') ? 'Todos' : diaDeHoje, formAberto:false }
+    filtroHorarios: { busca:'', dia: (diaDeHoje === 'Domingo' || diaDeHoje === 'Sábado') ? 'Todos' : diaDeHoje, formAberto:false },
+    grupos: { grupoProfessoresUrl:'', grupoTccUrl:'' },
+    gruposEditando: false
   };
 
   // Todo acesso passa por essas funções RPC (com senha), nunca direto nas
@@ -528,6 +551,10 @@
     state.alunosTcc = data.alunos_tcc || [];
     state.compromissos = data.compromissos || [];
     state.substituicoes = data.substituicoes || [];
+    state.grupos = {
+      grupoProfessoresUrl: (data.grupos && data.grupos.grupo_professores_url) || '',
+      grupoTccUrl: (data.grupos && data.grupos.grupo_tcc_url) || ''
+    };
   }
 
   function renderGate(loading, erro){
@@ -629,6 +656,49 @@
       state.activeTab = b.dataset.tab;
       renderAll();
     }));
+  }
+
+  function renderGruposBar(){
+    const el = document.getElementById('grupos-bar');
+    const g = state.grupos;
+    el.innerHTML = `
+      <div class="grupos-bar">
+        <a class="btn btn-whats" href="${esc(g.grupoProfessoresUrl)}" target="_blank" rel="noopener noreferrer" ${g.grupoProfessoresUrl ? '' : 'aria-disabled="true" style="pointer-events:none;opacity:.45;"'}>${ICONS.send} Abrir Grupo dos Professores</a>
+        <a class="btn btn-whats" href="${esc(g.grupoTccUrl)}" target="_blank" rel="noopener noreferrer" ${g.grupoTccUrl ? '' : 'aria-disabled="true" style="pointer-events:none;opacity:.45;"'}>${ICONS.send} Abrir Grupo TCC II</a>
+        <button type="button" class="icon-btn" id="grupos-toggle-edit" aria-label="Configurar links dos grupos">${ICONS.edit}</button>
+      </div>
+      ${state.gruposEditando ? `
+      <form class="grupos-config" id="form-grupos">
+        <div class="field"><label>Link do Grupo dos Professores (https://chat.whatsapp.com/...)</label><input id="g-professores" value="${esc(g.grupoProfessoresUrl)}"></div>
+        <div class="field"><label>Link do Grupo TCC II (https://chat.whatsapp.com/...)</label><input id="g-tcc" value="${esc(g.grupoTccUrl)}"></div>
+        <div class="toggle-group">
+          <button type="submit" class="btn btn-primary">Salvar links</button>
+          <button type="button" class="btn" id="grupos-cancelar" style="background:var(--surface);color:var(--text)">Cancelar</button>
+        </div>
+      </form>` : ''}`;
+
+    document.getElementById('grupos-toggle-edit').addEventListener('click', () => {
+      state.gruposEditando = !state.gruposEditando;
+      renderGruposBar();
+    });
+    const cancelarBtn = document.getElementById('grupos-cancelar');
+    if (cancelarBtn) cancelarBtn.addEventListener('click', () => {
+      state.gruposEditando = false;
+      renderGruposBar();
+    });
+    const formGrupos = document.getElementById('form-grupos');
+    if (formGrupos) formGrupos.addEventListener('submit', async e => {
+      e.preventDefault();
+      const btn = formGrupos.querySelector('button[type=submit]');
+      btn.disabled = true;
+      const p_grupo_professores_url = document.getElementById('g-professores').value.trim();
+      const p_grupo_tcc_url = document.getElementById('g-tcc').value.trim();
+      const { error } = await sb.rpc('fest_atualizar_grupos', { p_senha: state.senha, p_grupo_professores_url, p_grupo_tcc_url });
+      if (error) { alert(error.message); btn.disabled = false; return; }
+      state.grupos = { grupoProfessoresUrl: p_grupo_professores_url, grupoTccUrl: p_grupo_tcc_url };
+      state.gruposEditando = false;
+      renderGruposBar();
+    });
   }
 
   function horariosFiltrados(){
@@ -1131,6 +1201,7 @@
 
   function renderAll(){
     renderTabs();
+    renderGruposBar();
     const panel = document.getElementById('tabpanel');
     if (state.activeTab === 'painel') panel.innerHTML = renderPainel();
     else if (state.activeTab === 'horarios') panel.innerHTML = renderHorarios();
