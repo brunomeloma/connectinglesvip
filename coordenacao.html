@@ -340,7 +340,7 @@
     lideres: load('coord_lideres', []),
     activeTab: 'horarios',
     novoProf: { nome:'', cpf:'', dataNasc:'', email:'', telefone:'' },
-    novoHorario: { professor:'', dia:'Segunda', horario:'', sala:'' },
+    novoHorario: { professor:'', dia:'Segunda', horario:'', sala:'', disciplina:'' },
     novoLider: { periodo:'', nome:'', telefone:'' },
     mensagem: { destinatarioTipo:'lider', id:'', texto:'' }
   };
@@ -349,6 +349,206 @@
     save('coord_professores', state.professores);
     save('coord_horarios', state.horarios);
     save('coord_lideres', state.lideres);
+  }
+
+  // Seed 2026.2 — só é aplicado numa instalação vazia (nunca sobrescreve dados já lançados).
+  const N = {
+    anne:'Anne Harlle Lima da Silva Moraes', claudio:'Cláudio Marcos Sousa Moraes',
+    erick:'Erick Vinícius Costa de Andrade', fernanda:'Fernanda Pereira da Silva',
+    francisca:'Francisca Cavalcante Silva da Silva', kennedy:'Francisco Kenedy Quinderé Aquino',
+    genival:'Genival Lima da Silva', helwdson:'Hewldson Reis Madeira',
+    hugo:'Hugo Hayran Bezerra Silva', igo:'Igo Teixeira Morais da Luz',
+    karina:'Karina Caldeira Toledo', mara:'Mara Kelcilene Sousa Marane',
+    marcia:'Márcia da Cruz Girardi', marcus:'Marcus Vinícius Lira Eloi',
+    angela:'Maria Ângela Araújo Casanova', marilene:'Marilene Sousa Santos',
+    mirian:'Mirian Baldez de Macedo', rafael:'Raphael Cortez Cruz',
+    rosa:'Rosa de Fátima Tavares Souza', rosyvania:'Rosyvânia Araújo Mendes',
+    tammy:'Tammy Cristina Sousa Franco Oliveira', victor:'Victor Emanuel Silva de Sousa',
+    wilker:'Wilker Batista Cavalcanti', william:'William Lima Freire'
+  };
+  const SEED_HORARIOS_RAW = [
+    // 1º Período - Direito (Noite)
+    [N.fernanda,'Segunda','19:00','1º Período - Direito (Noite)','Métodos e Técnicas de Pesquisa Científica'],
+    [N.genival,'Terça','19:00','1º Período - Direito (Noite)','Fundamentos de Filosofia e de Sociologia'],
+    [N.angela,'Quarta','19:00','1º Período - Direito (Noite)','Introdução ao Estudo do Direito'],
+    [N.tammy,'Quinta','19:00','1º Período - Direito (Noite)','Leitura e Produção de Textos'],
+    [N.claudio,'Sexta','19:00','1º Período - Direito (Noite)','Antropologia Cultural'],
+    [N.genival,'Segunda','20:30','1º Período - Direito (Noite)','Fundamentos de Filosofia e de Sociologia'],
+    [N.claudio,'Terça','20:30','1º Período - Direito (Noite)','Antropologia Cultural'],
+    [N.fernanda,'Quarta','20:30','1º Período - Direito (Noite)','Métodos e Técnicas de Pesquisa Científica'],
+    [N.angela,'Quinta','20:30','1º Período - Direito (Noite)','Introdução ao Estudo do Direito'],
+    [N.tammy,'Sexta','20:30','1º Período - Direito (Noite)','Leitura e Produção de Textos'],
+    // 2º Período - Direito (Noite)
+    [N.mirian,'Segunda','19:00','2º Período - Direito (Noite)','Direito Civil I (Parte Geral)'],
+    [N.karina,'Terça','19:00','2º Período - Direito (Noite)','Direitos Humanos e Diversidades'],
+    [N.rosyvania,'Quarta','19:00','2º Período - Direito (Noite)','Direito Penal I (Teoria do Crime)'],
+    [N.victor,'Quinta','19:00','2º Período - Direito (Noite)','Direito Constitucional I'],
+    [N.victor,'Sexta','19:00','2º Período - Direito (Noite)','Direito Constitucional I'],
+    [N.karina,'Segunda','20:30','2º Período - Direito (Noite)','Direitos Humanos e Diversidades'],
+    [N.erick,'Terça','20:30','2º Período - Direito (Noite)','Processo Civil I (TGP e Conhecimento)'],
+    [N.erick,'Quarta','20:30','2º Período - Direito (Noite)','Processo Civil I (TGP e Conhecimento)'],
+    [N.rosyvania,'Quinta','20:30','2º Período - Direito (Noite)','Direito Penal I (Teoria do Crime)'],
+    [N.mirian,'Sexta','20:30','2º Período - Direito (Noite)','Direito Civil I (Parte Geral)'],
+    // 4º Período A - Direito (Noite)
+    [N.mara,'Segunda','19:00','4º Período A - Direito (Noite)','Direito Penal III (Parte Especial I)'],
+    [N.wilker,'Terça','19:00','4º Período A - Direito (Noite)','Processo Civil II (Recursos)'],
+    [N.mirian,'Quarta','19:00','4º Período A - Direito (Noite)','Direito Civil III (Contratos)'],
+    [N.marcus,'Quinta','19:00','4º Período A - Direito (Noite)','Processo Penal I'],
+    [N.mirian,'Sexta','19:00','4º Período A - Direito (Noite)','Direito Civil III (Contratos)'],
+    [N.wilker,'Segunda','20:30','4º Período A - Direito (Noite)','Processo Civil II (Recursos)'],
+    [N.marcus,'Terça','20:30','4º Período A - Direito (Noite)','Processo Penal I'],
+    [N.rafael,'Quarta','20:30','4º Período A - Direito (Noite)','Direito Constitucional III'],
+    [N.rafael,'Quinta','20:30','4º Período A - Direito (Noite)','Direito Constitucional III'],
+    [N.mara,'Sexta','20:30','4º Período A - Direito (Noite)','Direito Penal III (Parte Especial I)'],
+    // 4º Período B - Direito (Noite)
+    [N.wilker,'Segunda','19:00','4º Período B - Direito (Noite)','Processo Civil II (Recursos)'],
+    [N.mara,'Terça','19:00','4º Período B - Direito (Noite)','Direito Penal III (Parte Especial I)'],
+    [N.mara,'Quarta','19:00','4º Período B - Direito (Noite)','Direito Penal III (Parte Especial I)'],
+    [N.rafael,'Quinta','19:00','4º Período B - Direito (Noite)','Direito Constitucional III'],
+    [N.marcus,'Sexta','19:00','4º Período B - Direito (Noite)','Processo Penal I'],
+    [N.mirian,'Segunda','20:30','4º Período B - Direito (Noite)','Direito Civil III (Contratos)'],
+    [N.wilker,'Terça','20:30','4º Período B - Direito (Noite)','Processo Civil II (Recursos)'],
+    [N.mirian,'Quarta','20:30','4º Período B - Direito (Noite)','Direito Civil III (Contratos)'],
+    [N.marcus,'Quinta','20:30','4º Período B - Direito (Noite)','Processo Penal I'],
+    [N.rafael,'Sexta','20:30','4º Período B - Direito (Noite)','Direito Constitucional III'],
+    // 5º Período - Direito (Noite)
+    [N.erick,'Segunda','19:00','5º Período - Direito (Noite)','Processo Civil III (Execução)'],
+    [N.anne,'Terça','19:00','5º Período - Direito (Noite)','Direito do Trabalho I'],
+    [N.rafael,'Quarta','19:00','5º Período - Direito (Noite)','Direito Penal IV (Parte Especial II)'],
+    [N.kennedy,'Quinta','19:00','5º Período - Direito (Noite)','Direito Civil IV (Responsabilidade Civil e Consumidor)'],
+    [N.rafael,'Sexta','19:00','5º Período - Direito (Noite)','Direito Penal IV (Parte Especial II)'],
+    [N.anne,'Segunda','20:30','5º Período - Direito (Noite)','Direito do Trabalho I'],
+    [N.kennedy,'Terça','20:30','5º Período - Direito (Noite)','Direito Civil IV (Responsabilidade Civil e Consumidor)'],
+    [N.marcus,'Quarta','20:30','5º Período - Direito (Noite)','Processo Penal II'],
+    [N.erick,'Quinta','20:30','5º Período - Direito (Noite)','Processo Civil III (Execução)'],
+    [N.marcus,'Sexta','20:30','5º Período - Direito (Noite)','Processo Penal II'],
+    // 6º Período - Direito (Noite)
+    [N.anne,'Segunda','19:00','6º Período - Direito (Noite)','Direito do Trabalho II'],
+    [N.marcus,'Terça','19:00','6º Período - Direito (Noite)','Direito Penal V (Legislação Penal Especial e Criminologia)'],
+    [N.marcus,'Quarta','19:00','6º Período - Direito (Noite)','Direito Penal V (Legislação Penal Especial e Criminologia)'],
+    [N.erick,'Quinta','19:00','6º Período - Direito (Noite)','Processo Civil IV (Procedimentos Especiais)'],
+    [N.igo,'Sexta','19:00','6º Período - Direito (Noite)','Ética Profissional e do Estagiário'],
+    [N.erick,'Segunda','20:30','6º Período - Direito (Noite)','Processo Civil IV (Procedimentos Especiais)'],
+    [N.anne,'Terça','20:30','6º Período - Direito (Noite)','Direito do Trabalho II'],
+    [N.hugo,'Quarta','20:30','6º Período - Direito (Noite)','Direito Administrativo I'],
+    [N.igo,'Quinta','20:30','6º Período - Direito (Noite)','Ética Profissional e do Estagiário'],
+    [N.hugo,'Sexta','20:30','6º Período - Direito (Noite)','Direito Administrativo I'],
+    // 8º Período - Direito (Noite)
+    [N.karina,'Segunda','19:00','8º Período - Direito (Noite)','Direito Tributário Aplicado'],
+    [N.kennedy,'Terça','19:00','8º Período - Direito (Noite)','Direito Empresarial II (Título de Crédito e Falência)'],
+    [N.hugo,'Quarta','19:00','8º Período - Direito (Noite)','Direito Administrativo II'],
+    [N.marilene,'Quinta','19:00','8º Período - Direito (Noite)','Formas Consensuais de Solução de Conflitos'],
+    [N.hugo,'Sexta','19:00','8º Período - Direito (Noite)','Direito Administrativo II'],
+    [N.mara,'Segunda','20:30','8º Período - Direito (Noite)','Direito Civil VII (Responsabilidade Civil)'],
+    [N.karina,'Terça','20:30','8º Período - Direito (Noite)','Direito Tributário Aplicado'],
+    [N.mara,'Quarta','20:30','8º Período - Direito (Noite)','Direito Civil VII (Responsabilidade Civil)'],
+    [N.kennedy,'Quinta','20:30','8º Período - Direito (Noite)','Direito Empresarial II (Título de Crédito e Falência)'],
+    [N.marilene,'Sexta','20:30','8º Período - Direito (Noite)','Formas Consensuais de Solução de Conflitos'],
+    // 9º Período - Direito (Noite) — Quarta é TCC nos dois horários (sem professor, não cadastrado)
+    [N.victor,'Segunda','19:00','9º Período - Direito (Noite)','Direito Previdenciário'],
+    [N.victor,'Terça','19:00','9º Período - Direito (Noite)','Direito Previdenciário'],
+    [N.igo,'Quinta','19:00','9º Período - Direito (Noite)','Direito Digital'],
+    [N.mara,'Sexta','19:00','9º Período - Direito (Noite)','Direito do Consumidor'],
+    [N.igo,'Segunda','20:30','9º Período - Direito (Noite)','Direito Digital'],
+    [N.mara,'Terça','20:30','9º Período - Direito (Noite)','Direito do Consumidor'],
+    [N.victor,'Quinta','20:30','9º Período - Direito (Noite)','Filosofia e Sociologia do Direito'],
+    [N.victor,'Sexta','20:30','9º Período - Direito (Noite)','Filosofia e Sociologia do Direito'],
+    // 10º Período - Direito (Noite) — Terça e Sexta são TCC nos dois horários
+    [N.francisca,'Segunda','19:00','10º Período - Direito (Noite)','Língua Brasileira de Sinais (Libras)'],
+    [N.victor,'Quarta','19:00','10º Período - Direito (Noite)','Direito Internacional'],
+    [N.angela,'Quinta','19:00','10º Período - Direito (Noite)','Legislação Sócio-Ambiental'],
+    [N.victor,'Segunda','20:30','10º Período - Direito (Noite)','Direito Internacional'],
+    [N.angela,'Quarta','20:30','10º Período - Direito (Noite)','Legislação Sócio-Ambiental'],
+    [N.francisca,'Quinta','20:30','10º Período - Direito (Noite)','Língua Brasileira de Sinais (Libras)'],
+    // 1º Período - Direito (Tarde)
+    [N.genival,'Segunda','14:00','1º Período - Direito (Tarde)','Fundamentos de Filosofia e de Sociologia'],
+    [N.tammy,'Terça','14:00','1º Período - Direito (Tarde)','Leitura e Produção de Textos'],
+    [N.marcia,'Quarta','14:00','1º Período - Direito (Tarde)','Introdução ao Estudo do Direito'],
+    [N.claudio,'Quinta','14:00','1º Período - Direito (Tarde)','Antropologia Cultural'],
+    [N.fernanda,'Sexta','14:00','1º Período - Direito (Tarde)','Métodos e Técnicas de Pesquisa Científica'],
+    [N.fernanda,'Segunda','15:30','1º Período - Direito (Tarde)','Métodos e Técnicas de Pesquisa Científica'],
+    [N.genival,'Terça','15:30','1º Período - Direito (Tarde)','Fundamentos de Filosofia e de Sociologia'],
+    [N.tammy,'Quarta','15:30','1º Período - Direito (Tarde)','Leitura e Produção de Textos'],
+    [N.marcia,'Quinta','15:30','1º Período - Direito (Tarde)','Introdução ao Estudo do Direito'],
+    [N.claudio,'Sexta','15:30','1º Período - Direito (Tarde)','Antropologia Cultural'],
+    // 2º Período - Direito (Tarde)
+    [N.rosa,'Segunda','14:00','2º Período - Direito (Tarde)','Direitos Humanos e Diversidades'],
+    [N.rosa,'Terça','14:00','2º Período - Direito (Tarde)','Direitos Humanos e Diversidades'],
+    [N.rosa,'Quarta','14:00','2º Período - Direito (Tarde)','Direito Civil I (Parte Geral)'],
+    [N.marcia,'Quinta','14:00','2º Período - Direito (Tarde)','Processo Civil I (TGP e Conhecimento)'],
+    [N.igo,'Sexta','14:00','2º Período - Direito (Tarde)','Direito Constitucional I'],
+    [N.igo,'Segunda','15:30','2º Período - Direito (Tarde)','Direito Constitucional I'],
+    [N.helwdson,'Terça','15:30','2º Período - Direito (Tarde)','Direito Penal I (Teoria do Crime)'],
+    [N.helwdson,'Quarta','15:30','2º Período - Direito (Tarde)','Direito Penal I (Teoria do Crime)'],
+    [N.rosa,'Quinta','15:30','2º Período - Direito (Tarde)','Direito Civil I (Parte Geral)'],
+    [N.marcia,'Sexta','15:30','2º Período - Direito (Tarde)','Processo Civil I (TGP e Conhecimento)'],
+    // 4º Período - Direito (Tarde)
+    [N.mirian,'Segunda','14:00','4º Período - Direito (Tarde)','Direito Civil III (Contratos)'],
+    [N.helwdson,'Terça','14:00','4º Período - Direito (Tarde)','Direito Penal III (Parte Especial I)'],
+    [N.helwdson,'Quarta','14:00','4º Período - Direito (Tarde)','Direito Penal III (Parte Especial I)'],
+    [N.marcus,'Quinta','14:00','4º Período - Direito (Tarde)','Processo Penal I'],
+    [N.marcia,'Sexta','14:00','4º Período - Direito (Tarde)','Processo Civil II (Recursos)'],
+    [N.marcia,'Segunda','15:30','4º Período - Direito (Tarde)','Processo Civil II (Recursos)'],
+    [N.wilker,'Terça','15:30','4º Período - Direito (Tarde)','Direito Constitucional III'],
+    [N.mirian,'Quarta','15:30','4º Período - Direito (Tarde)','Direito Civil III (Contratos)'],
+    [N.wilker,'Quinta','15:30','4º Período - Direito (Tarde)','Direito Constitucional III'],
+    [N.marcus,'Sexta','15:30','4º Período - Direito (Tarde)','Processo Penal I'],
+    // 6º Período - Direito (Tarde)
+    [N.marcia,'Segunda','14:00','6º Período - Direito (Tarde)','Direito do Trabalho II'],
+    [N.wilker,'Terça','14:00','6º Período - Direito (Tarde)','Processo Civil IV (Procedimentos Especiais)'],
+    [N.erick,'Quarta','14:00','6º Período - Direito (Tarde)','Direito Penal V (Legislação Penal Especial e Criminologia)'],
+    [N.rosa,'Quinta','14:00','6º Período - Direito (Tarde)','Direito Administrativo I'],
+    [N.wilker,'Sexta','14:00','6º Período - Direito (Tarde)','Processo Civil IV (Procedimentos Especiais)'],
+    [N.rosa,'Segunda','15:30','6º Período - Direito (Tarde)','Direito Administrativo I'],
+    [N.marcia,'Terça','15:30','6º Período - Direito (Tarde)','Direito do Trabalho II'],
+    [N.igo,'Quarta','15:30','6º Período - Direito (Tarde)','Ética Profissional e do Estagiário'],
+    [N.erick,'Quinta','15:30','6º Período - Direito (Tarde)','Direito Penal V (Legislação Penal Especial e Criminologia)'],
+    [N.igo,'Sexta','15:30','6º Período - Direito (Tarde)','Ética Profissional e do Estagiário'],
+    // 8º Período - Direito (Tarde)
+    [N.karina,'Segunda','14:00','8º Período - Direito (Tarde)','Direito Tributário Aplicado'],
+    [N.karina,'Terça','14:00','8º Período - Direito (Tarde)','Direito Tributário Aplicado'],
+    [N.marilene,'Quarta','14:00','8º Período - Direito (Tarde)','Formas Consensuais de Solução de Conflitos'],
+    [N.wilker,'Quinta','14:00','8º Período - Direito (Tarde)','Direito Empresarial II (Título de Crédito e Falência)'],
+    [N.marilene,'Sexta','14:00','8º Período - Direito (Tarde)','Formas Consensuais de Solução de Conflitos'],
+    [N.kennedy,'Segunda','15:30','8º Período - Direito (Tarde)','Direito Civil VII (Responsabilidade Civil)'],
+    [N.rosa,'Terça','15:30','8º Período - Direito (Tarde)','Direito Administrativo II'],
+    [N.rosa,'Quarta','15:30','8º Período - Direito (Tarde)','Direito Administrativo II'],
+    [N.kennedy,'Quinta','15:30','8º Período - Direito (Tarde)','Direito Civil VII (Responsabilidade Civil)'],
+    [N.wilker,'Sexta','15:30','8º Período - Direito (Tarde)','Direito Empresarial II (Título de Crédito e Falência)'],
+    // 10º Período - Direito (Tarde) — Quinta e Sexta são TCC nos dois horários
+    [N.kennedy,'Segunda','14:00','10º Período - Direito (Tarde)','Direito Internacional'],
+    [N.marcia,'Terça','14:00','10º Período - Direito (Tarde)','Legislação Sócio-Ambiental'],
+    [N.francisca,'Quarta','14:00','10º Período - Direito (Tarde)','Língua Brasileira de Sinais (Libras)'],
+    [N.francisca,'Segunda','15:30','10º Período - Direito (Tarde)','Língua Brasileira de Sinais (Libras)'],
+    [N.kennedy,'Terça','15:30','10º Período - Direito (Tarde)','Direito Internacional'],
+    [N.marcia,'Quarta','15:30','10º Período - Direito (Tarde)','Legislação Sócio-Ambiental'],
+    // Economia (extraídas dos mapas individuais — sem grade por período pra conferência cruzada)
+    [N.claudio,'Segunda','19:00','Economia (Noite)','Contabilidade Social'],
+    [N.claudio,'Segunda','20:30','Economia (Noite)','Economia Monetária'],
+    [N.claudio,'Terça','19:00','Economia (Noite)','Microeconomia II'],
+    [N.claudio,'Quarta','20:30','Economia (Noite)','Contabilidade Social'],
+    [N.claudio,'Sexta','20:30','Economia (Noite)','Microeconomia II'],
+    [N.william,'Quarta','19:00','Economia (Noite)','Valuation'],
+    [N.william,'Quinta','19:00','Economia (Noite)','Valuation'],
+    [N.william,'Quinta','20:30','Economia (Noite)','Matemática Financeira'],
+    [N.william,'Sexta','19:00','Economia (Noite)','Matemática Financeira'],
+    // CPA (extraídas do mapa individual do William — sem grade por período)
+    [N.william,'Quarta','20:30','CPA (Noite)','CPA'],
+    [N.william,'Sexta','20:30','CPA (Noite)','CPA'],
+    // Psicologia e Pedagogia — Libras (extraídas do mapa individual da Francisca — sem grade por período)
+    [N.francisca,'Segunda','20:30','8º Período - Pedagogia (Noite)','Língua Brasileira de Sinais (Libras)'],
+    [N.francisca,'Sexta','19:00','8º Período - Pedagogia (Noite)','Língua Brasileira de Sinais (Libras)'],
+    [N.francisca,'Quarta','15:30','8º Período - Psicologia (Tarde)','Língua Brasileira de Sinais (Libras)'],
+    [N.francisca,'Quinta','19:00','8º Período - Psicologia (Noite)','Língua Brasileira de Sinais (Libras)'],
+    [N.francisca,'Sexta','14:00','8º Período - Psicologia (Tarde)','Língua Brasileira de Sinais (Libras)'],
+    [N.francisca,'Sexta','20:30','8º Período - Psicologia (Noite)','Língua Brasileira de Sinais (Libras)']
+  ];
+
+  function aplicarSeed2026_2(){
+    if (state.professores.length > 0 || state.horarios.length > 0) return;
+    state.professores = Object.values(N).map(nome => ({ id:genId(), nome, cpf:'', dataNasc:'', email:'', telefone:'' }));
+    state.horarios = SEED_HORARIOS_RAW.map(([professor, dia, horario, sala, disciplina]) => ({ id:genId(), professor, dia, horario, sala, disciplina }));
+    persist();
   }
 
   function esc(s){
@@ -396,18 +596,20 @@
             ${['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'].map(d=>`<option ${state.novoHorario.dia===d?'selected':''}>${d}</option>`).join('')}
           </select>
         </div>
-        <div class="field"><label>Horário</label><input id="h-horario" placeholder="Ex: 08:00 - 10:00" value="${esc(state.novoHorario.horario)}"></div>
-        <div class="field"><label>Sala / Bloco</label><input id="h-sala" placeholder="Ex: Sala 203" value="${esc(state.novoHorario.sala)}"></div>
+        <div class="field"><label>Horário</label><input id="h-horario" placeholder="Ex: 19:00" value="${esc(state.novoHorario.horario)}"></div>
+        <div class="field"><label>Turma / Período</label><input id="h-sala" placeholder="Ex: 4º Período A - Direito (Noite)" value="${esc(state.novoHorario.sala)}"></div>
+        <div class="field"><label>Disciplina</label><input id="h-disciplina" placeholder="Ex: Direito Penal III" value="${esc(state.novoHorario.disciplina)}"></div>
         <button type="submit" class="btn btn-primary">Adicionar à grade</button>
       </form>
       <div class="card">
-        <h2>Grade alocada</h2>
+        <h2>Grade alocada <span class="pill" style="text-transform:none;font-weight:600">${rows.length}</span></h2>
         ${rows.length===0 ? `<p class="empty">Nenhum horário cadastrado ainda.</p>` : `
         <div class="list">
           ${rows.map(item => `
             <div class="row">
               <div>
                 <div class="name">${esc(item.professor)}</div>
+                ${item.disciplina ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">${esc(item.disciplina)}</div>` : ''}
                 <div class="meta">
                   <span>${ICONS.clock} ${esc(item.dia)} (${esc(item.horario)})</span>
                   <span>${ICONS.pin} ${esc(item.sala)}</span>
@@ -527,9 +729,9 @@
       const f = document.getElementById('form-horario');
       const profSel = document.getElementById('h-professor');
       if (profSel) profSel.addEventListener('change', e=>{ state.novoHorario.professor = e.target.value; });
-      ['h-dia','h-horario','h-sala'].forEach(id=>{
+      ['h-dia','h-horario','h-sala','h-disciplina'].forEach(id=>{
         document.getElementById(id).addEventListener('input', e=>{
-          const map = {'h-dia':'dia','h-horario':'horario','h-sala':'sala'};
+          const map = {'h-dia':'dia','h-horario':'horario','h-sala':'sala','h-disciplina':'disciplina'};
           state.novoHorario[map[id]] = e.target.value;
         });
       });
@@ -541,10 +743,10 @@
         const salaLimpa = state.novoHorario.sala.trim();
         if (salaLimpa) {
           const conflitoSala = state.horarios.some(h => h.sala.trim()===salaLimpa && h.dia===state.novoHorario.dia && h.horario===state.novoHorario.horario);
-          if (conflitoSala) { alert('A sala ' + salaLimpa + ' já está ocupada nesse dia e horário.'); return; }
+          if (conflitoSala) { alert('A turma ' + salaLimpa + ' já está ocupada nesse dia e horário.'); return; }
         }
         state.horarios.push({...state.novoHorario, id:genId()});
-        state.novoHorario = { professor:'', dia:'Segunda', horario:'', sala:'' };
+        state.novoHorario = { professor:'', dia:'Segunda', horario:'', sala:'', disciplina:'' };
         persist(); renderAll();
       });
       panel_query('[data-del-horario]').forEach(b=>b.addEventListener('click', ()=>{
@@ -639,6 +841,7 @@
 
   function panel_query(sel){ return Array.from(document.getElementById('tabpanel').querySelectorAll(sel)); }
 
+  aplicarSeed2026_2();
   renderAll();
 })();
 </script>
