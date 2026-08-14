@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Painel da Coordenação — FEST</title>
 <meta name="robots" content="noindex, nofollow">
+<link rel="manifest" href="/manifest-coordenacao.json">
+<meta name="theme-color" content="#c49a3d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Coordenação FEST">
+<link rel="apple-touch-icon" href="/icons/fest-apple-touch-icon.png">
+<link rel="icon" href="/icons/fest-icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
@@ -403,6 +411,42 @@
     border-top:1px solid var(--border);
   }
   .dash-item:first-of-type{ border-top:none; padding-top:0; }
+  .notepad-card{
+    border-left:4px solid var(--accent);
+    background:repeating-linear-gradient(var(--surface), var(--surface) 34px, var(--border) 35px);
+    background-size:100% 35px;
+  }
+  .notepad-block h4{
+    margin:0 0 8px;
+    font-size:.72rem;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--text-muted);
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .notepad-block + .notepad-block{ border-top:1px dashed var(--border); margin-top:12px; padding-top:12px; }
+  .notepad-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:10px;
+    padding:5px 0;
+    font-size:.9rem;
+  }
+  .notepad-item .quando{ font-variant-numeric:tabular-nums; color:var(--text-muted); min-width:44px; }
+  .notepad-item .titulo{ flex:1; }
+  .notepad-item .status-pill{
+    font-size:.68rem;
+    font-weight:600;
+    padding:2px 8px;
+    border-radius:999px;
+    background:var(--chip);
+    color:var(--chip-ink);
+    white-space:nowrap;
+  }
   .stat-row{ display:flex; gap:12px; flex-wrap:wrap; }
   .stat-tile{
     flex:1;
@@ -414,6 +458,20 @@
   }
   .stat-tile .num{ font-family:ui-serif,Georgia,serif; font-size:1.7rem; font-weight:600; font-variant-numeric:tabular-nums; }
   .stat-tile .label{ font-size:.75rem; color:var(--text-muted); margin-top:2px; }
+  .install-banner{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    margin:0 20px 14px;
+    padding:12px 16px;
+    border-radius:12px;
+    background:var(--accent-soft);
+    border:1px solid var(--accent);
+  }
+  .install-banner p{ margin:0; font-size:.85rem; color:var(--text); }
+  .install-banner .toggle-group{ flex-wrap:nowrap; }
   .grupos-bar{
     display:flex;
     flex-wrap:wrap;
@@ -468,6 +526,8 @@
     </div>
     <div class="hero-meta" id="hero-meta">Compartilhado entre todos os dispositivos</div>
   </header>
+
+  <div id="install-banner" style="display:none"></div>
 
   <div id="grupos-bar"></div>
 
@@ -531,6 +591,7 @@
     alunosTcc: [],
     compromissos: [],
     substituicoes: [],
+    ocorrencias: [],
     activeTab: 'painel',
     novoProf: { id:null, nome:'', matricula:'', cpf:'', dataNasc:'', email:'', telefone:'' },
     novoHorario: { id:null, professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' },
@@ -543,7 +604,9 @@
     filtroAgenda: { modo: 'todos' },
     filtroHorarios: { busca:'', dia: (diaDeHoje === 'Domingo' || diaDeHoje === 'Sábado') ? 'Todos' : diaDeHoje, formAberto:false },
     grupos: { grupoProfessoresUrl:'', grupoTccUrl:'' },
-    gruposEditando: false
+    gruposEditando: false,
+    novaOcorrencia: { id:null, professor:'', tipo:'falta', data:'', horario:'', horarioReal:'', observacao:'' },
+    filtroOcorrencias: { data:'', tipo:'Todos', professor:'' }
   };
 
   // Todo acesso passa por essas funções RPC (com senha), nunca direto nas
@@ -557,6 +620,7 @@
     state.alunosTcc = data.alunos_tcc || [];
     state.compromissos = data.compromissos || [];
     state.substituicoes = data.substituicoes || [];
+    state.ocorrencias = data.ocorrencias || [];
     state.grupos = {
       grupoProfessoresUrl: (data.grupos && data.grupos.grupo_professores_url) || '',
       grupoTccUrl: (data.grupos && data.grupos.grupo_tcc_url) || ''
@@ -622,6 +686,7 @@
     { id:'substituicao', label:'Substituição', icon:ICONS.swap },
     { id:'alunostcc', label:'Alunos TCC', icon:ICONS.fileText },
     { id:'agenda', label:'Agenda', icon:ICONS.calendar },
+    { id:'frequencia', label:'Frequência', icon:ICONS.userCheck },
     { id:'mensagens', label:'Disparo WhatsApp', icon:ICONS.message }
   ];
 
@@ -1139,16 +1204,125 @@
     </div>`;
   }
 
+  function ocorrenciasFiltradas(){
+    const f = state.filtroOcorrencias;
+    return [...state.ocorrencias]
+      .filter(o => !f.data || o.data === f.data)
+      .filter(o => f.tipo === 'Todos' || o.tipo === f.tipo)
+      .filter(o => !f.professor.trim() || o.professor.toLowerCase().includes(f.professor.trim().toLowerCase()))
+      .sort((a,b) => (b.data||'').localeCompare(a.data||''));
+  }
+
+  function renderFrequencia(){
+    const o = state.novaOcorrencia;
+    const editando = !!o.id;
+    const isFalta = o.tipo === 'falta';
+    const rows = ocorrenciasFiltradas();
+    return `
+    <div class="panel">
+      <form class="card" id="form-ocorrencia">
+        <h2>${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Ocorrência' : 'Registrar Ocorrência'}</h2>
+        <div class="toggle-group" style="margin-bottom:12px">
+          <button type="button" class="toggle" id="oc-tog-falta" aria-pressed="${isFalta}">Falta</button>
+          <button type="button" class="toggle" id="oc-tog-saida" aria-pressed="${!isFalta}">Saída Antecipada</button>
+        </div>
+        <div class="field">
+          <label>Professor</label>
+          ${state.professores.length === 0 ? `<p class="note">Cadastre professores primeiro.</p>` : `
+          <select id="oc-professor">
+            <option value="">-- Selecione --</option>
+            ${state.professores.map(p => `<option value="${esc(p.nome)}" ${o.professor===p.nome?'selected':''}>${esc(p.nome)}</option>`).join('')}
+          </select>`}
+        </div>
+        <div class="field"><label>Data</label><input type="date" id="oc-data" value="${esc(o.data)}"></div>
+        ${isFalta ? `
+        <div class="field"><label>Horário / Período</label><input id="oc-horario" placeholder="Ex: 19:00 — 1º Período" value="${esc(o.horario)}"></div>
+        <div class="field"><label>Observação</label><textarea id="oc-observacao" rows="2">${esc(o.observacao)}</textarea></div>
+        ` : `
+        <div class="field"><label>Horário Previsto</label><input id="oc-horario" placeholder="Ex: 22:00" value="${esc(o.horario)}"></div>
+        <div class="field"><label>Horário Real de Saída</label><input id="oc-horario-real" placeholder="Ex: 21:00" value="${esc(o.horarioReal)}"></div>
+        <div class="field"><label>Justificativa</label><textarea id="oc-observacao" rows="2">${esc(o.observacao)}</textarea></div>
+        `}
+        <div class="toggle-group">
+          <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Registrar ocorrência'}</button>
+          ${editando ? `<button type="button" class="btn" id="oc-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
+        </div>
+      </form>
+      <div class="card">
+        <h2>Histórico de ocorrências <span class="pill" style="text-transform:none;font-weight:600">${rows.length}</span></h2>
+        <div class="toggle-group" style="margin-bottom:10px">
+          <input type="date" id="oc-filtro-data" value="${esc(state.filtroOcorrencias.data)}" style="max-width:170px">
+          <select id="oc-filtro-tipo" style="max-width:200px">
+            <option value="Todos" ${state.filtroOcorrencias.tipo==='Todos'?'selected':''}>Todos os tipos</option>
+            <option value="falta" ${state.filtroOcorrencias.tipo==='falta'?'selected':''}>Falta</option>
+            <option value="saida_antecipada" ${state.filtroOcorrencias.tipo==='saida_antecipada'?'selected':''}>Saída Antecipada</option>
+          </select>
+          <input id="oc-filtro-professor" placeholder="Filtrar por professor..." value="${esc(state.filtroOcorrencias.professor)}">
+        </div>
+        ${rows.length===0 ? `<p class="empty">Nenhuma ocorrência encontrada.</p>` : `
+        <div class="list">
+          ${rows.map(r => `
+            <div class="row">
+              <div>
+                <div class="name">
+                  <span class="badge ${r.tipo==='falta' ? 'badge-aguardando' : 'badge-confirmado'}">${r.tipo==='falta' ? 'Falta' : 'Saída Antecipada'}</span>
+                  ${esc(r.professor)} — ${esc(formatarDataBR(r.data))}
+                </div>
+                <div class="stack meta">
+                  ${r.tipo==='falta'
+                    ? `<span>${esc(r.horario) || 'Horário não informado'}</span>`
+                    : `<span>Previsto: ${esc(r.horario) || '—'} · Real: ${esc(r.horario_real) || '—'}</span>`}
+                  ${r.observacao ? `<span>${esc(r.observacao)}</span>` : ''}
+                </div>
+              </div>
+              <div style="display:flex;gap:2px">
+                <button class="icon-btn" data-edit-ocorrencia="${r.id}" aria-label="Editar ocorrência">${ICONS.edit}</button>
+                <button class="icon-btn" data-del-ocorrencia="${r.id}" aria-label="Remover ocorrência">${ICONS.trash}</button>
+              </div>
+            </div>`).join('')}
+        </div>`}
+      </div>
+    </div>`;
+  }
+
+  function lembretesDoDia(dataIso){
+    return state.compromissos
+      .filter(c => c.data === dataIso)
+      .sort((a,b) => (a.hora||'').localeCompare(b.hora||''))
+      .map(c => ({ hora: c.hora || '', titulo: c.titulo, status: 'Agendado' }));
+  }
+
+  function renderNotepadBloco(titulo, itens, vazioMsg){
+    return `
+      <div class="notepad-block">
+        <h4>${esc(titulo)}</h4>
+        ${itens.length===0 ? `<p class="empty" style="margin:0">${esc(vazioMsg)}</p>` : itens.map(it => `
+          <div class="notepad-item">
+            <span class="quando">${it.hora ? esc(it.hora) : '—'}</span>
+            <span class="titulo">${esc(it.titulo)}</span>
+            <span class="status-pill">${esc(it.status)}</span>
+          </div>`).join('')}
+      </div>`;
+  }
+
   function renderPainel(){
     const hoje = hojeIso();
+    const amanha = amanhaIso();
     const diaHoje = diaDeHoje;
     const aulasHoje = state.horarios.filter(h => h.dia === diaHoje).sort((a,b)=>a.horario.localeCompare(b.horario));
     const substHoje = state.substituicoes.filter(s => s.data === hoje);
     const compromissosHoje = state.compromissos.filter(c => c.data === hoje).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
     const aguardando = state.substituicoes.filter(s => s.status === 'aguardando').length;
+    const lembretesAmanha = lembretesDoDia(amanha);
+    const lembretesHoje = lembretesDoDia(hoje);
 
     return `
     <div class="panel single">
+      <div class="card notepad-card">
+        <h2>${ICONS.fileText} Lembretes</h2>
+        ${renderNotepadBloco('Amanhã — ' + formatarDataBR(amanha), lembretesAmanha, 'Nenhum lembrete para amanhã.')}
+        ${renderNotepadBloco('Hoje — ' + formatarDataBR(hoje), lembretesHoje, 'Nenhum lembrete para hoje.')}
+      </div>
       <div class="card">
         <h2>${ICONS.home} Painel Matinal — ${esc(diaHoje)}, ${esc(formatarDataBR(hoje))}</h2>
         <div class="stat-row">
@@ -1233,6 +1407,7 @@
     else if (state.activeTab === 'substituicao') panel.innerHTML = renderSubstituicao();
     else if (state.activeTab === 'alunostcc') panel.innerHTML = renderAlunosTcc();
     else if (state.activeTab === 'agenda') panel.innerHTML = renderAgenda();
+    else if (state.activeTab === 'frequencia') panel.innerHTML = renderFrequencia();
     else panel.innerHTML = renderMensagens();
     bind();
   }
@@ -1553,6 +1728,62 @@
         renderAll();
       }));
     }
+    if (state.activeTab === 'frequencia') {
+      const o = state.novaOcorrencia;
+      const f = document.getElementById('form-ocorrencia');
+      document.getElementById('oc-tog-falta').addEventListener('click', ()=>{ o.tipo = 'falta'; renderAll(); });
+      document.getElementById('oc-tog-saida').addEventListener('click', ()=>{ o.tipo = 'saida_antecipada'; renderAll(); });
+      const profSel = document.getElementById('oc-professor');
+      if (profSel) profSel.addEventListener('change', e=>{ o.professor = e.target.value; });
+      document.getElementById('oc-data').addEventListener('input', e=>{ o.data = e.target.value; });
+      document.getElementById('oc-horario').addEventListener('input', e=>{ o.horario = e.target.value; });
+      const horarioRealInput = document.getElementById('oc-horario-real');
+      if (horarioRealInput) horarioRealInput.addEventListener('input', e=>{ o.horarioReal = e.target.value; });
+      document.getElementById('oc-observacao').addEventListener('input', e=>{ o.observacao = e.target.value; });
+      f.addEventListener('submit', async e=>{
+        e.preventDefault();
+        if (!o.professor || !o.data) return;
+        const btn = f.querySelector('button[type=submit]');
+        btn.disabled = true;
+        const editando = o.id;
+        const args = {
+          p_senha: state.senha, p_professor: o.professor, p_tipo: o.tipo, p_data: o.data,
+          p_horario: o.horario, p_horario_real: o.horarioReal, p_observacao: o.observacao
+        };
+        const { error } = editando
+          ? await sb.rpc('fest_update_ocorrencia', { ...args, p_id: editando })
+          : await sb.rpc('fest_add_ocorrencia', args);
+        if (error) { alert(error.message); btn.disabled = false; return; }
+        state.novaOcorrencia = { id:null, professor:'', tipo:'falta', data:'', horario:'', horarioReal:'', observacao:'' };
+        await carregarDados(state.senha); renderAll();
+      });
+      const cancelarBtn = document.getElementById('oc-cancelar');
+      if (cancelarBtn) cancelarBtn.addEventListener('click', ()=>{
+        state.novaOcorrencia = { id:null, professor:'', tipo:'falta', data:'', horario:'', horarioReal:'', observacao:'' };
+        renderAll();
+      });
+      panel_query('[data-edit-ocorrencia]').forEach(b=>b.addEventListener('click', ()=>{
+        const item = state.ocorrencias.find(r => String(r.id) === b.dataset.editOcorrencia);
+        if (!item) return;
+        state.novaOcorrencia = { id:item.id, professor:item.professor, tipo:item.tipo, data:item.data, horario:item.horario, horarioReal:item.horario_real, observacao:item.observacao };
+        renderAll();
+      }));
+      panel_query('[data-del-ocorrencia]').forEach(b=>b.addEventListener('click', async ()=>{
+        if (!confirm('Remover este registro de ocorrência?')) return;
+        const { error } = await sb.rpc('fest_delete_ocorrencia', { p_senha: state.senha, p_id: b.dataset.delOcorrencia });
+        if (error) { alert(error.message); return; }
+        await carregarDados(state.senha); renderAll();
+      }));
+      document.getElementById('oc-filtro-data').addEventListener('input', e=>{
+        state.filtroOcorrencias.data = e.target.value; renderAll();
+      });
+      document.getElementById('oc-filtro-tipo').addEventListener('change', e=>{
+        state.filtroOcorrencias.tipo = e.target.value; renderAll();
+      });
+      document.getElementById('oc-filtro-professor').addEventListener('input', e=>{
+        state.filtroOcorrencias.professor = e.target.value; renderAll();
+      });
+    }
     if (state.activeTab === 'mensagens') {
       document.getElementById('tog-lider').addEventListener('click', ()=>{
         state.mensagem = { ...state.mensagem, destinatarioTipo:'lider', id:'' };
@@ -1599,6 +1830,54 @@
       await carregarDados(state.senha); renderAll();
     }));
   }
+
+  function initInstallBanner(){
+    const KEY = 'fest_install_dismiss';
+    const banner = document.getElementById('install-banner');
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    if (isStandalone || sessionStorage.getItem(KEY)) return;
+
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    let deferredPrompt = null;
+
+    function showBanner(html, onClickInstall){
+      banner.style.display = '';
+      banner.innerHTML = `
+        <p>${html}</p>
+        <div class="toggle-group">
+          ${onClickInstall ? `<button type="button" class="btn btn-primary" id="install-btn">Instalar</button>` : ''}
+          <button type="button" class="btn" id="install-dismiss" style="background:var(--surface);color:var(--text)">Agora não</button>
+        </div>`;
+      document.getElementById('install-dismiss').addEventListener('click', () => {
+        banner.style.display = 'none';
+        sessionStorage.setItem(KEY, '1');
+      });
+      if (onClickInstall) document.getElementById('install-btn').addEventListener('click', onClickInstall);
+    }
+
+    if (isIos) {
+      showBanner('Instale o painel na tela de início: toque em Compartilhar e depois em "Adicionar à Tela de Início".', null);
+    } else {
+      window.addEventListener('beforeinstallprompt', e => {
+        e.preventDefault();
+        deferredPrompt = e;
+        showBanner('Instale o painel da coordenação no seu dispositivo para acesso rápido.', async () => {
+          banner.style.display = 'none';
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          await deferredPrompt.userChoice;
+          deferredPrompt = null;
+        });
+      });
+    }
+  }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw-coordenacao.js').catch(() => {});
+    });
+  }
+  initInstallBanner();
 
   boot();
 })();
