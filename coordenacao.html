@@ -354,7 +354,8 @@
     phone:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
     id:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg>',
     swap:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3"/></svg>',
-    copy:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
+    copy:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+    edit:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>'
   };
 
   const maskCpf = v => v.replace(/\D/g,'').slice(0,11)
@@ -368,9 +369,9 @@
     horarios: [],
     lideres: [],
     activeTab: 'horarios',
-    novoProf: { nome:'', cpf:'', dataNasc:'', email:'', telefone:'' },
-    novoHorario: { professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' },
-    novoLider: { periodo:'', nome:'', telefone:'' },
+    novoProf: { id:null, nome:'', cpf:'', dataNasc:'', email:'', telefone:'' },
+    novoHorario: { id:null, professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' },
+    novoLider: { id:null, periodo:'', nome:'', telefone:'' },
     mensagem: { destinatarioTipo:'lider', id:'', texto:'' },
     substituicao: { professorAusenteId:'', aulaAusenteId:'', data:'', substitutoNome:'', textoEditado:null }
   };
@@ -485,10 +486,11 @@
 
   function renderHorarios(){
     const rows = state.horarios;
+    const editando = !!state.novoHorario.id;
     return `
     <div class="panel">
       <form class="card" id="form-horario">
-        <h2>${ICONS.plus} Novo Horário</h2>
+        <h2>${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Horário' : 'Novo Horário'}</h2>
         <div class="field">
           <label>Professor</label>
           ${state.professores.length === 0 ? `
@@ -508,7 +510,10 @@
         <div class="field"><label>Horário</label><input id="h-horario" placeholder="Ex: 19:00" value="${esc(state.novoHorario.horario)}"></div>
         <div class="field"><label>Turma / Período</label><input id="h-turma" placeholder="Ex: 4º Período A - Direito (Noite)" value="${esc(state.novoHorario.turma)}"></div>
         <div class="field"><label>Disciplina</label><input id="h-disciplina" placeholder="Ex: Direito Penal III" value="${esc(state.novoHorario.disciplina)}"></div>
-        <button type="submit" class="btn btn-primary">Adicionar à grade</button>
+        <div class="toggle-group">
+          <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Adicionar à grade'}</button>
+          ${editando ? `<button type="button" class="btn" id="h-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
+        </div>
       </form>
       <div class="card">
         <h2>Grade alocada <span class="pill" style="text-transform:none;font-weight:600">${rows.length}</span></h2>
@@ -524,7 +529,10 @@
                   <span>${ICONS.pin} ${esc(item.turma)}</span>
                 </div>
               </div>
-              <button class="icon-btn" data-del-horario="${item.id}" aria-label="Remover horário">${ICONS.trash}</button>
+              <div style="display:flex;gap:2px">
+                <button class="icon-btn" data-edit-horario="${item.id}" aria-label="Editar horário">${ICONS.edit}</button>
+                <button class="icon-btn" data-del-horario="${item.id}" aria-label="Remover horário">${ICONS.trash}</button>
+              </div>
             </div>`).join('')}
         </div>`}
       </div>
@@ -533,16 +541,20 @@
 
   function renderProfessores(){
     const rows = state.professores;
+    const editando = !!state.novoProf.id;
     return `
     <div class="panel">
       <form class="card" id="form-prof">
-        <h2>${ICONS.plus} Cadastrar Professor</h2>
+        <h2>${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Professor' : 'Cadastrar Professor'}</h2>
         <div class="field"><label>Nome completo</label><input id="p-nome" value="${esc(state.novoProf.nome)}"></div>
         <div class="field"><label>CPF</label><input id="p-cpf" value="${esc(state.novoProf.cpf)}"></div>
         <div class="field"><label>Data de nascimento</label><input id="p-data" placeholder="DD/MM/AAAA" value="${esc(state.novoProf.dataNasc)}"></div>
         <div class="field"><label>E-mail</label><input id="p-email" type="email" value="${esc(state.novoProf.email)}"></div>
         <div class="field"><label>Telefone / WhatsApp</label><input id="p-telefone" value="${esc(state.novoProf.telefone)}"></div>
-        <button type="submit" class="btn btn-primary">Salvar professor</button>
+        <div class="toggle-group">
+          <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Salvar professor'}</button>
+          ${editando ? `<button type="button" class="btn" id="p-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
+        </div>
       </form>
       <div class="card">
         <h2>Corpo docente</h2>
@@ -558,7 +570,10 @@
                   <span>${ICONS.phone} ${esc(p.telefone) || 'Não informado'}</span>
                 </div>
               </div>
-              <button class="icon-btn" data-del-prof="${p.id}" aria-label="Remover professor">${ICONS.trash}</button>
+              <div style="display:flex;gap:2px">
+                <button class="icon-btn" data-edit-prof="${p.id}" aria-label="Editar professor">${ICONS.edit}</button>
+                <button class="icon-btn" data-del-prof="${p.id}" aria-label="Remover professor">${ICONS.trash}</button>
+              </div>
             </div>`).join('')}
         </div>`}
       </div>
@@ -567,14 +582,18 @@
 
   function renderLideres(){
     const rows = state.lideres;
+    const editando = !!state.novoLider.id;
     return `
     <div class="panel">
       <form class="card" id="form-lider">
-        <h2>${ICONS.plus} Vincular Líder</h2>
+        <h2>${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Líder' : 'Vincular Líder'}</h2>
         <div class="field"><label>Período / turma</label><input id="l-periodo" placeholder="Ex: 1º Período" value="${esc(state.novoLider.periodo)}"></div>
         <div class="field"><label>Nome do líder</label><input id="l-nome" value="${esc(state.novoLider.nome)}"></div>
         <div class="field"><label>WhatsApp (com DDD)</label><input id="l-telefone" value="${esc(state.novoLider.telefone)}"></div>
-        <button type="submit" class="btn btn-primary">Salvar líder</button>
+        <div class="toggle-group">
+          <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Salvar líder'}</button>
+          ${editando ? `<button type="button" class="btn" id="l-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
+        </div>
       </form>
       <div class="card">
         <h2>Líderes de turma</h2>
@@ -587,7 +606,10 @@
                 <div class="name" style="margin-top:8px">${esc(l.nome)}</div>
                 <div class="meta"><span>${ICONS.phone} ${esc(l.telefone)}</span></div>
               </div>
-              <button class="icon-btn" data-del-lider="${l.id}" aria-label="Remover líder">${ICONS.trash}</button>
+              <div style="display:flex;gap:2px">
+                <button class="icon-btn" data-edit-lider="${l.id}" aria-label="Editar líder">${ICONS.edit}</button>
+                <button class="icon-btn" data-del-lider="${l.id}" aria-label="Remover líder">${ICONS.trash}</button>
+              </div>
             </div>`).join('')}
         </div>`}
       </div>
@@ -752,14 +774,29 @@
         }
         const btn = f.querySelector('button[type=submit]');
         btn.disabled = true;
-        const { error } = await sb.rpc('fest_add_horario', {
+        const editando = state.novoHorario.id;
+        const args = {
           p_senha: state.senha, p_professor: state.novoHorario.professor, p_dia: state.novoHorario.dia,
           p_horario: state.novoHorario.horario, p_turma: state.novoHorario.turma, p_disciplina: state.novoHorario.disciplina
-        });
+        };
+        const { error } = editando
+          ? await sb.rpc('fest_update_horario', { ...args, p_id: editando })
+          : await sb.rpc('fest_add_horario', args);
         if (error) { alert(error.message); btn.disabled = false; return; }
-        state.novoHorario = { professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' };
+        state.novoHorario = { id:null, professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' };
         await carregarDados(state.senha); renderAll();
       });
+      const cancelarBtn = document.getElementById('h-cancelar');
+      if (cancelarBtn) cancelarBtn.addEventListener('click', ()=>{
+        state.novoHorario = { id:null, professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' };
+        renderAll();
+      });
+      panel_query('[data-edit-horario]').forEach(b=>b.addEventListener('click', ()=>{
+        const item = state.horarios.find(h => String(h.id) === b.dataset.editHorario);
+        if (!item) return;
+        state.novoHorario = { id:item.id, professor:item.professor, dia:item.dia, horario:item.horario, turma:item.turma, disciplina:item.disciplina };
+        renderAll();
+      }));
       panel_query('[data-del-horario]').forEach(b=>b.addEventListener('click', async ()=>{
         if (!confirm('Remover este horário da grade?')) return;
         const { error } = await sb.rpc('fest_delete_horario', { p_senha: state.senha, p_id: b.dataset.delHorario });
@@ -783,20 +820,35 @@
         e.preventDefault();
         if(!state.novoProf.nome) return;
         const cpfLimpo = state.novoProf.cpf.replace(/\D/g,'');
-        if (cpfLimpo && state.professores.some(p => p.cpf.replace(/\D/g,'') === cpfLimpo)) {
+        const editando = state.novoProf.id;
+        if (cpfLimpo && state.professores.some(p => p.cpf.replace(/\D/g,'') === cpfLimpo && String(p.id) !== String(editando))) {
           alert('Já existe um professor cadastrado com esse CPF.');
           return;
         }
         const btn = f.querySelector('button[type=submit]');
         btn.disabled = true;
-        const { error } = await sb.rpc('fest_add_professor', {
+        const args = {
           p_senha: state.senha, p_nome: state.novoProf.nome, p_cpf: state.novoProf.cpf,
           p_data_nasc: state.novoProf.dataNasc, p_email: state.novoProf.email, p_telefone: state.novoProf.telefone
-        });
+        };
+        const { error } = editando
+          ? await sb.rpc('fest_update_professor', { ...args, p_id: editando })
+          : await sb.rpc('fest_add_professor', args);
         if (error) { alert(error.message); btn.disabled = false; return; }
-        state.novoProf = { nome:'', cpf:'', dataNasc:'', email:'', telefone:'' };
+        state.novoProf = { id:null, nome:'', cpf:'', dataNasc:'', email:'', telefone:'' };
         await carregarDados(state.senha); renderAll();
       });
+      const cancelarBtn = document.getElementById('p-cancelar');
+      if (cancelarBtn) cancelarBtn.addEventListener('click', ()=>{
+        state.novoProf = { id:null, nome:'', cpf:'', dataNasc:'', email:'', telefone:'' };
+        renderAll();
+      });
+      panel_query('[data-edit-prof]').forEach(b=>b.addEventListener('click', ()=>{
+        const item = state.professores.find(p => String(p.id) === b.dataset.editProf);
+        if (!item) return;
+        state.novoProf = { id:item.id, nome:item.nome, cpf:item.cpf, dataNasc:item.data_nasc, email:item.email, telefone:item.telefone };
+        renderAll();
+      }));
       panel_query('[data-del-prof]').forEach(b=>b.addEventListener('click', async ()=>{
         if (!confirm('Remover este professor do cadastro?')) return;
         const { error } = await sb.rpc('fest_delete_professor', { p_senha: state.senha, p_id: b.dataset.delProf });
@@ -820,13 +872,26 @@
         if(!state.novoLider.periodo || !state.novoLider.nome) return;
         const btn = f.querySelector('button[type=submit]');
         btn.disabled = true;
-        const { error } = await sb.rpc('fest_add_lider', {
-          p_senha: state.senha, p_periodo: state.novoLider.periodo, p_nome: state.novoLider.nome, p_telefone: state.novoLider.telefone
-        });
+        const editando = state.novoLider.id;
+        const args = { p_senha: state.senha, p_periodo: state.novoLider.periodo, p_nome: state.novoLider.nome, p_telefone: state.novoLider.telefone };
+        const { error } = editando
+          ? await sb.rpc('fest_update_lider', { ...args, p_id: editando })
+          : await sb.rpc('fest_add_lider', args);
         if (error) { alert(error.message); btn.disabled = false; return; }
-        state.novoLider = { periodo:'', nome:'', telefone:'' };
+        state.novoLider = { id:null, periodo:'', nome:'', telefone:'' };
         await carregarDados(state.senha); renderAll();
       });
+      const cancelarBtn = document.getElementById('l-cancelar');
+      if (cancelarBtn) cancelarBtn.addEventListener('click', ()=>{
+        state.novoLider = { id:null, periodo:'', nome:'', telefone:'' };
+        renderAll();
+      });
+      panel_query('[data-edit-lider]').forEach(b=>b.addEventListener('click', ()=>{
+        const item = state.lideres.find(l => String(l.id) === b.dataset.editLider);
+        if (!item) return;
+        state.novoLider = { id:item.id, periodo:item.periodo, nome:item.nome, telefone:item.telefone };
+        renderAll();
+      }));
       panel_query('[data-del-lider]').forEach(b=>b.addEventListener('click', async ()=>{
         if (!confirm('Remover este líder de turma?')) return;
         const { error } = await sb.rpc('fest_delete_lider', { p_senha: state.senha, p_id: b.dataset.delLider });
