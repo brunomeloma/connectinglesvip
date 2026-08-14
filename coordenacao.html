@@ -22,6 +22,10 @@
     --danger:#B5493B;
     --chip:#EFE6D4;
     --chip-ink:#7A5B21;
+    --warn-bg:#FCE8B4;
+    --warn-ink:#7A5B00;
+    --ok-bg:#CFEFD9;
+    --ok-ink:#116136;
     --shadow: 0 1px 2px rgba(36,34,32,0.06), 0 8px 24px -12px rgba(36,34,32,0.18);
   }
   @media (prefers-color-scheme: dark){
@@ -40,6 +44,10 @@
       --danger:#E19082;
       --chip:#332C1C;
       --chip-ink:#E3C077;
+      --warn-bg:#4A3B12;
+      --warn-ink:#F0CD6A;
+      --ok-bg:#123B27;
+      --ok-ink:#6FE3A6;
       --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 24px -12px rgba(0,0,0,0.5);
     }
   }
@@ -58,6 +66,10 @@
     --danger:#E19082;
     --chip:#332C1C;
     --chip-ink:#E3C077;
+    --warn-bg:#4A3B12;
+    --warn-ink:#F0CD6A;
+    --ok-bg:#123B27;
+    --ok-ink:#6FE3A6;
     --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 8px 24px -12px rgba(0,0,0,0.5);
   }
 
@@ -354,6 +366,54 @@
   }
   .row-compact{ padding:9px 12px; }
   .row-compact .name{ font-size:.85rem; }
+
+  .badge{
+    display:inline-flex;
+    align-items:center;
+    gap:4px;
+    font-size:.68rem;
+    font-weight:700;
+    padding:3px 9px;
+    border-radius:999px;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    white-space:nowrap;
+  }
+  .badge-aguardando{ background:var(--warn-bg); color:var(--warn-ink); }
+  .badge-confirmado{ background:var(--ok-bg); color:var(--ok-ink); }
+  .icon-btn.whats-row{ color:var(--whats); }
+  .icon-btn.whats-row:hover{ color:var(--whats); background:var(--surface); opacity:.8; }
+
+  .dash-grid{ display:grid; gap:14px; grid-template-columns:1fr; }
+  @media (min-width:760px){ .dash-grid{ grid-template-columns:1fr 1fr; } }
+  .dash-card h3{
+    font-family:ui-serif,Georgia,"Times New Roman",serif;
+    font-size:1.05rem;
+    margin:0 0 12px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .dash-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:10px;
+    padding:10px 0;
+    border-top:1px solid var(--border);
+  }
+  .dash-item:first-of-type{ border-top:none; padding-top:0; }
+  .stat-row{ display:flex; gap:12px; flex-wrap:wrap; }
+  .stat-tile{
+    flex:1;
+    min-width:120px;
+    background:var(--surface-sunken);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:14px 16px;
+  }
+  .stat-tile .num{ font-family:ui-serif,Georgia,serif; font-size:1.7rem; font-weight:600; font-variant-numeric:tabular-nums; }
+  .stat-tile .label{ font-size:.75rem; color:var(--text-muted); margin-top:2px; }
   .gate{
     max-width:360px;
     margin:15vh auto 0;
@@ -418,7 +478,11 @@
     copy:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
     edit:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>',
     search:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
-    chevron:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>'
+    chevron:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
+    home:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></svg>',
+    fileText:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h6M9 9h1"/></svg>',
+    check:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    undo:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7"/></svg>'
   };
 
   const maskCpf = v => v.replace(/\D/g,'').slice(0,11)
@@ -429,17 +493,27 @@
   const NOMES_DIA_JS = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
   const diaDeHoje = NOMES_DIA_JS[new Date().getDay()];
 
+  function hojeIso(){
+    return isoDate(new Date());
+  }
+
   let state = {
     senha: sessionStorage.getItem('fest_senha') || '',
     professores: [],
     horarios: [],
     lideres: [],
-    activeTab: 'horarios',
-    novoProf: { id:null, nome:'', cpf:'', dataNasc:'', email:'', telefone:'' },
+    alunosTcc: [],
+    compromissos: [],
+    substituicoes: [],
+    activeTab: 'painel',
+    novoProf: { id:null, nome:'', matricula:'', cpf:'', dataNasc:'', email:'', telefone:'' },
     novoHorario: { id:null, professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' },
     novoLider: { id:null, periodo:'', nome:'', telefone:'' },
     mensagem: { destinatarioTipo:'lider', id:'', texto:'' },
-    substituicao: { professorAusenteId:'', aulaAusenteId:'', data:'', substitutoNome:'', textoEditado:null },
+    substituicao: { professorAusenteId:'', aulaAusenteId:'', data:'', substitutoNome:'', observacao:'' },
+    novoAlunoTcc: { id:null, nome:'', periodo:'10º', tema:'', email:'' },
+    filtroAlunosTcc: { busca:'' },
+    novoCompromisso: { id:null, titulo:'', data:'', hora:'', descricao:'' },
     filtroHorarios: { busca:'', dia: (diaDeHoje === 'Domingo' || diaDeHoje === 'Sábado') ? 'Todos' : diaDeHoje, formAberto:false }
   };
 
@@ -451,6 +525,9 @@
     state.professores = data.professores || [];
     state.horarios = data.horarios || [];
     state.lideres = data.lideres || [];
+    state.alunosTcc = data.alunos_tcc || [];
+    state.compromissos = data.compromissos || [];
+    state.substituicoes = data.substituicoes || [];
   }
 
   function renderGate(loading, erro){
@@ -505,10 +582,13 @@
   }
 
   const TABS = [
+    { id:'painel', label:'Painel', icon:ICONS.home },
     { id:'horarios', label:'Horários e Salas', icon:ICONS.calendar },
     { id:'professores', label:'Professores', icon:ICONS.users },
     { id:'lideres', label:'Líderes de Turma', icon:ICONS.userCheck },
     { id:'substituicao', label:'Substituição', icon:ICONS.swap },
+    { id:'alunostcc', label:'Alunos TCC', icon:ICONS.fileText },
+    { id:'agenda', label:'Agenda', icon:ICONS.calendar },
     { id:'mensagens', label:'Disparo WhatsApp', icon:ICONS.message }
   ];
 
@@ -675,11 +755,13 @@
   function renderProfessores(){
     const rows = state.professores;
     const editando = !!state.novoProf.id;
+    const semContato = rows.filter(p => !p.telefone).length;
     return `
     <div class="panel">
       <form class="card" id="form-prof">
         <h2>${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Professor' : 'Cadastrar Professor'}</h2>
         <div class="field"><label>Nome completo</label><input id="p-nome" value="${esc(state.novoProf.nome)}"></div>
+        <div class="field"><label>Matrícula</label><input id="p-matricula" value="${esc(state.novoProf.matricula)}"></div>
         <div class="field"><label>CPF</label><input id="p-cpf" value="${esc(state.novoProf.cpf)}"></div>
         <div class="field"><label>Data de nascimento</label><input id="p-data" placeholder="DD/MM/AAAA" value="${esc(state.novoProf.dataNasc)}"></div>
         <div class="field"><label>E-mail</label><input id="p-email" type="email" value="${esc(state.novoProf.email)}"></div>
@@ -690,7 +772,8 @@
         </div>
       </form>
       <div class="card">
-        <h2>Corpo docente</h2>
+        <h2>Corpo docente <span class="pill" style="text-transform:none;font-weight:600">${rows.length}</span></h2>
+        ${semContato > 0 ? `<p class="note" style="margin-bottom:12px">${semContato} professor${semContato===1?'':'es'} sem WhatsApp cadastrado — clique no ícone de telefone na linha pra adicionar rápido.</p>` : ''}
         ${rows.length===0 ? `<p class="empty">Nenhum professor cadastrado.</p>` : `
         <div class="list two-col">
           ${rows.map(p => `
@@ -698,12 +781,15 @@
               <div>
                 <div class="name">${esc(p.nome)}</div>
                 <div class="stack meta">
-                  <span>${ICONS.id} CPF: ${esc(p.cpf) || 'Não informado'}</span>
+                  <span>${ICONS.id} Matrícula: ${esc(p.matricula) || 'Não informada'}</span>
                   <span>${ICONS.mail} ${esc(p.email) || 'Não informado'}</span>
                   <span>${ICONS.phone} ${esc(p.telefone) || 'Não informado'}</span>
                 </div>
               </div>
               <div style="display:flex;gap:2px">
+                ${p.telefone
+                  ? `<a class="icon-btn whats-row" href="https://wa.me/55${p.telefone.replace(/\D/g,'')}" target="_blank" rel="noopener noreferrer" aria-label="Abrir WhatsApp com ${esc(p.nome)}">${ICONS.send}</a>`
+                  : `<button class="icon-btn" data-addwhats-prof="${p.id}" aria-label="Adicionar WhatsApp de ${esc(p.nome)}" title="Sem WhatsApp — clique pra adicionar">${ICONS.phone}</button>`}
                 <button class="icon-btn" data-edit-prof="${p.id}" aria-label="Editar professor">${ICONS.edit}</button>
                 <button class="icon-btn" data-del-prof="${p.id}" aria-label="Remover professor">${ICONS.trash}</button>
               </div>
@@ -749,7 +835,7 @@
     </div>`;
   }
 
-  function calcularSubstituicao(){
+  function candidatosSubstituicao(){
     const s = state.substituicao;
     const profAusente = state.professores.find(p => String(p.id) === String(s.professorAusenteId));
     const aulasDoAusente = profAusente ? state.horarios.filter(h => h.professor === profAusente.nome) : [];
@@ -772,32 +858,39 @@
     }
 
     const substituto = candidatos.find(c => c.nome === s.substitutoNome);
+    return { profAusente, aulasDoAusente, aulaAusente, candidatos, substituto };
+  }
 
-    let texto = '';
-    if (profAusente && aulaAusente && substituto && s.data) {
-      texto = `Aviso de Alteração na Grade Horária - ${aulaAusente.turma}\n\n` +
-        `Informamos que no dia ${formatarDataBR(s.data)}, no horário das ${aulaAusente.horario}, o(a) Prof.(a) ${profAusente.nome}` +
-        `${aulaAusente.disciplina ? ' (' + aulaAusente.disciplina + ')' : ''} precisará ausentar-se.\n\n` +
-        `A aula será assumida pelo(a) Prof.(a) ${substituto.nome}, que ministrará a disciplina de ${substituto.disciplina || '(a definir)'} neste horário.`;
-    }
+  function textoSubstituicao(row){
+    return `Aviso de Alteração na Grade Horária - ${row.turma}\n\n` +
+      `Informamos que no dia ${formatarDataBR(row.data)}, no horário das ${row.horario}, o(a) Prof.(a) ${row.professor_ausente}` +
+      `${row.disciplina_ausente ? ' (' + row.disciplina_ausente + ')' : ''} precisará ausentar-se.\n\n` +
+      `A aula será assumida pelo(a) Prof.(a) ${row.professor_substituto}, que ministrará a disciplina de ${row.disciplina_substituto || '(a definir)'} neste horário.` +
+      `${row.observacao ? '\n\nObs.: ' + row.observacao : ''}\n\n` +
+      `Status: ${row.status === 'confirmado' ? 'Confirmado pelo substituto' : 'Aguardando aceite do substituto'}.`;
+  }
 
-    return { profAusente, aulasDoAusente, aulaAusente, candidatos, substituto, texto };
+  function buildSubstWhatsLink(row){
+    const lider = state.lideres.find(l => l.periodo === row.turma);
+    const num = (lider && lider.telefone || '').replace(/\D/g,'');
+    if (!num) return '#';
+    return `https://wa.me/55${num}?text=${encodeURIComponent(textoSubstituicao(row))}`;
   }
 
   function renderSubstituicao(){
     const s = state.substituicao;
-    const d = calcularSubstituicao();
-    const textoFinal = s.textoEditado !== null ? s.textoEditado : d.texto;
+    const d = candidatosSubstituicao();
     const diaEsperado = d.aulaAusente ? d.aulaAusente.dia : '';
     const diaDaDataEscolhida = s.data ? diaSemanaDaData(s.data) : '';
     const dataDivergente = d.aulaAusente && s.data && diaDaDataEscolhida !== diaEsperado;
 
-    const lider = d.aulaAusente ? state.lideres.find(l => l.periodo === d.aulaAusente.turma) : null;
+    const registros = [...state.substituicoes].sort((a,b) => (b.data||'').localeCompare(a.data||''));
 
     return `
     <div class="panel single">
       <div class="card">
         <h2>${ICONS.swap} Registrar falta e achar substituto</h2>
+        <form id="form-subst">
         <div class="field">
           <label>Professor ausente</label>
           ${state.professores.length === 0 ? `<p class="note">Cadastre professores primeiro.</p>` : `
@@ -828,18 +921,181 @@
             <option value="">-- Selecione --</option>
             ${d.candidatos.map(c => `<option value="${esc(c.nome)}" ${s.substitutoNome===c.nome?'selected':''}>${esc(c.nome)}${c.disciplina ? ' — '+esc(c.disciplina) : ''}</option>`).join('')}
           </select>`}
-        </div>` : ''}
-        ${d.substituto && s.data ? `
+        </div>
         <div class="field">
-          <label>Comunicado (editável)</label>
-          <textarea id="s-texto" rows="6">${esc(textoFinal)}</textarea>
+          <label>Observação (opcional)</label>
+          <textarea id="s-obs" rows="2">${esc(s.observacao)}</textarea>
         </div>
-        <div class="toggle-group">
-          <button type="button" class="btn btn-primary" id="s-copiar">${ICONS.copy} Copiar texto</button>
-          <a class="btn btn-whats" id="s-whats" href="#" target="_blank" rel="noopener noreferrer" ${lider && lider.telefone ? '' : 'aria-disabled="true"'} style="${lider && lider.telefone ? '' : 'pointer-events:none;opacity:.45;'}">${ICONS.send} WhatsApp p/ líder</a>
-        </div>
-        ${!lider ? `<p class="note">Não há líder cadastrado pra turma "${esc(d.aulaAusente.turma)}" — cadastre um na aba Líderes pra habilitar o envio direto.</p>` : ''}
+        <button type="submit" class="btn btn-primary" ${d.substituto && s.data ? '' : 'disabled'}>${ICONS.plus} Registrar substituição</button>
         ` : ''}
+        </form>
+      </div>
+      <div class="card">
+        <h2>Substituições registradas <span class="pill" style="text-transform:none;font-weight:600">${registros.length}</span></h2>
+        ${registros.length === 0 ? `<p class="empty">Nenhuma substituição registrada ainda.</p>` : `
+        <div class="list">
+          ${registros.map(row => `
+            <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+              <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+                <div>
+                  <div class="name">${esc(row.turma)} — ${esc(formatarDataBR(row.data))} ${esc(row.horario)}</div>
+                  <div class="stack meta">
+                    <span>Ausente: ${esc(row.professor_ausente)}${row.disciplina_ausente ? ' ('+esc(row.disciplina_ausente)+')' : ''}</span>
+                    <span>Substituto: ${esc(row.professor_substituto)}${row.disciplina_substituto ? ' ('+esc(row.disciplina_substituto)+')' : ''}</span>
+                    ${row.observacao ? `<span>Obs.: ${esc(row.observacao)}</span>` : ''}
+                  </div>
+                </div>
+                <span class="badge ${row.status==='confirmado' ? 'badge-confirmado' : 'badge-aguardando'}">${row.status==='confirmado' ? ICONS.check+' Confirmado pelo substituto' : 'Aguardando aceite'}</span>
+              </div>
+              <div class="toggle-group">
+                ${row.status==='confirmado'
+                  ? `<button type="button" class="btn" data-reabrir-subst="${row.id}" style="background:var(--surface-sunken);color:var(--text)">${ICONS.undo} Reabrir</button>`
+                  : `<button type="button" class="btn btn-primary" data-confirmar-subst="${row.id}">${ICONS.check} Confirmar</button>`}
+                <button type="button" class="btn" data-copiar-subst="${row.id}" style="background:var(--surface-sunken);color:var(--text)">${ICONS.copy} Copiar aviso</button>
+                <a class="btn btn-whats" href="${buildSubstWhatsLink(row)}" target="_blank" rel="noopener noreferrer" ${buildSubstWhatsLink(row)==='#' ? 'aria-disabled="true" style="pointer-events:none;opacity:.45;"' : ''}>${ICONS.send} WhatsApp p/ líder</a>
+                <button type="button" class="btn" data-del-subst="${row.id}" style="background:var(--surface-sunken);color:var(--text)">${ICONS.trash} Excluir</button>
+              </div>
+            </div>`).join('')}
+        </div>`}
+      </div>
+    </div>`;
+  }
+
+  function alunosTccFiltrados(){
+    const busca = state.filtroAlunosTcc.busca.trim().toLowerCase();
+    if (!busca) return state.alunosTcc;
+    return state.alunosTcc.filter(a =>
+      (a.nome||'').toLowerCase().includes(busca) || (a.tema||'').toLowerCase().includes(busca));
+  }
+
+  function renderAlunosTcc(){
+    const editando = !!state.novoAlunoTcc.id;
+    const rows = alunosTccFiltrados();
+    return `
+    <div class="panel">
+      <form class="card" id="form-alunotcc">
+        <h2>${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Aluno' : 'Cadastrar Aluno de TCC II'}</h2>
+        <div class="field"><label>Nome completo</label><input id="a-nome" value="${esc(state.novoAlunoTcc.nome)}"></div>
+        <div class="field"><label>Período</label><input id="a-periodo" value="${esc(state.novoAlunoTcc.periodo)}"></div>
+        <div class="field"><label>Tema do TCC</label><textarea id="a-tema" rows="3">${esc(state.novoAlunoTcc.tema)}</textarea></div>
+        <div class="field"><label>E-mail</label><input id="a-email" type="email" value="${esc(state.novoAlunoTcc.email)}"></div>
+        <div class="toggle-group">
+          <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Salvar aluno'}</button>
+          ${editando ? `<button type="button" class="btn" id="a-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
+        </div>
+      </form>
+      <div class="card">
+        <h2>Orientação de TCC II <span class="pill" style="text-transform:none;font-weight:600">${state.alunosTcc.length}</span></h2>
+        <div class="field"><input id="a-busca" placeholder="Buscar por nome ou tema..." value="${esc(state.filtroAlunosTcc.busca)}"></div>
+        ${rows.length===0 ? `<p class="empty">Nenhum aluno encontrado.</p>` : `
+        <div class="list">
+          ${rows.map(a => `
+            <div class="row">
+              <div>
+                <div class="name">${esc(a.nome)}</div>
+                <div class="stack meta">
+                  <span>${ICONS.id} ${esc(a.periodo)}</span>
+                  <span>${ICONS.mail} ${esc(a.email) || 'Não informado'}</span>
+                  <span>${esc(a.tema) || 'Tema não informado'}</span>
+                </div>
+              </div>
+              <div style="display:flex;gap:2px">
+                <button class="icon-btn" data-edit-alunotcc="${a.id}" aria-label="Editar aluno">${ICONS.edit}</button>
+                <button class="icon-btn" data-del-alunotcc="${a.id}" aria-label="Remover aluno">${ICONS.trash}</button>
+              </div>
+            </div>`).join('')}
+        </div>`}
+      </div>
+    </div>`;
+  }
+
+  function renderAgenda(){
+    const editando = !!state.novoCompromisso.id;
+    const hoje = hojeIso();
+    const rows = [...state.compromissos].sort((a,b) => (a.data||'').localeCompare(b.data||'') || (a.hora||'').localeCompare(b.hora||''));
+    return `
+    <div class="panel">
+      <form class="card" id="form-compromisso">
+        <h2>${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Compromisso' : 'Novo Compromisso'}</h2>
+        <div class="field"><label>Título</label><input id="c-titulo" value="${esc(state.novoCompromisso.titulo)}"></div>
+        <div class="field"><label>Data</label><input type="date" id="c-data" value="${esc(state.novoCompromisso.data)}"></div>
+        <div class="field"><label>Hora</label><input id="c-hora" placeholder="Ex: 14:00" value="${esc(state.novoCompromisso.hora)}"></div>
+        <div class="field"><label>Descrição</label><textarea id="c-descricao" rows="3">${esc(state.novoCompromisso.descricao)}</textarea></div>
+        <div class="toggle-group">
+          <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Salvar compromisso'}</button>
+          ${editando ? `<button type="button" class="btn" id="c-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
+        </div>
+      </form>
+      <div class="card">
+        <h2>Agenda de compromissos <span class="pill" style="text-transform:none;font-weight:600">${rows.length}</span></h2>
+        ${rows.length===0 ? `<p class="empty">Nenhum compromisso cadastrado.</p>` : `
+        <div class="list">
+          ${rows.map(c => `
+            <div class="row">
+              <div>
+                <div class="name">${c.data===hoje ? '<span class="badge badge-confirmado">Hoje</span> ' : ''}${esc(formatarDataBR(c.data))}${c.hora ? ' — '+esc(c.hora) : ''} — ${esc(c.titulo)}</div>
+                ${c.descricao ? `<div class="meta">${esc(c.descricao)}</div>` : ''}
+              </div>
+              <div style="display:flex;gap:2px">
+                <button class="icon-btn" data-edit-compromisso="${c.id}" aria-label="Editar compromisso">${ICONS.edit}</button>
+                <button class="icon-btn" data-del-compromisso="${c.id}" aria-label="Remover compromisso">${ICONS.trash}</button>
+              </div>
+            </div>`).join('')}
+        </div>`}
+      </div>
+    </div>`;
+  }
+
+  function renderPainel(){
+    const hoje = hojeIso();
+    const diaHoje = diaDeHoje;
+    const aulasHoje = state.horarios.filter(h => h.dia === diaHoje).sort((a,b)=>a.horario.localeCompare(b.horario));
+    const substHoje = state.substituicoes.filter(s => s.data === hoje);
+    const compromissosHoje = state.compromissos.filter(c => c.data === hoje).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+    const aguardando = state.substituicoes.filter(s => s.status === 'aguardando').length;
+
+    return `
+    <div class="panel single">
+      <div class="card">
+        <h2>${ICONS.home} Painel Matinal — ${esc(diaHoje)}, ${esc(formatarDataBR(hoje))}</h2>
+        <div class="stat-row">
+          <div class="stat-tile"><span class="num">${aulasHoje.length}</span><span class="label">Aulas hoje</span></div>
+          <div class="stat-tile"><span class="num">${substHoje.length}</span><span class="label">Substituições hoje</span></div>
+          <div class="stat-tile"><span class="num">${aguardando}</span><span class="label">Aguardando aceite</span></div>
+          <div class="stat-tile"><span class="num">${compromissosHoje.length}</span><span class="label">Compromissos hoje</span></div>
+        </div>
+      </div>
+      <div class="dash-grid">
+        <div class="card dash-card">
+          <h3>${ICONS.swap} Substituições ativas hoje</h3>
+          ${substHoje.length===0 ? `<p class="empty">Nenhuma substituição registrada pra hoje.</p>` : substHoje.map(s => `
+            <div class="dash-item">
+              <div><strong>${esc(s.turma)}</strong> — ${esc(s.horario)}</div>
+              <div class="meta">${esc(s.professor_ausente)} → ${esc(s.professor_substituto)}</div>
+              <span class="badge ${s.status==='confirmado' ? 'badge-confirmado' : 'badge-aguardando'}">${s.status==='confirmado' ? 'Confirmado' : 'Aguardando aceite'}</span>
+            </div>`).join('')}
+        </div>
+        <div class="card dash-card">
+          <h3>${ICONS.calendar} Compromissos de hoje</h3>
+          ${compromissosHoje.length===0 ? `<p class="empty">Nenhum compromisso pra hoje.</p>` : compromissosHoje.map(c => `
+            <div class="dash-item">
+              <div><strong>${c.hora ? esc(c.hora)+' — ' : ''}${esc(c.titulo)}</strong></div>
+              ${c.descricao ? `<div class="meta">${esc(c.descricao)}</div>` : ''}
+            </div>`).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <h3>${ICONS.calendar} Aulas de hoje</h3>
+        ${aulasHoje.length===0 ? `<p class="empty">Nenhuma aula alocada pra hoje.</p>` : `
+        <div class="list two-col">
+          ${aulasHoje.map(h => `
+            <div class="row">
+              <div>
+                <div class="name">${esc(h.horario)} — ${esc(h.turma)}</div>
+                <div class="meta"><span>${esc(h.professor)}${h.disciplina ? ' — '+esc(h.disciplina) : ''}</span></div>
+              </div>
+            </div>`).join('')}
+        </div>`}
       </div>
     </div>`;
   }
@@ -876,10 +1132,13 @@
   function renderAll(){
     renderTabs();
     const panel = document.getElementById('tabpanel');
-    if (state.activeTab === 'horarios') panel.innerHTML = renderHorarios();
+    if (state.activeTab === 'painel') panel.innerHTML = renderPainel();
+    else if (state.activeTab === 'horarios') panel.innerHTML = renderHorarios();
     else if (state.activeTab === 'professores') panel.innerHTML = renderProfessores();
     else if (state.activeTab === 'lideres') panel.innerHTML = renderLideres();
     else if (state.activeTab === 'substituicao') panel.innerHTML = renderSubstituicao();
+    else if (state.activeTab === 'alunostcc') panel.innerHTML = renderAlunosTcc();
+    else if (state.activeTab === 'agenda') panel.innerHTML = renderAgenda();
     else panel.innerHTML = renderMensagens();
     bind();
   }
@@ -938,7 +1197,7 @@
     }
     if (state.activeTab === 'professores') {
       const f = document.getElementById('form-prof');
-      const map = {'p-nome':'nome','p-cpf':'cpf','p-data':'dataNasc','p-email':'email','p-telefone':'telefone'};
+      const map = {'p-nome':'nome','p-matricula':'matricula','p-cpf':'cpf','p-data':'dataNasc','p-email':'email','p-telefone':'telefone'};
       Object.keys(map).forEach(id=>{
         document.getElementById(id).addEventListener('input', e=>{
           let v = e.target.value;
@@ -960,26 +1219,34 @@
         const btn = f.querySelector('button[type=submit]');
         btn.disabled = true;
         const args = {
-          p_senha: state.senha, p_nome: state.novoProf.nome, p_cpf: state.novoProf.cpf,
+          p_senha: state.senha, p_nome: state.novoProf.nome, p_matricula: state.novoProf.matricula, p_cpf: state.novoProf.cpf,
           p_data_nasc: state.novoProf.dataNasc, p_email: state.novoProf.email, p_telefone: state.novoProf.telefone
         };
         const { error } = editando
           ? await sb.rpc('fest_update_professor', { ...args, p_id: editando })
           : await sb.rpc('fest_add_professor', args);
         if (error) { alert(error.message); btn.disabled = false; return; }
-        state.novoProf = { id:null, nome:'', cpf:'', dataNasc:'', email:'', telefone:'' };
+        state.novoProf = { id:null, nome:'', matricula:'', cpf:'', dataNasc:'', email:'', telefone:'' };
         await carregarDados(state.senha); renderAll();
       });
       const cancelarBtn = document.getElementById('p-cancelar');
       if (cancelarBtn) cancelarBtn.addEventListener('click', ()=>{
-        state.novoProf = { id:null, nome:'', cpf:'', dataNasc:'', email:'', telefone:'' };
+        state.novoProf = { id:null, nome:'', matricula:'', cpf:'', dataNasc:'', email:'', telefone:'' };
         renderAll();
       });
       panel_query('[data-edit-prof]').forEach(b=>b.addEventListener('click', ()=>{
         const item = state.professores.find(p => String(p.id) === b.dataset.editProf);
         if (!item) return;
-        state.novoProf = { id:item.id, nome:item.nome, cpf:item.cpf, dataNasc:item.data_nasc, email:item.email, telefone:item.telefone };
+        state.novoProf = { id:item.id, nome:item.nome, matricula:item.matricula, cpf:item.cpf, dataNasc:item.data_nasc, email:item.email, telefone:item.telefone };
         renderAll();
+        document.getElementById('p-nome')?.focus();
+      }));
+      panel_query('[data-addwhats-prof]').forEach(b=>b.addEventListener('click', ()=>{
+        const item = state.professores.find(p => String(p.id) === b.dataset.addwhatsProf);
+        if (!item) return;
+        state.novoProf = { id:item.id, nome:item.nome, matricula:item.matricula, cpf:item.cpf, dataNasc:item.data_nasc, email:item.email, telefone:item.telefone };
+        renderAll();
+        document.getElementById('p-telefone')?.focus();
       }));
       panel_query('[data-del-prof]').forEach(b=>b.addEventListener('click', async ()=>{
         if (!confirm('Remover este professor do cadastro?')) return;
@@ -1035,44 +1302,158 @@
       const s = state.substituicao;
       const profSel = document.getElementById('s-professor');
       if (profSel) profSel.addEventListener('change', e=>{
-        state.substituicao = { professorAusenteId: e.target.value, aulaAusenteId:'', data:'', substitutoNome:'', textoEditado:null };
+        state.substituicao = { professorAusenteId: e.target.value, aulaAusenteId:'', data:'', substitutoNome:'', observacao:'' };
         renderAll();
       });
       const aulaSel = document.getElementById('s-aula');
       if (aulaSel) aulaSel.addEventListener('change', e=>{
         s.aulaAusenteId = e.target.value;
-        s.substitutoNome = ''; s.textoEditado = null;
+        s.substitutoNome = '';
         const aula = state.horarios.find(h => String(h.id) === String(s.aulaAusenteId));
         s.data = aula ? proximaDataPara(aula.dia) : '';
         renderAll();
       });
       const dataInput = document.getElementById('s-data');
       if (dataInput) dataInput.addEventListener('input', e=>{
-        s.data = e.target.value; s.textoEditado = null;
+        s.data = e.target.value;
         renderAll();
       });
       const substSel = document.getElementById('s-substituto');
       if (substSel) substSel.addEventListener('change', e=>{
-        s.substitutoNome = e.target.value; s.textoEditado = null;
+        s.substitutoNome = e.target.value;
         renderAll();
       });
-      const textoArea = document.getElementById('s-texto');
-      if (textoArea) textoArea.addEventListener('input', e=>{
-        s.textoEditado = e.target.value;
-        const whats = document.getElementById('s-whats');
-        if (whats && !whats.hasAttribute('aria-disabled')) whats.href = buildSubstWhatsLink(e.target.value);
+      const obsArea = document.getElementById('s-obs');
+      if (obsArea) obsArea.addEventListener('input', e=>{ s.observacao = e.target.value; });
+      const formSubst = document.getElementById('form-subst');
+      if (formSubst) formSubst.addEventListener('submit', async e=>{
+        e.preventDefault();
+        const d = candidatosSubstituicao();
+        if (!d.aulaAusente || !d.substituto || !s.data) return;
+        const btn = formSubst.querySelector('button[type=submit]');
+        btn.disabled = true;
+        const { error } = await sb.rpc('fest_add_substituicao', {
+          p_senha: state.senha,
+          p_professor_ausente: d.profAusente.nome,
+          p_data: s.data,
+          p_dia: d.aulaAusente.dia,
+          p_horario: d.aulaAusente.horario,
+          p_turma: d.aulaAusente.turma,
+          p_disciplina_ausente: d.aulaAusente.disciplina || '',
+          p_professor_substituto: d.substituto.nome,
+          p_disciplina_substituto: d.substituto.disciplina || '',
+          p_observacao: s.observacao || ''
+        });
+        if (error) { alert(error.message); btn.disabled = false; return; }
+        state.substituicao = { professorAusenteId:'', aulaAusenteId:'', data:'', substitutoNome:'', observacao:'' };
+        await carregarDados(state.senha); renderAll();
       });
-      const copiarBtn = document.getElementById('s-copiar');
-      if (copiarBtn) copiarBtn.addEventListener('click', async ()=>{
-        const texto = document.getElementById('s-texto').value;
-        try { await navigator.clipboard.writeText(texto); copiarBtn.textContent = 'Copiado!'; setTimeout(()=>{ copiarBtn.innerHTML = ICONS.copy + ' Copiar texto'; }, 1500); }
-        catch(e){ alert('Não foi possível copiar automaticamente. Selecione o texto manualmente.'); }
+      panel_query('[data-confirmar-subst]').forEach(b=>b.addEventListener('click', async ()=>{
+        const { error } = await sb.rpc('fest_confirmar_substituicao', { p_senha: state.senha, p_id: b.dataset.confirmarSubst });
+        if (error) { alert(error.message); return; }
+        await carregarDados(state.senha); renderAll();
+      }));
+      panel_query('[data-reabrir-subst]').forEach(b=>b.addEventListener('click', async ()=>{
+        const { error } = await sb.rpc('fest_reabrir_substituicao', { p_senha: state.senha, p_id: b.dataset.reabrirSubst });
+        if (error) { alert(error.message); return; }
+        await carregarDados(state.senha); renderAll();
+      }));
+      panel_query('[data-del-subst]').forEach(b=>b.addEventListener('click', async ()=>{
+        if (!confirm('Excluir este registro de substituição?')) return;
+        const { error } = await sb.rpc('fest_delete_substituicao', { p_senha: state.senha, p_id: b.dataset.delSubst });
+        if (error) { alert(error.message); return; }
+        await carregarDados(state.senha); renderAll();
+      }));
+      panel_query('[data-copiar-subst]').forEach(b=>b.addEventListener('click', async ()=>{
+        const row = state.substituicoes.find(r => String(r.id) === b.dataset.copiarSubst);
+        if (!row) return;
+        try { await navigator.clipboard.writeText(textoSubstituicao(row)); b.textContent = 'Copiado!'; setTimeout(()=>{ b.innerHTML = ICONS.copy + ' Copiar aviso'; }, 1500); }
+        catch(e){ alert('Não foi possível copiar automaticamente.'); }
+      }));
+    }
+    if (state.activeTab === 'alunostcc') {
+      const f = document.getElementById('form-alunotcc');
+      const map = {'a-nome':'nome','a-periodo':'periodo','a-tema':'tema','a-email':'email'};
+      Object.keys(map).forEach(id=>{
+        document.getElementById(id).addEventListener('input', e=>{
+          state.novoAlunoTcc[map[id]] = e.target.value;
+        });
       });
-      const whatsLink = document.getElementById('s-whats');
-      if (whatsLink && !whatsLink.hasAttribute('aria-disabled')) {
-        const texto = document.getElementById('s-texto') ? document.getElementById('s-texto').value : '';
-        whatsLink.href = buildSubstWhatsLink(texto);
-      }
+      f.addEventListener('submit', async e=>{
+        e.preventDefault();
+        if (!state.novoAlunoTcc.nome) return;
+        const btn = f.querySelector('button[type=submit]');
+        btn.disabled = true;
+        const editando = state.novoAlunoTcc.id;
+        const args = { p_senha: state.senha, p_nome: state.novoAlunoTcc.nome, p_periodo: state.novoAlunoTcc.periodo, p_tema: state.novoAlunoTcc.tema, p_email: state.novoAlunoTcc.email };
+        const { error } = editando
+          ? await sb.rpc('fest_update_aluno_tcc', { ...args, p_id: editando })
+          : await sb.rpc('fest_add_aluno_tcc', args);
+        if (error) { alert(error.message); btn.disabled = false; return; }
+        state.novoAlunoTcc = { id:null, nome:'', periodo:'10º', tema:'', email:'' };
+        await carregarDados(state.senha); renderAll();
+      });
+      const cancelarBtn = document.getElementById('a-cancelar');
+      if (cancelarBtn) cancelarBtn.addEventListener('click', ()=>{
+        state.novoAlunoTcc = { id:null, nome:'', periodo:'10º', tema:'', email:'' };
+        renderAll();
+      });
+      document.getElementById('a-busca').addEventListener('input', e=>{
+        state.filtroAlunosTcc.busca = e.target.value;
+        renderAll();
+      });
+      panel_query('[data-edit-alunotcc]').forEach(b=>b.addEventListener('click', ()=>{
+        const item = state.alunosTcc.find(a => String(a.id) === b.dataset.editAlunotcc);
+        if (!item) return;
+        state.novoAlunoTcc = { id:item.id, nome:item.nome, periodo:item.periodo, tema:item.tema, email:item.email };
+        renderAll();
+      }));
+      panel_query('[data-del-alunotcc]').forEach(b=>b.addEventListener('click', async ()=>{
+        if (!confirm('Remover este aluno da lista de TCC?')) return;
+        const { error } = await sb.rpc('fest_delete_aluno_tcc', { p_senha: state.senha, p_id: b.dataset.delAlunotcc });
+        if (error) { alert(error.message); return; }
+        await carregarDados(state.senha); renderAll();
+      }));
+    }
+    if (state.activeTab === 'agenda') {
+      const f = document.getElementById('form-compromisso');
+      const map = {'c-titulo':'titulo','c-data':'data','c-hora':'hora','c-descricao':'descricao'};
+      Object.keys(map).forEach(id=>{
+        document.getElementById(id).addEventListener('input', e=>{
+          state.novoCompromisso[map[id]] = e.target.value;
+        });
+      });
+      f.addEventListener('submit', async e=>{
+        e.preventDefault();
+        if (!state.novoCompromisso.titulo || !state.novoCompromisso.data) return;
+        const btn = f.querySelector('button[type=submit]');
+        btn.disabled = true;
+        const editando = state.novoCompromisso.id;
+        const args = { p_senha: state.senha, p_titulo: state.novoCompromisso.titulo, p_data: state.novoCompromisso.data, p_hora: state.novoCompromisso.hora, p_descricao: state.novoCompromisso.descricao };
+        const { error } = editando
+          ? await sb.rpc('fest_update_compromisso', { ...args, p_id: editando })
+          : await sb.rpc('fest_add_compromisso', args);
+        if (error) { alert(error.message); btn.disabled = false; return; }
+        state.novoCompromisso = { id:null, titulo:'', data:'', hora:'', descricao:'' };
+        await carregarDados(state.senha); renderAll();
+      });
+      const cancelarBtn = document.getElementById('c-cancelar');
+      if (cancelarBtn) cancelarBtn.addEventListener('click', ()=>{
+        state.novoCompromisso = { id:null, titulo:'', data:'', hora:'', descricao:'' };
+        renderAll();
+      });
+      panel_query('[data-edit-compromisso]').forEach(b=>b.addEventListener('click', ()=>{
+        const item = state.compromissos.find(c => String(c.id) === b.dataset.editCompromisso);
+        if (!item) return;
+        state.novoCompromisso = { id:item.id, titulo:item.titulo, data:item.data, hora:item.hora, descricao:item.descricao };
+        renderAll();
+      }));
+      panel_query('[data-del-compromisso]').forEach(b=>b.addEventListener('click', async ()=>{
+        if (!confirm('Remover este compromisso da agenda?')) return;
+        const { error } = await sb.rpc('fest_delete_compromisso', { p_senha: state.senha, p_id: b.dataset.delCompromisso });
+        if (error) { alert(error.message); return; }
+        await carregarDados(state.senha); renderAll();
+      }));
     }
     if (state.activeTab === 'mensagens') {
       document.getElementById('tog-lider').addEventListener('click', ()=>{
@@ -1094,14 +1475,6 @@
       const link = document.getElementById('m-send');
       if (link) link.href = buildWhatsLink();
     }
-  }
-
-  function buildSubstWhatsLink(texto){
-    const d = calcularSubstituicao();
-    const lider = d.aulaAusente ? state.lideres.find(l => l.periodo === d.aulaAusente.turma) : null;
-    const num = (lider && lider.telefone || '').replace(/\D/g,'');
-    if (!num) return '#';
-    return `https://wa.me/55${num}?text=${encodeURIComponent(texto)}`;
   }
 
   function buildWhatsLink(){
