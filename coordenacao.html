@@ -598,7 +598,7 @@
     novoProf: { id:null, nome:'', matricula:'', cpf:'', dataNasc:'', email:'', telefone:'' },
     novoHorario: { id:null, professor:'', dia:'Segunda', horario:'', turma:'', disciplina:'' },
     novoLider: { id:null, periodo:'', nome:'', telefone:'' },
-    mensagem: { destinatarioTipo:'lider', id:'', texto:'' },
+    disparo: { busca:'', filtroTipo:'Todos', selecionados:[], texto:'' },
     substituicao: { professorAusenteId:'', aulaAusenteId:'', data:'', substitutoNome:'', observacao:'' },
     novoAlunoTcc: { id:null, nome:'', periodo:'10º', tema:'', email:'' },
     filtroAlunosTcc: { busca:'' },
@@ -689,7 +689,7 @@
     { id:'alunostcc', label:'Alunos TCC', icon:ICONS.fileText },
     { id:'agenda', label:'Agenda', icon:ICONS.calendar },
     { id:'frequencia', label:'Frequência', icon:ICONS.userCheck },
-    { id:'mensagens', label:'Disparo WhatsApp', icon:ICONS.message }
+    { id:'disparo', label:'Disparo', icon:ICONS.message }
   ];
 
   const DIA_SEMANA_NUM = { 'Domingo':0, 'Segunda':1, 'Terça':2, 'Quarta':3, 'Quinta':4, 'Sexta':5, 'Sábado':6 };
@@ -1370,37 +1370,94 @@
     </div>`;
   }
 
+  function disparoLista(){
+    const lideres = state.lideres.map(l => ({ key:'lider-'+l.id, tipo:'Líder', label: esc(l.periodo)+' — '+esc(l.nome), nome:l.nome, contato:l.telefone, canal:'whats' }));
+    const profs = state.professores.map(p => ({ key:'prof-'+p.id, tipo:'Professor', label: esc(p.nome), nome:p.nome, contato:p.telefone, canal:'whats' }));
+    const alunos = state.alunosTcc.map(a => ({ key:'aluno-'+a.id, tipo:'Aluno TCC', label: esc(a.nome), nome:a.nome, contato:a.email, canal:'email' }));
+    return [...lideres, ...profs, ...alunos];
+  }
+
+  function disparoFiltrados(){
+    const f = state.disparo;
+    const busca = f.busca.trim().toLowerCase();
+    return disparoLista()
+      .filter(d => f.filtroTipo === 'Todos' || d.tipo === f.filtroTipo)
+      .filter(d => !busca || d.nome.toLowerCase().includes(busca))
+      .sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  }
+
+  function buildDisparoLink(d, texto){
+    if (!d.contato) return '#';
+    if (d.canal === 'email') return `mailto:${d.contato}?subject=${encodeURIComponent('Aviso da Coordenação')}&body=${encodeURIComponent(texto)}`;
+    const num = d.contato.replace(/\D/g,'');
+    if (!num) return '#';
+    return `https://wa.me/55${num}?text=${encodeURIComponent(texto)}`;
+  }
+
+  function renderDisparoLink(d){
+    const link = buildDisparoLink(d, state.disparo.texto);
+    const disabled = link === '#';
+    return d.canal === 'email'
+      ? `<a class="btn btn-primary" data-disparo-key="${d.key}" href="${link}" ${disabled ? 'aria-disabled="true"' : ''} style="${disabled ? 'pointer-events:none;opacity:.45;' : ''}">${ICONS.mail} E-mail</a>`
+      : `<a class="btn btn-whats" data-disparo-key="${d.key}" href="${link}" target="_blank" rel="noopener noreferrer" ${disabled ? 'aria-disabled="true"' : ''} style="${disabled ? 'pointer-events:none;opacity:.45;' : ''}">${ICONS.send} WhatsApp</a>`;
+  }
+
   function renderMensagens(){
-    const tipo = state.mensagem.destinatarioTipo;
-    const list = tipo === 'lider' ? state.lideres : tipo === 'prof' ? state.professores : state.alunosTcc;
-    const selected = list.find(x => String(x.id) === String(state.mensagem.id));
-    const isEmail = tipo === 'aluno';
-    const hasContato = !!(selected && (isEmail ? selected.email : selected.telefone));
+    const f = state.disparo;
+    const filtrados = disparoFiltrados();
+    const todos = disparoLista();
+    const selecionados = todos.filter(d => f.selecionados.includes(d.key));
+    const tipos = ['Todos','Líder','Professor','Aluno TCC'];
     return `
     <div class="panel single">
       <div class="card">
-        <h2>${ICONS.send} Enviar mensagem rápida</h2>
-        <div class="toggle-group" style="margin-bottom:12px">
-          <button type="button" class="toggle" id="tog-lider" aria-pressed="${tipo==='lider'}">Para líder de turma</button>
-          <button type="button" class="toggle" id="tog-prof" aria-pressed="${tipo==='prof'}">Para professor</button>
-          <button type="button" class="toggle" id="tog-aluno" aria-pressed="${tipo==='aluno'}">Para aluno de TCC (e-mail)</button>
-        </div>
+        <h2>${ICONS.send} Disparo de mensagens</h2>
         <div class="field">
-          <label>Destinatário</label>
-          <select id="m-dest">
-            <option value="">-- Selecione --</option>
-            ${list.map(x => `<option value="${x.id}" ${String(state.mensagem.id)===String(x.id)?'selected':''}>${tipo==='lider' ? esc(x.periodo)+' — '+esc(x.nome) : esc(x.nome)}</option>`).join('')}
-          </select>
+          <label>Mensagem</label>
+          <textarea id="d-texto" placeholder="Digite o aviso ou lembrete...">${esc(f.texto)}</textarea>
         </div>
-        <div class="field">
-          <label>Mensagem / lembrete</label>
-          <textarea id="m-texto" placeholder="Digite o aviso ou lembrete...">${esc(state.mensagem.texto)}</textarea>
+        <div class="toggle-group" style="margin-bottom:10px">
+          ${tipos.map(t => `<button type="button" class="toggle" data-disparo-tipo="${esc(t)}" aria-pressed="${f.filtroTipo===t}">${esc(t)}${t==='Todos' ? '' : 's'}</button>`).join('')}
         </div>
-        ${selected && !hasContato ? `<p class="note">Esse destinatário não tem ${isEmail ? 'e-mail' : 'telefone'} cadastrado — edite o cadastro antes de enviar.</p>` : ''}
-        ${isEmail
-          ? `<a class="btn btn-primary" id="m-send" href="#" ${hasContato ? '' : 'aria-disabled="true"'} style="${hasContato ? '' : 'pointer-events:none;opacity:.45;'}">${ICONS.mail} Abrir no E-mail</a>`
-          : `<a class="btn btn-whats" id="m-send" href="#" target="_blank" rel="noopener noreferrer" ${hasContato ? '' : 'aria-disabled="true"'} style="${hasContato ? '' : 'pointer-events:none;opacity:.45;'}">${ICONS.send} Abrir no WhatsApp</a>`}
+        <div class="field"><input id="d-busca" placeholder="Buscar por nome..." value="${esc(f.busca)}"></div>
+        <div class="toggle-group" style="margin-bottom:10px">
+          <button type="button" class="btn" id="d-selecionar-todos" style="background:var(--surface-sunken);color:var(--text)">Selecionar todos filtrados (${filtrados.length})</button>
+          <button type="button" class="btn" id="d-limpar" style="background:var(--surface-sunken);color:var(--text)">Limpar seleção</button>
+        </div>
+        ${filtrados.length===0 ? `<p class="empty">Nenhum destinatário encontrado.</p>` : `
+        <div class="list">
+          ${filtrados.map(d => `
+            <div class="row">
+              <div style="display:flex;align-items:center;gap:10px">
+                <input type="checkbox" data-disparo-check="${d.key}" ${f.selecionados.includes(d.key) ? 'checked' : ''}>
+                <div>
+                  <span class="pill">${esc(d.tipo)}</span>
+                  <div class="name" style="margin-top:4px">${d.label}</div>
+                  <div class="meta">${d.contato ? esc(d.contato) : `<em>Sem ${d.canal==='email' ? 'e-mail' : 'telefone'} cadastrado</em>`}</div>
+                </div>
+              </div>
+              ${renderDisparoLink(d)}
+            </div>`).join('')}
+        </div>`}
       </div>
+      ${selecionados.length > 0 ? `
+      <div class="card">
+        <h2>Selecionados para disparo <span class="pill" style="text-transform:none;font-weight:600">${selecionados.length}</span></h2>
+        <p class="note">O WhatsApp e o e-mail pessoal não permitem disparo automático em massa — clique em cada botão abaixo pra abrir a conversa/e-mail já com a mensagem pronta e ir passando rapidamente pelos selecionados.</p>
+        <div class="list">
+          ${selecionados.map(d => `
+            <div class="row">
+              <div>
+                <span class="pill">${esc(d.tipo)}</span>
+                <div class="name" style="margin-top:4px">${d.label}</div>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center">
+                ${renderDisparoLink(d)}
+                <button type="button" class="icon-btn" data-disparo-remover="${d.key}" aria-label="Remover da seleção">${ICONS.trash}</button>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>` : ''}
     </div>`;
   }
 
@@ -1792,44 +1849,49 @@
         state.filtroOcorrencias.professor = e.target.value; renderAll();
       });
     }
-    if (state.activeTab === 'mensagens') {
-      document.getElementById('tog-lider').addEventListener('click', ()=>{
-        state.mensagem = { ...state.mensagem, destinatarioTipo:'lider', id:'' };
+    if (state.activeTab === 'disparo') {
+      const f = state.disparo;
+      panel_query('[data-disparo-tipo]').forEach(b=>b.addEventListener('click', ()=>{
+        f.filtroTipo = b.dataset.disparoTipo;
+        renderAll();
+      }));
+      document.getElementById('d-busca').addEventListener('input', e=>{
+        f.busca = e.target.value; renderAll();
+      });
+      document.getElementById('d-selecionar-todos').addEventListener('click', ()=>{
+        const chaves = disparoFiltrados().map(d => d.key);
+        f.selecionados = Array.from(new Set([...f.selecionados, ...chaves]));
         renderAll();
       });
-      document.getElementById('tog-prof').addEventListener('click', ()=>{
-        state.mensagem = { ...state.mensagem, destinatarioTipo:'prof', id:'' };
+      document.getElementById('d-limpar').addEventListener('click', ()=>{
+        f.selecionados = [];
         renderAll();
       });
-      document.getElementById('tog-aluno').addEventListener('click', ()=>{
-        state.mensagem = { ...state.mensagem, destinatarioTipo:'aluno', id:'' };
+      panel_query('[data-disparo-check]').forEach(cb=>cb.addEventListener('change', e=>{
+        const key = e.target.dataset.disparoCheck;
+        if (e.target.checked) { if (!f.selecionados.includes(key)) f.selecionados.push(key); }
+        else { f.selecionados = f.selecionados.filter(k => k !== key); }
         renderAll();
+      }));
+      panel_query('[data-disparo-remover]').forEach(b=>b.addEventListener('click', ()=>{
+        f.selecionados = f.selecionados.filter(k => k !== b.dataset.disparoRemover);
+        renderAll();
+      }));
+      document.getElementById('d-texto').addEventListener('input', e=>{
+        f.texto = e.target.value;
+        const todos = disparoLista();
+        panel_query('[data-disparo-key]').forEach(el=>{
+          const d = todos.find(x => x.key === el.dataset.disparoKey);
+          if (!d) return;
+          const link = buildDisparoLink(d, f.texto);
+          const disabled = link === '#';
+          el.href = link;
+          el.toggleAttribute('aria-disabled', disabled);
+          el.style.pointerEvents = disabled ? 'none' : '';
+          el.style.opacity = disabled ? '.45' : '';
+        });
       });
-      document.getElementById('m-dest').addEventListener('change', e=>{
-        state.mensagem.id = e.target.value; renderAll();
-      });
-      document.getElementById('m-texto').addEventListener('input', e=>{
-        state.mensagem.texto = e.target.value;
-        const link = document.getElementById('m-send');
-        if (link) link.href = buildMensagemLink();
-      });
-      const link = document.getElementById('m-send');
-      if (link) link.href = buildMensagemLink();
     }
-  }
-
-  function buildMensagemLink(){
-    const tipo = state.mensagem.destinatarioTipo;
-    const list = tipo === 'lider' ? state.lideres : tipo === 'prof' ? state.professores : state.alunosTcc;
-    const selected = list.find(x => String(x.id) === String(state.mensagem.id));
-    if (!selected) return '#';
-    if (tipo === 'aluno') {
-      if (!selected.email) return '#';
-      return `mailto:${selected.email}?subject=${encodeURIComponent('Orientação de TCC II')}&body=${encodeURIComponent(state.mensagem.texto)}`;
-    }
-    const num = (selected.telefone || '').replace(/\D/g,'');
-    if (!num) return '#';
-    return `https://wa.me/55${num}?text=${encodeURIComponent(state.mensagem.texto)}`;
   }
 
   function panel_query(sel){ return Array.from(document.getElementById('tabpanel').querySelectorAll(sel)); }
