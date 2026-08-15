@@ -918,6 +918,14 @@ function encontroBadge(total){
   return `<span class="badge ${cls}" title="${title}">${excedeu?'<i class="fa fa-exclamation-triangle"></i> ':''}${total}/${ENCONTROS_BASE}</span>`;
 }
 
+// "Aula lançada?" mostra o status real do lançamento (Realizada/Remarcada/
+// Cancelada) em vez de um "Sim" genérico — só fica "Não" quando não existe
+// nenhum registro de aula pra essa turma nessa data.
+function dashAulaStatusBadge(status){
+  if(!status) return `<span class="badge badge-danger"><i class="fa fa-times"></i> Não</span>`;
+  return `<span class="badge status-badge-${status}">${LESSON_STATUS_UI[status]||status}</span>`;
+}
+
 function dashStatusBadge(ok,title){
   return ok
     ? `<span class="badge badge-success" title="${esc(title||'')}"><i class="fa fa-check"></i> Sim</span>`
@@ -949,7 +957,7 @@ async function carregarAulasHoje(dateStr){
   const pagasSet=new Set(pagas.map(p=>p.class_lesson_id));
   _dashAulasCache=turmas.filter(t=>(t.class_days||'').includes(diaAbbr)).map(t=>{
     const lesson=lancadasMap[t.id];
-    return {...t,totalEncontros:encontrosMap[t.id]||0,aulaLancada:!!lesson,horaContabilizada:lesson?pagasSet.has(lesson.id):false};
+    return {...t,totalEncontros:encontrosMap[t.id]||0,aulaLancada:!!lesson,aulaStatus:lesson?.status||null,horaContabilizada:lesson?pagasSet.has(lesson.id):false};
   });
 
   renderDashAulas();
@@ -1001,7 +1009,7 @@ function renderDashAulas(){
         <td>${esc(c.school?.name)||'—'}</td>
         <td>${level_badge(c.level)}</td>
         <td>${encontroBadge(c.totalEncontros)}</td>
-        ${isAdmin()?`<td>${dashStatusBadge(c.aulaLancada)}</td><td>${dashStatusBadge(c.horaContabilizada,c.aulaLancada&&!c.horaContabilizada?'Aula lançada sem professor definido — horas ainda não contam para pagamento':'')}</td>`:''}
+        ${isAdmin()?`<td>${dashAulaStatusBadge(c.aulaStatus)}</td><td>${dashStatusBadge(c.horaContabilizada,c.aulaLancada&&!c.horaContabilizada?(c.aulaStatus==='remarcada'?'Aula remarcada — não conta pagamento até a reposição ser lançada':(c.aulaStatus==='cancelada'?'Aula cancelada — não conta pagamento':'Aula lançada sem professor definido — horas ainda não contam para pagamento')):'')}</td>`:''}
         <td><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}',tab:'aula',date:'${_dashAulasState.date}'})"><i class="fa fa-clipboard-check"></i> Chamada</button></td>
       </tr>`).join('')}</tbody>
     </table></div>`}
