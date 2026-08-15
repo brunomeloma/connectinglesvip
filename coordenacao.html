@@ -565,7 +565,9 @@
     home:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></svg>',
     fileText:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h6M9 9h1"/></svg>',
     check:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
-    undo:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7"/></svg>'
+    undo:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7"/></svg>',
+    cap:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c0 1.5 3 3 6 3s6-1.5 6-3v-5"/></svg>',
+    download:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><path d="M12 15V3"/></svg>'
   };
 
   const maskCpf = v => v.replace(/\D/g,'').slice(0,11)
@@ -591,6 +593,7 @@
     horarios: [],
     lideres: [],
     alunosTcc: [],
+    alunos: [],
     compromissos: [],
     substituicoes: [],
     ocorrencias: [],
@@ -608,7 +611,9 @@
     grupos: { grupoProfessoresUrl:'', grupoTccUrl:'' },
     gruposEditando: false,
     novaOcorrencia: { id:null, professor:'', tipo:'falta', data:'', horario:'', horarioReal:'', observacao:'' },
-    filtroOcorrencias: { data:'', tipo:'Todos', professor:'' }
+    filtroOcorrencias: { data:'', tipo:'Todos', professor:'' },
+    novoAluno: { id:null, nome:'', matricula:'', periodo:'1º Período', turno:'Tarde', turma:'' },
+    filtroAlunos: { busca:'', periodo:'Todos', turno:'Todos', turma:'Todos' }
   };
 
   // Todo acesso passa por essas funções RPC (com senha), nunca direto nas
@@ -620,6 +625,7 @@
     state.horarios = data.horarios || [];
     state.lideres = data.lideres || [];
     state.alunosTcc = data.alunos_tcc || [];
+    state.alunos = data.alunos || [];
     state.compromissos = data.compromissos || [];
     state.substituicoes = data.substituicoes || [];
     state.ocorrencias = data.ocorrencias || [];
@@ -684,6 +690,7 @@
     { id:'painel', label:'Painel', icon:ICONS.home },
     { id:'horarios', label:'Horários e Salas', icon:ICONS.calendar },
     { id:'professores', label:'Professores', icon:ICONS.users },
+    { id:'alunos', label:'Alunos', icon:ICONS.cap },
     { id:'lideres', label:'Líderes de Turma', icon:ICONS.userCheck },
     { id:'substituicao', label:'Substituição', icon:ICONS.swap },
     { id:'alunostcc', label:'Alunos TCC', icon:ICONS.fileText },
@@ -1104,6 +1111,104 @@
     </div>`;
   }
 
+  function periodosDeAlunos(){
+    return Array.from(new Set(state.alunos.map(a => a.periodo))).sort((a,b) => a.localeCompare(b, 'pt-BR'));
+  }
+  function turnosDeAlunos(){
+    return Array.from(new Set(state.alunos.map(a => a.turno).filter(Boolean))).sort((a,b) => a.localeCompare(b, 'pt-BR'));
+  }
+  function turmasDeAlunos(){
+    return Array.from(new Set(state.alunos.map(a => a.turma).filter(Boolean))).sort((a,b) => a.localeCompare(b, 'pt-BR'));
+  }
+
+  function alunosFiltrados(){
+    const f = state.filtroAlunos;
+    const busca = f.busca.trim().toLowerCase();
+    return state.alunos
+      .filter(a => f.periodo === 'Todos' || a.periodo === f.periodo)
+      .filter(a => f.turno === 'Todos' || a.turno === f.turno)
+      .filter(a => f.turma === 'Todos' || a.turma === f.turma)
+      .filter(a => !busca || a.nome.toLowerCase().includes(busca) || (a.matricula||'').toLowerCase().includes(busca))
+      .sort((a,b) => a.periodo.localeCompare(b.periodo,'pt-BR') || a.turma.localeCompare(b.turma,'pt-BR') || a.nome.localeCompare(b.nome,'pt-BR'));
+  }
+
+  function exportarAlunosCsv(rows){
+    const linhas = [['Nome','Matrícula','Período','Turno','Turma']];
+    rows.forEach(a => linhas.push([a.nome, a.matricula, a.periodo, a.turno, a.turma]));
+    const csv = linhas.map(l => l.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(';')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `alunos-${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function renderAlunos(){
+    const editando = !!state.novoAluno.id;
+    const f = state.filtroAlunos;
+    const rows = alunosFiltrados();
+    const periodos = periodosDeAlunos();
+    const turnos = turnosDeAlunos();
+    const turmas = turmasDeAlunos();
+    return `
+    <div class="panel">
+      <form class="card" id="form-aluno">
+        <h2>${editando ? ICONS.edit : ICONS.plus} ${editando ? 'Editar Aluno' : 'Cadastrar Aluno'}</h2>
+        <div class="field"><label>Nome completo</label><input id="al-nome" value="${esc(state.novoAluno.nome)}"></div>
+        <div class="field"><label>Matrícula</label><input id="al-matricula" value="${esc(state.novoAluno.matricula)}"></div>
+        <div class="field"><label>Período</label><input id="al-periodo" placeholder="Ex: 1º Período" value="${esc(state.novoAluno.periodo)}"></div>
+        <div class="field"><label>Turno</label><input id="al-turno" placeholder="Ex: Tarde" value="${esc(state.novoAluno.turno)}"></div>
+        <div class="field"><label>Turma</label><input id="al-turma" placeholder="Ex: IV DN A" value="${esc(state.novoAluno.turma)}"></div>
+        <div class="toggle-group">
+          <button type="submit" class="btn btn-primary">${editando ? 'Salvar alterações' : 'Salvar aluno'}</button>
+          ${editando ? `<button type="button" class="btn" id="al-cancelar" style="background:var(--surface-sunken);color:var(--text)">Cancelar</button>` : ''}
+        </div>
+      </form>
+      <div class="card">
+        <h2>Alunos do curso <span class="pill" style="text-transform:none;font-weight:600">${rows.length} de ${state.alunos.length}</span></h2>
+        <div class="field"><input id="al-busca" placeholder="Buscar por nome ou matrícula..." value="${esc(f.busca)}"></div>
+        <div class="toggle-group" style="margin-bottom:10px">
+          <select id="al-filtro-periodo">
+            <option value="Todos" ${f.periodo==='Todos'?'selected':''}>Todos os períodos</option>
+            ${periodos.map(p => `<option value="${esc(p)}" ${f.periodo===p?'selected':''}>${esc(p)}</option>`).join('')}
+          </select>
+          <select id="al-filtro-turno">
+            <option value="Todos" ${f.turno==='Todos'?'selected':''}>Todos os turnos</option>
+            ${turnos.map(t => `<option value="${esc(t)}" ${f.turno===t?'selected':''}>${esc(t)}</option>`).join('')}
+          </select>
+          <select id="al-filtro-turma">
+            <option value="Todos" ${f.turma==='Todos'?'selected':''}>Todas as turmas</option>
+            ${turmas.map(t => `<option value="${esc(t)}" ${f.turma===t?'selected':''}>${esc(t)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="toggle-group" style="margin-bottom:10px">
+          <button type="button" class="btn" id="al-exportar" style="background:var(--surface-sunken);color:var(--text)">${ICONS.download} Exportar CSV (${rows.length})</button>
+        </div>
+        ${rows.length===0 ? `<p class="empty">Nenhum aluno encontrado.</p>` : `
+        <div class="list two-col">
+          ${rows.map(a => `
+            <div class="row">
+              <div>
+                <div class="name">${esc(a.nome)}</div>
+                <div class="stack meta">
+                  <span>${ICONS.id} ${esc(a.matricula) || 'Matrícula não informada'}</span>
+                  <span>${esc(a.periodo)}${a.turno ? ' — '+esc(a.turno) : ''}${a.turma ? ' — '+esc(a.turma) : ''}</span>
+                </div>
+              </div>
+              <div style="display:flex;gap:2px">
+                <button class="icon-btn" data-edit-aluno="${a.id}" aria-label="Editar aluno">${ICONS.edit}</button>
+                <button class="icon-btn" data-del-aluno="${a.id}" aria-label="Remover aluno">${ICONS.trash}</button>
+              </div>
+            </div>`).join('')}
+        </div>`}
+      </div>
+    </div>`;
+  }
+
   function alunosTccFiltrados(){
     const busca = state.filtroAlunosTcc.busca.trim().toLowerCase();
     if (!busca) return state.alunosTcc;
@@ -1468,6 +1573,7 @@
     if (state.activeTab === 'painel') panel.innerHTML = renderPainel();
     else if (state.activeTab === 'horarios') panel.innerHTML = renderHorarios();
     else if (state.activeTab === 'professores') panel.innerHTML = renderProfessores();
+    else if (state.activeTab === 'alunos') panel.innerHTML = renderAlunos();
     else if (state.activeTab === 'lideres') panel.innerHTML = renderLideres();
     else if (state.activeTab === 'substituicao') panel.innerHTML = renderSubstituicao();
     else if (state.activeTab === 'alunostcc') panel.innerHTML = renderAlunosTcc();
@@ -1588,6 +1694,64 @@
         if (error) { alert(error.message); return; }
         await carregarDados(state.senha); renderAll();
       }));
+    }
+    if (state.activeTab === 'alunos') {
+      const f = document.getElementById('form-aluno');
+      const map = {'al-nome':'nome','al-matricula':'matricula','al-periodo':'periodo','al-turno':'turno','al-turma':'turma'};
+      Object.keys(map).forEach(id=>{
+        document.getElementById(id).addEventListener('input', e=>{
+          state.novoAluno[map[id]] = e.target.value;
+        });
+      });
+      f.addEventListener('submit', async e=>{
+        e.preventDefault();
+        if (!state.novoAluno.nome || !state.novoAluno.periodo) return;
+        const btn = f.querySelector('button[type=submit]');
+        btn.disabled = true;
+        const editando = state.novoAluno.id;
+        const args = {
+          p_senha: state.senha, p_nome: state.novoAluno.nome, p_matricula: state.novoAluno.matricula,
+          p_periodo: state.novoAluno.periodo, p_turno: state.novoAluno.turno, p_turma: state.novoAluno.turma
+        };
+        const { error } = editando
+          ? await sb.rpc('fest_update_aluno', { ...args, p_id: editando })
+          : await sb.rpc('fest_add_aluno', args);
+        if (error) { alert(error.message); btn.disabled = false; return; }
+        state.novoAluno = { id:null, nome:'', matricula:'', periodo:'1º Período', turno:'Tarde', turma:'' };
+        await carregarDados(state.senha); renderAll();
+      });
+      const cancelarBtn = document.getElementById('al-cancelar');
+      if (cancelarBtn) cancelarBtn.addEventListener('click', ()=>{
+        state.novoAluno = { id:null, nome:'', matricula:'', periodo:'1º Período', turno:'Tarde', turma:'' };
+        renderAll();
+      });
+      panel_query('[data-edit-aluno]').forEach(b=>b.addEventListener('click', ()=>{
+        const item = state.alunos.find(a => String(a.id) === b.dataset.editAluno);
+        if (!item) return;
+        state.novoAluno = { id:item.id, nome:item.nome, matricula:item.matricula, periodo:item.periodo, turno:item.turno, turma:item.turma };
+        renderAll();
+      }));
+      panel_query('[data-del-aluno]').forEach(b=>b.addEventListener('click', async ()=>{
+        if (!confirm('Remover este aluno do cadastro?')) return;
+        const { error } = await sb.rpc('fest_delete_aluno', { p_senha: state.senha, p_id: b.dataset.delAluno });
+        if (error) { alert(error.message); return; }
+        await carregarDados(state.senha); renderAll();
+      }));
+      document.getElementById('al-busca').addEventListener('input', e=>{
+        state.filtroAlunos.busca = e.target.value; renderAll();
+      });
+      document.getElementById('al-filtro-periodo').addEventListener('change', e=>{
+        state.filtroAlunos.periodo = e.target.value; renderAll();
+      });
+      document.getElementById('al-filtro-turno').addEventListener('change', e=>{
+        state.filtroAlunos.turno = e.target.value; renderAll();
+      });
+      document.getElementById('al-filtro-turma').addEventListener('change', e=>{
+        state.filtroAlunos.turma = e.target.value; renderAll();
+      });
+      document.getElementById('al-exportar').addEventListener('click', ()=>{
+        exportarAlunosCsv(alunosFiltrados());
+      });
     }
     if (state.activeTab === 'lideres') {
       const f = document.getElementById('form-lider');
