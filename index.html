@@ -447,7 +447,13 @@ tr:hover td{background:#fdf9f0}
 
 <!-- CONFIG SUPABASE: troque pelas suas chaves -->
 <script>
-const SUPABASE_URL = 'https://jrkbwzpyzgekycqtmvco.supabase.co';
+// Passa pelo próprio domínio (/supabase/* -> rewrite no vercel.json) em vez
+// de bater direto em *.supabase.co. Alguns dispositivos/redes conseguem
+// carregar o nosso domínio mas não conseguem rotear até o domínio do
+// Supabase (DNS/IPv6/DNS seguro do navegador bloqueando só aquele host) —
+// como o navegador só precisa falar com o mesmo domínio que já carregou a
+// página, esse problema desaparece pra qualquer usuário nessa situação.
+const SUPABASE_URL = location.origin + '/supabase';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impya2J3enB5emdla3ljcXRtdmNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NTUwMzAsImV4cCI6MjA5NzEzMTAzMH0.-G7zDgGQ5ha6brAk3rk-hpRaZs36QM_z9dumLDLi0rg';
 // storage: sessionStorage (não localStorage) para que cada ABA do navegador
 // mantenha sua própria sessão. Com localStorage (padrão), logar com uma
