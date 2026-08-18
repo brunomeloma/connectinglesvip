@@ -1,4 +1,4 @@
-const CACHE_NAME = 'connect-vip-v1';
+const CACHE_NAME = 'connect-vip-v2';
 const APP_SHELL = ['/', '/index.html', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
