@@ -517,6 +517,7 @@ let currentUser = null;
     <div class="sb-item no-professor no-captacao" data-page="documentos" onclick="nav('documentos')"><i class="fa fa-file-signature"></i> Documentos</div>
     <div class="sb-item no-professor no-captacao" data-page="nps" onclick="nav('nps')"><i class="fa fa-smile"></i> Pesquisa NPS</div>
     <div class="sb-item no-captacao" data-page="relatorios" onclick="nav('relatorios')"><i class="fa fa-chart-bar"></i> Relatórios</div>
+    <div class="sb-item no-professor no-captacao" data-page="inativos" onclick="nav('inativos')"><i class="fa fa-user-slash"></i> Inativos</div>
     <div class="sb-item captacao-item" data-page="captacao" onclick="nav('captacao')"><i class="fa fa-bullhorn"></i> Captação</div>
     <div class="sb-logout">
       <div class="sb-item" onclick="doLogout()"><i class="fa fa-sign-out-alt"></i> Sair</div>
@@ -1381,6 +1382,104 @@ async function capSendCurrentAndNext(){
   capShowCampaignModal();
 }
 function capSkipCurrent(){capState.index++;capRenderRunPanel();capShowCampaignModal();}
+
+// ============================
+// INATIVOS (reengajamento + aniversariantes de ex-alunos)
+// ============================
+const INATIVO_RETENCAO_MSG='Olá, {nome}! 😊\nFaz um tempo que você não estuda com a gente na *Connect Inglês VIP*! Passando pra saber como você está e se topa voltar — temos turmas e horários novos que podem te interessar. Vamos conversar?';
+
+// BR no formato "(DDD) XXXXX-XXXX" -> prefixa 55; números já internacionais
+// (sem parênteses, ex: telefones dos EUA/Irlanda que vieram na lista) usam
+// os dígitos como estão, sem prefixar nada.
+function inativoWppNumero(telefoneRaw){
+  if(!telefoneRaw) return '';
+  const digits=telefoneRaw.replace(/\D/g,'');
+  if(!digits) return '';
+  return telefoneRaw.includes('(')?(digits.startsWith('55')?digits:'55'+digits):digits;
+}
+
+function enviarReengajamentoInativo(nome,numero){
+  const texto=INATIVO_RETENCAO_MSG.replace(/\{nome\}/g,nome);
+  window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(texto),'_blank');
+}
+function enviarAniversarioInativo(nome,numero){
+  const texto=ANIVERSARIO_MSG.replace(/\{nome\}/g,nome);
+  window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(texto),'_blank');
+}
+
+async function salvarNascimentoInativo(id,valor){
+  const{error}=await sb.from('inactive_students').update({date_birth:valor||null}).eq('id',id);
+  if(error){showAlert('page-alert','Erro ao salvar data de nascimento: '+error.message,'danger');return;}
+  showAlert('page-alert','Data de nascimento salva.','success');
+}
+
+pages.inativos=async function({ano}={}){
+  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const anoAtivo=ano?parseInt(ano):2025;
+  const search=getFilter('inat-search').toLowerCase();
+
+  const[{data:todos=[]},{data:aniversariantes=[]}]=await Promise.all([
+    sb.from('inactive_students').select('*').order('name'),
+    sb.rpc('get_aniversariantes_inativos'),
+  ]);
+
+  const anos=[...new Set(todos.map(i=>i.cancel_year))].sort((a,b)=>b-a);
+  const tabBar=`<div class="tab-bar">${anos.map(a=>`<button class="tab-btn${anoAtivo===a?' active':''}" onclick="clearFilters(['inat-search']);nav('inativos',{ano:${a}})"><i class="fa fa-user-slash"></i> Inativos ${a}</button>`).join('')}</div>`;
+
+  const doAno=todos.filter(i=>i.cancel_year===anoAtivo);
+  const filtrados=doAno.filter(i=>{
+    if(!search) return true;
+    const hay=(i.name+' '+(i.course_level||'')+' '+(i.class_day||'')+' '+(i.phone||'')).toLowerCase();
+    return hay.includes(search);
+  });
+
+  const painelAniversario=aniversariantes.length?`
+    <div class="panel" style="margin-bottom:18px">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-birthday-cake" style="color:var(--brand)"></i> Aniversariantes de hoje (ex-alunos)</span><span style="font-size:12px;color:var(--gray-500)">${aniversariantes.length}</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nome</th><th>WhatsApp</th><th>Ações</th></tr></thead>
+        <tbody>${aniversariantes.map(a=>{
+          const numFmt=inativoWppNumero(a.phone||'');
+          return `<tr>
+            <td>${esc(a.name)}</td>
+            <td>${numFmt?`<a href="https://wa.me/${numFmt}" target="_blank" style="color:#25D366;font-weight:600"><i class="fab fa-whatsapp"></i> ${esc(a.phone)}</a>`:'—'}</td>
+            <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarAniversarioInativo('${esc(a.name)}','${numFmt}')"><i class="fab fa-whatsapp"></i> Parabenizar</button>`:'—'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>`:'';
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Inativos</span></div>
+    <div class="page-title"><i class="fa fa-user-slash"></i> Inativos</div>
+    <div id="page-alert" class="alert"></div>
+    ${painelAniversario}
+    ${tabBar}
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Inativos ${anoAtivo}</span><span style="font-size:12px;color:var(--gray-500)">${filtrados.length} de ${doAno.length}</span></div>
+      <div class="panel-body" style="padding-bottom:0">
+        <input id="inat-search" placeholder="Buscar por nome, curso, turma ou telefone…" value="${esc(getFilter('inat-search'))}" oninput="saveFilters(['inat-search']);nav('inativos',{ano:${anoAtivo}})" style="width:100%;max-width:360px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;margin-bottom:14px">
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nome</th><th>Curso/Nível</th><th>Turma/Dia</th><th>Mês cancelamento</th><th>Nascimento</th><th>Telefone</th><th>Ações</th></tr></thead>
+        <tbody>${filtrados.length?filtrados.map(i=>{
+          const numFmt=inativoWppNumero(i.phone||'');
+          return `<tr>
+            <td><strong>${esc(i.name)}</strong></td>
+            <td>${esc(i.course_level)||'—'}</td>
+            <td>${esc(i.class_day)||'—'}</td>
+            <td>${esc(i.cancel_month)||'—'}</td>
+            <td><input type="date" value="${i.date_birth||''}" style="padding:4px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px" onchange="salvarNascimentoInativo('${i.id}',this.value)"></td>
+            <td>${numFmt?`<a href="https://wa.me/${numFmt}" target="_blank" style="color:#25D366;font-weight:600"><i class="fab fa-whatsapp"></i> ${esc(i.phone)}</a>`:(esc(i.phone)||'Sem telefone')}</td>
+            <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarReengajamentoInativo('${esc(i.name)}','${numFmt}')" title="Tentar reengajar"><i class="fab fa-whatsapp"></i> Reengajar</button>`:'—'}</td>
+          </tr>`;
+        }).join(''):'<tr><td colspan="7"><div class="empty-state"><i class="fa fa-user-slash"></i>Nenhum inativo encontrado</div></td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+  `);
+};
 
 // --- SCHOOLS ---
 pages.schools=async function({view,id}={}){
