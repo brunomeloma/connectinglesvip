@@ -1515,7 +1515,37 @@ async function lancarDebitoLanche(){
   if(!nome||!item||!valor||valor<=0||!data){showAlert('page-alert','Preencha nome, item, valor e data.','danger');return;}
   const{error}=await sb.from('snack_debts').insert({person_name:nome,phone:telefone||null,item,amount:valor,debt_date:data});
   if(error){showAlert('page-alert','Erro ao lançar débito: '+error.message,'danger');return;}
+  if(telefone){
+    const cfg=await carregarConfigPix();
+    mostrarCobrancaLancheBox(nome,valor,gerarLinkCobrancaLanche(nome,valor,cfg.chave,telefone));
+  }else{
+    showAlert('page-alert','Débito lançado. Cadastre um telefone pra poder cobrar direto pelo WhatsApp.','success');
+  }
   nav('debitosLanche',{status:'pendentes'});
+}
+
+// Mostra a mensagem de cobrança já pronta assim que o consumo é lançado,
+// sem precisar procurar a linha na lista de pendências pra achar o botão Cobrar.
+function mostrarCobrancaLancheBox(nome,valor,waHref){
+  let ov=$('cobranca-lanche-overlay');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='cobranca-lanche-overlay';
+    ov.className='confirm-overlay';
+    ov.style.display='none';
+    ov.innerHTML=`<div class="confirm-box" style="max-width:420px">
+      <h4><i class="fa fa-check-circle" style="color:#25D366"></i> Consumo lançado</h4>
+      <p id="cobranca-lanche-text" style="margin:10px 0 16px;color:var(--gray-500);font-size:13px"></p>
+      <div class="confirm-actions" style="justify-content:flex-end;gap:8px">
+        <button class="btn btn-default" onclick="$('cobranca-lanche-overlay').style.display='none'">Fechar</button>
+        <a class="btn" id="cobranca-lanche-wa" style="background:#25D366;color:#fff" target="_blank"><i class="fab fa-whatsapp"></i> Cobrar agora</a>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+  }
+  $('cobranca-lanche-text').textContent=`${nome} — ${fmtBRL(valor)}. A mensagem de cobrança já está pronta pra enviar pro responsável.`;
+  $('cobranca-lanche-wa').href=waHref;
+  ov.style.display='flex';
 }
 
 async function toggleStatusDebitoLanche(id,statusAtual){
