@@ -15,6 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -518,6 +519,7 @@ let currentUser = null;
     <div class="sb-item no-professor no-captacao" data-page="nps" onclick="nav('nps')"><i class="fa fa-smile"></i> Pesquisa NPS</div>
     <div class="sb-item no-captacao" data-page="relatorios" onclick="nav('relatorios')"><i class="fa fa-chart-bar"></i> Relatórios</div>
     <div class="sb-item no-professor no-captacao" data-page="inativos" onclick="nav('inativos')"><i class="fa fa-user-slash"></i> Inativos</div>
+    <div class="sb-item no-professor no-captacao" data-page="debitosLanche" onclick="nav('debitosLanche')"><i class="fa fa-utensils"></i> Débitos de Lanche</div>
     <div class="sb-item captacao-item" data-page="captacao" onclick="nav('captacao')"><i class="fa fa-bullhorn"></i> Captação</div>
     <div class="sb-logout">
       <div class="sb-item" onclick="doLogout()"><i class="fa fa-sign-out-alt"></i> Sair</div>
@@ -1479,6 +1481,211 @@ pages.inativos=async function({ano}={}){
       </table></div>
     </div>
   `);
+};
+
+// ============================
+// DÉBITOS DE LANCHE — lançamento, cobrança PIX/WhatsApp e baixa rápida
+// ============================
+function snackDebtWppNumero(telefoneRaw){
+  if(!telefoneRaw) return '';
+  const digits=telefoneRaw.replace(/\D/g,'');
+  if(!digits) return '';
+  return telefoneRaw.includes('(')?(digits.startsWith('55')?digits:'55'+digits):digits;
+}
+
+// Utilitário puro: monta o link do WhatsApp já com a mensagem de cobrança preenchida.
+function gerarLinkCobrancaLanche(nome,valor,chavePix,telefone){
+  const valorFmt=Number(valor||0).toFixed(2).replace('.',',');
+  const msg=`Olá ${nome}! Consta um débito pendente de lanche no valor de R$ ${valorFmt}. O pagamento pode ser feito via PIX pela chave ${chavePix||'(a definir)'}. Após pagar, nos envie o comprovante.`;
+  const numero=snackDebtWppNumero(telefone||'');
+  return `https://wa.me/${numero}?text=${encodeURIComponent(msg)}`;
+}
+
+async function cobrarDebitoLanche(nome,valor,numero){
+  const cfg=await carregarConfigPix();
+  window.open(gerarLinkCobrancaLanche(nome,valor,cfg.chave,numero),'_blank');
+}
+
+async function lancarDebitoLanche(){
+  const nome=$('lanche-nome').value.trim();
+  const telefone=$('lanche-telefone').value.trim();
+  const item=$('lanche-item').value.trim();
+  const valor=parseFloat($('lanche-valor').value);
+  const data=$('lanche-data').value;
+  if(!nome||!item||!valor||valor<=0||!data){showAlert('page-alert','Preencha nome, item, valor e data.','danger');return;}
+  const{error}=await sb.from('snack_debts').insert({person_name:nome,phone:telefone||null,item,amount:valor,debt_date:data});
+  if(error){showAlert('page-alert','Erro ao lançar débito: '+error.message,'danger');return;}
+  nav('debitosLanche',{status:'pendentes'});
+}
+
+async function toggleStatusDebitoLanche(id,statusAtual){
+  const novo=statusAtual==='pago'?'pendente':'pago';
+  const{error}=await sb.from('snack_debts').update({status:novo,paid_at:novo==='pago'?new Date().toISOString():null}).eq('id',id);
+  if(error){showAlert('page-alert','Erro ao atualizar status: '+error.message,'danger');return;}
+  nav('debitosLanche');
+}
+
+async function carregarConfigPix(){
+  const{data}=await sb.from('app_settings').select('key,value').in('key',['snack_pix_key','snack_pix_name','snack_pix_city']);
+  const map={};(data||[]).forEach(r=>map[r.key]=r.value);
+  return{chave:map.snack_pix_key||'',nome:map.snack_pix_name||'Connect Inglês VIP',cidade:map.snack_pix_city||'Balsas'};
+}
+
+async function salvarConfigPix(){
+  const chave=$('snack-pix-key').value.trim();
+  const nome=$('snack-pix-name').value.trim()||'Connect Inglês VIP';
+  const cidade=$('snack-pix-city').value.trim()||'Balsas';
+  const{error}=await sb.from('app_settings').upsert([
+    {key:'snack_pix_key',value:chave},
+    {key:'snack_pix_name',value:nome},
+    {key:'snack_pix_city',value:cidade},
+  ],{onConflict:'key'});
+  if(error){showAlert('page-alert','Erro ao salvar config PIX: '+error.message,'danger');return;}
+  nav('debitosLanche');
+}
+
+// --- PIX BR Code (payload EMV estático, sem valor fixo — reutilizável) ---
+function tlvPix(id,value){return id+String(value.length).padStart(2,'0')+value;}
+
+function crc16Pix(payload){
+  let crc=0xFFFF;
+  for(let i=0;i<payload.length;i++){
+    crc^=(payload.charCodeAt(i)<<8);
+    for(let j=0;j<8;j++){
+      crc=(crc&0x8000)?((crc<<1)^0x1021)&0xFFFF:(crc<<1)&0xFFFF;
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4,'0');
+}
+
+function montarPayloadPix({chave,nome,cidade}){
+  const semAcento=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const mai=tlvPix('26',tlvPix('00','BR.GOV.BCB.PIX')+tlvPix('01',chave));
+  const nomeFmt=semAcento(nome).toUpperCase().slice(0,25)||'CONNECT INGLES VIP';
+  const cidadeFmt=semAcento(cidade).toUpperCase().slice(0,15)||'BALSAS';
+  const payload=
+    tlvPix('00','01')+
+    tlvPix('01','11')+
+    mai+
+    tlvPix('52','0000')+
+    tlvPix('53','986')+
+    tlvPix('58','BR')+
+    tlvPix('59',nomeFmt)+
+    tlvPix('60',cidadeFmt)+
+    tlvPix('62',tlvPix('05','***'))+
+    '6304';
+  return payload+crc16Pix(payload);
+}
+
+function renderQrPix(elId,payload){
+  const el=$(elId);
+  if(!el)return;
+  try{
+    const qr=qrcode(0,'M');
+    qr.addData(payload);
+    qr.make();
+    el.innerHTML=qr.createSvgTag({cellSize:5,margin:2});
+    const svg=el.querySelector('svg');
+    if(svg){svg.style.width='100%';svg.style.height='100%';}
+  }catch(e){el.innerHTML='<div style="font-size:11px;color:var(--gray-500)">QR indisponível</div>';}
+}
+
+pages.debitosLanche=async function({status}={}){
+  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const statusAtivo=status||'pendentes';
+  const search=getFilter('lanche-search').toLowerCase();
+
+  const[{data:debitos=[]},cfg]=await Promise.all([
+    sb.from('snack_debts').select('*').order('debt_date',{ascending:false}),
+    carregarConfigPix(),
+  ]);
+
+  const pendentes=debitos.filter(d=>d.status==='pendente');
+  const totalPendente=pendentes.reduce((s,d)=>s+Number(d.amount),0);
+  const listaBase=statusAtivo==='pendentes'?pendentes:statusAtivo==='pagos'?debitos.filter(d=>d.status==='pago'):debitos;
+  const filtrados=listaBase.filter(d=>{
+    if(!search) return true;
+    return (d.person_name+' '+d.item).toLowerCase().includes(search);
+  });
+
+  const tabBar=`<div class="tab-bar">
+    <button class="tab-btn${statusAtivo==='pendentes'?' active':''}" onclick="clearFilters(['lanche-search']);nav('debitosLanche',{status:'pendentes'})"><i class="fa fa-clock"></i> Pendentes (${pendentes.length})</button>
+    <button class="tab-btn${statusAtivo==='pagos'?' active':''}" onclick="clearFilters(['lanche-search']);nav('debitosLanche',{status:'pagos'})"><i class="fa fa-check"></i> Pagos</button>
+    <button class="tab-btn${statusAtivo==='todos'?' active':''}" onclick="clearFilters(['lanche-search']);nav('debitosLanche',{status:'todos'})"><i class="fa fa-list"></i> Todos</button>
+  </div>`;
+
+  const painelLancamento=`
+    <div class="panel" style="margin-bottom:18px">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-plus"></i> Lançar consumo</span></div>
+      <div class="panel-body" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Nome</label><input id="lanche-nome" placeholder="Nome do aluno/colaborador" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:200px"></div>
+        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Telefone (p/ cobrança)</label><input id="lanche-telefone" placeholder="(99) 99999-9999" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:160px"></div>
+        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Item/Descrição</label><input id="lanche-item" placeholder="Ex: Salgado + suco" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:200px"></div>
+        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Valor (R$)</label><input id="lanche-valor" type="number" step="0.01" min="0.01" placeholder="0,00" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:110px"></div>
+        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Data</label><input id="lanche-data" type="date" value="${new Date().toISOString().slice(0,10)}" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px"></div>
+        <button class="btn btn-primary" onclick="lancarDebitoLanche()"><i class="fa fa-plus"></i> Lançar</button>
+      </div>
+    </div>`;
+
+  const painelPix=`
+    <div class="panel" style="margin-bottom:18px">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-qrcode" style="color:var(--brand)"></i> Pagamento via PIX</span></div>
+      <div class="panel-body" style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+        <div id="snack-pix-qr" style="width:160px;height:160px;flex-shrink:0;background:#fff"></div>
+        <div style="flex:1;min-width:220px">
+          ${cfg.chave?`
+            <div style="margin-bottom:8px"><strong>Chave PIX:</strong> ${esc(cfg.chave)}</div>
+            <div style="margin-bottom:8px;color:var(--gray-500);font-size:13px">Recebedor: ${esc(cfg.nome)} — ${esc(cfg.cidade)}</div>
+            <div style="font-size:12px;color:var(--gray-500)">O aluno escaneia o QR ou copia a chave e digita o valor. Depois de confirmar o recebimento (extrato/comprovante), marque o débito como <strong>Pago</strong> na lista abaixo — o status atualiza na hora.</div>
+          `:`<div style="color:var(--gray-500);font-size:13px">Nenhuma chave PIX configurada ainda.</div>`}
+          ${isFinanceiro()?`
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--gray-200)">
+              <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px">Configurar recebimento (só financeiro/admin)</div>
+              <input id="snack-pix-key" placeholder="Chave PIX" value="${esc(cfg.chave)}" style="width:100%;max-width:280px;padding:6px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:13px;margin-bottom:6px">
+              <input id="snack-pix-name" placeholder="Nome do recebedor" value="${esc(cfg.nome)}" style="width:100%;max-width:280px;padding:6px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:13px;margin-bottom:6px">
+              <input id="snack-pix-city" placeholder="Cidade" value="${esc(cfg.cidade)}" style="width:100%;max-width:280px;padding:6px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:13px;margin-bottom:8px">
+              <button class="btn btn-default btn-sm" onclick="salvarConfigPix()"><i class="fa fa-save"></i> Salvar</button>
+            </div>
+          `:''}
+        </div>
+      </div>
+    </div>`;
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Débitos de Lanche</span></div>
+    <div class="page-title"><i class="fa fa-utensils"></i> Débitos de Lanche</div>
+    <div id="page-alert" class="alert"></div>
+    ${painelLancamento}
+    ${painelPix}
+    ${tabBar}
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">${statusAtivo==='pendentes'?'Pendências':statusAtivo==='pagos'?'Pagos':'Todos os débitos'}</span><span style="font-size:12px;color:var(--gray-500)">${filtrados.length}${statusAtivo==='pendentes'?` · Total pendente: ${fmtBRL(totalPendente)}`:''}</span></div>
+      <div class="panel-body" style="padding-bottom:0">
+        <input id="lanche-search" placeholder="Buscar por nome ou item…" value="${esc(getFilter('lanche-search'))}" oninput="saveFilters(['lanche-search']);nav('debitosLanche',{status:'${statusAtivo}'})" style="width:100%;max-width:320px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;margin-bottom:14px">
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nome</th><th>Item</th><th>Valor</th><th>Data</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody>${filtrados.length?filtrados.map(d=>{
+          const numFmt=snackDebtWppNumero(d.phone||'');
+          return `<tr>
+            <td><strong>${esc(d.person_name)}</strong></td>
+            <td>${esc(d.item)}</td>
+            <td>${fmtBRL(d.amount)}</td>
+            <td>${new Date(d.debt_date+'T00:00:00').toLocaleDateString('pt-BR')}</td>
+            <td><button class="badge ${d.status==='pago'?'badge-success':'badge-warning'}" style="border:none;cursor:pointer" onclick="toggleStatusDebitoLanche('${d.id}','${d.status}')" title="Clique pra alternar">${d.status==='pago'?'Pago':'Pendente'}</button></td>
+            <td>
+              ${d.status==='pendente'&&numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="cobrarDebitoLanche('${esc(d.person_name)}',${d.amount},'${numFmt}')" title="Cobrar via WhatsApp"><i class="fab fa-whatsapp"></i> Cobrar</button>`:''}
+              ${d.status==='pendente'?`<button class="btn btn-default btn-sm" onclick="toggleStatusDebitoLanche('${d.id}','${d.status}')" title="Dar baixa"><i class="fa fa-check"></i> Baixar</button>`:''}
+            </td>
+          </tr>`;
+        }).join(''):'<tr><td colspan="6"><div class="empty-state"><i class="fa fa-utensils"></i>Nenhum débito encontrado</div></td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+  `);
+
+  if(cfg.chave){renderQrPix('snack-pix-qr',montarPayloadPix(cfg));}
 };
 
 // --- SCHOOLS ---

@@ -2766,3 +2766,51 @@ INSERT INTO inactive_students (name, course_level, class_day, cancel_month, canc
 ('ANNA ASTAQUE', 'VIP', 'SEXTA', 'DEZEMBRO', 2024, '353 83 334 9655');
   END IF;
 END $$;
+
+-- #####################################################################
+-- 35. DÉBITOS DE LANCHE — lançamento, cobrança PIX/WhatsApp e baixa
+-- #####################################################################
+-- Consumos de lanche vinculados a um nome (aluno matriculado ou não —
+-- por isso person_name é livre e student_id é opcional). app_settings é
+-- uma tabela genérica chave/valor pra guardar a config do PIX usada na
+-- tela de cobrança (sem precisar de uma tabela nova a cada config futura).
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key text PRIMARY KEY,
+  value text,
+  updated_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "app_settings_select" ON app_settings;
+DROP POLICY IF EXISTS "app_settings_upsert" ON app_settings;
+DROP POLICY IF EXISTS "app_settings_update" ON app_settings;
+CREATE POLICY "app_settings_select" ON app_settings FOR SELECT USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "app_settings_upsert" ON app_settings FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro']));
+CREATE POLICY "app_settings_update" ON app_settings FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','financeiro']));
+
+CREATE TABLE IF NOT EXISTS snack_debts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id uuid REFERENCES students(id) ON DELETE SET NULL,
+  person_name text NOT NULL,
+  phone text,
+  item text NOT NULL,
+  amount numeric(10,2) NOT NULL CHECK (amount > 0),
+  debt_date date NOT NULL DEFAULT current_date,
+  status text NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente','pago')),
+  paid_at timestamptz,
+  created_by uuid REFERENCES profiles(id) ON DELETE SET NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_snack_debts_status ON snack_debts(status);
+
+ALTER TABLE snack_debts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "snack_debts_select" ON snack_debts;
+DROP POLICY IF EXISTS "snack_debts_insert" ON snack_debts;
+DROP POLICY IF EXISTS "snack_debts_update" ON snack_debts;
+DROP POLICY IF EXISTS "snack_debts_delete" ON snack_debts;
+CREATE POLICY "snack_debts_select" ON snack_debts FOR SELECT USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "snack_debts_insert" ON snack_debts FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "snack_debts_update" ON snack_debts FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+CREATE POLICY "snack_debts_delete" ON snack_debts FOR DELETE USING (is_admin());
