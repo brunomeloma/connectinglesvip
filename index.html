@@ -75,6 +75,7 @@ body{font-family:'Inter',sans-serif;background:#f0ede8;color:var(--gray-900);fon
 .sb-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--brand),var(--brand-orange));display:flex;align-items:center;justify-content:center;color:#111;font-size:14px;font-weight:700;flex-shrink:0}
 .sb-name{color:#ddd;font-size:12px;font-weight:600}
 .sb-role{color:#555;font-size:11px;margin-top:1px}
+.sb-email{color:#555;font-size:10px;margin-top:1px;word-break:break-all}
 .sb-section{padding:14px 16px 5px;font-size:10px;color:#3a3a3a;text-transform:uppercase;letter-spacing:1.5px;font-weight:600}
 .sb-item{display:flex;align-items:center;gap:10px;padding:10px 16px;color:var(--sidebar-text);font-size:13px;cursor:pointer;transition:all .15s;border-left:3px solid transparent}
 .sb-item:hover{background:#1a1a1a;color:#ddd}
@@ -414,6 +415,7 @@ tr:hover td{background:#fdf9f0}
   .form-row{flex-direction:column}
   .form-col{min-width:100%!important}
   .topbar{padding:0 12px}
+  .topbar-user-detail{display:none}
   .content{padding:14px}
   .page-title{font-size:17px}
   .panel-head{flex-direction:column;gap:8px;align-items:flex-start}
@@ -502,6 +504,7 @@ let currentUser = null;
       <div>
         <div class="sb-name" id="sb-name">—</div>
         <div class="sb-role" id="sb-role">—</div>
+        <div class="sb-email" id="sb-email">—</div>
       </div>
     </div>
     <div class="sb-section">Navegação</div>
@@ -788,8 +791,10 @@ function startApp(){
   $('sb-name').textContent=currentUser.name;
   $('sb-avatar').textContent=avatar(currentUser.name);
   const roles={super_admin:'Super Admin',direcao:'Direção',financeiro:'Financeiro',secretaria:'Secretaria',professor:'Professor',captacao:'Captação'};
-  $('sb-role').textContent=roles[currentUser.role]||currentUser.role;
-  $('topbar-user').innerHTML=`<i class="fa fa-user-circle" style="color:var(--brand);font-size:18px"></i> &nbsp;${escapeHtml(currentUser.name)}`;
+  const roleLabel=roles[currentUser.role]||currentUser.role;
+  $('sb-role').textContent=roleLabel;
+  $('sb-email').textContent=currentUser.email||'';
+  $('topbar-user').innerHTML=`<i class="fa fa-user-circle" style="color:var(--brand);font-size:18px"></i> &nbsp;${escapeHtml(currentUser.name)} <span class="topbar-user-detail" style="color:var(--gray-500);font-weight:400">— ${escapeHtml(roleLabel)} (${escapeHtml(currentUser.email||'')})</span>`;
   document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isAdmin()?'':'none');
   document.querySelectorAll('.no-professor').forEach(el=>el.style.display=currentUser?.role==='professor'?'none':'');
   document.querySelectorAll('.no-captacao').forEach(el=>el.style.display=currentUser?.role==='captacao'?'none':'');
