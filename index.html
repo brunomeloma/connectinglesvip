@@ -521,7 +521,7 @@ let currentUser = null;
     <div class="sb-item no-professor no-captacao" data-page="documentos" onclick="nav('documentos')"><i class="fa fa-file-signature"></i> Documentos</div>
     <div class="sb-item no-professor no-captacao" data-page="nps" onclick="nav('nps')"><i class="fa fa-smile"></i> Pesquisa NPS</div>
     <div class="sb-item no-captacao" data-page="relatorios" onclick="nav('relatorios')"><i class="fa fa-chart-bar"></i> Relatórios</div>
-    <div class="sb-item no-professor no-captacao" data-page="inativos" onclick="nav('inativos')"><i class="fa fa-user-slash"></i> Inativos</div>
+    <div class="sb-item no-professor" data-page="inativos" onclick="nav('inativos')"><i class="fa fa-user-slash"></i> Inativos</div>
     <div class="sb-item no-professor no-captacao" data-page="debitosLanche" onclick="nav('debitosLanche')"><i class="fa fa-utensils"></i> Débitos de Lanche</div>
     <div class="sb-item captacao-item" data-page="captacao" onclick="nav('captacao')"><i class="fa fa-bullhorn"></i> Captação</div>
     <div class="sb-logout">
@@ -711,7 +711,7 @@ function setActive(page){
   if(el)el.classList.add('active');
 }
 function nav(page, params={}){
-  if(currentUser?.role==='captacao'&&page!=='captacao'){page='captacao';params={};}
+  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='inativos'){page='captacao';params={};}
   setActive(page);
   pages[page]&&pages[page](params);
   closeSidebar();
@@ -1421,7 +1421,7 @@ async function salvarNascimentoInativo(id,valor){
 }
 
 pages.inativos=async function({ano}={}){
-  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
+  if(!canManageBilling()&&!isAdmin()&&currentUser?.role!=='captacao'){nav('dashboard');return;}
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const anoAtivo=ano?parseInt(ano):2025;
   const search=getFilter('inat-search').toLowerCase();
