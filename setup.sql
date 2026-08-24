@@ -2858,3 +2858,13 @@ CREATE POLICY "snack_debts_update" ON snack_debts FOR UPDATE USING (has_role(ARR
 
 DROP POLICY IF EXISTS "app_settings_select" ON app_settings;
 CREATE POLICY "app_settings_select" ON app_settings FOR SELECT USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+
+-- #####################################################################
+-- 38. CANTINA — nome do responsável (endereçar cobrança corretamente) +
+--     relatório de consumo por aluno/período
+-- #####################################################################
+-- responsible_name é quem recebe a mensagem de cobrança (pai/mãe/
+-- responsável) — separado de person_name, que continua sendo o aluno
+-- que consumiu (é por isso que o relatório agrupa por person_name).
+
+ALTER TABLE snack_debts ADD COLUMN IF NOT EXISTS responsible_name text;
