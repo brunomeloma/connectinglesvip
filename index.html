@@ -1556,19 +1556,21 @@ async function toggleStatusDebitoLanche(id,statusAtual){
 }
 
 async function carregarConfigPix(){
-  const{data}=await sb.from('app_settings').select('key,value').in('key',['snack_pix_key','snack_pix_name','snack_pix_city']);
+  const{data}=await sb.from('app_settings').select('key,value').in('key',['snack_pix_key','snack_pix_name','snack_pix_city','snack_pix_bank']);
   const map={};(data||[]).forEach(r=>map[r.key]=r.value);
-  return{chave:map.snack_pix_key||'',nome:map.snack_pix_name||'Connect Inglês VIP',cidade:map.snack_pix_city||'Balsas'};
+  return{chave:map.snack_pix_key||'',nome:map.snack_pix_name||'Connect Inglês VIP',cidade:map.snack_pix_city||'Balsas',banco:map.snack_pix_bank||''};
 }
 
 async function salvarConfigPix(){
   const chave=$('snack-pix-key').value.trim();
   const nome=$('snack-pix-name').value.trim()||'Connect Inglês VIP';
   const cidade=$('snack-pix-city').value.trim()||'Balsas';
+  const banco=$('snack-pix-bank').value.trim();
   const{error}=await sb.from('app_settings').upsert([
     {key:'snack_pix_key',value:chave},
     {key:'snack_pix_name',value:nome},
     {key:'snack_pix_city',value:cidade},
+    {key:'snack_pix_bank',value:banco},
   ],{onConflict:'key'});
   if(error){showAlert('page-alert','Erro ao salvar config PIX: '+error.message,'danger');return;}
   nav('debitosLanche');
@@ -1588,9 +1590,19 @@ function crc16Pix(payload){
   return crc.toString(16).toUpperCase().padStart(4,'0');
 }
 
+// Chave PIX do tipo CPF/CNPJ tem que ir s\u00f3 com d\u00edgitos no payload EMV \u2014
+// e-mail, telefone (+55...) e chave aleat\u00f3ria (EVP, formato UUID) ficam
+// como est\u00e3o, s\u00f3 CPF (11 d\u00edgitos) e CNPJ (14) s\u00e3o normalizados.
+function normalizarChavePix(chave){
+  const s=(chave||'').trim();
+  const digits=s.replace(/\D/g,'');
+  if((digits.length===11||digits.length===14)&&/^[\d.\/-]+$/.test(s)) return digits;
+  return s;
+}
+
 function montarPayloadPix({chave,nome,cidade}){
   const semAcento=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const mai=tlvPix('26',tlvPix('00','BR.GOV.BCB.PIX')+tlvPix('01',chave));
+  const mai=tlvPix('26',tlvPix('00','BR.GOV.BCB.PIX')+tlvPix('01',normalizarChavePix(chave)));
   const nomeFmt=semAcento(nome).toUpperCase().slice(0,25)||'CONNECT INGLES VIP';
   const cidadeFmt=semAcento(cidade).toUpperCase().slice(0,15)||'BALSAS';
   const payload=
@@ -1666,14 +1678,15 @@ pages.debitosLanche=async function({status}={}){
         <div style="flex:1;min-width:220px">
           ${cfg.chave?`
             <div style="margin-bottom:8px"><strong>Chave PIX:</strong> ${esc(cfg.chave)}</div>
-            <div style="margin-bottom:8px;color:var(--gray-500);font-size:13px">Recebedor: ${esc(cfg.nome)} — ${esc(cfg.cidade)}</div>
+            <div style="margin-bottom:8px;color:var(--gray-500);font-size:13px">Recebedor: ${esc(cfg.nome)}${cfg.banco?` — ${esc(cfg.banco)}`:''} — ${esc(cfg.cidade)}</div>
             <div style="font-size:12px;color:var(--gray-500)">O aluno escaneia o QR ou copia a chave e digita o valor. Depois de confirmar o recebimento (extrato/comprovante), marque o débito como <strong>Pago</strong> na lista abaixo — o status atualiza na hora.</div>
           `:`<div style="color:var(--gray-500);font-size:13px">Nenhuma chave PIX configurada ainda.</div>`}
-          ${isFinanceiro()?`
+          ${canManageBilling()||isAdmin()?`
             <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--gray-200)">
-              <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px">Configurar recebimento (só financeiro/admin)</div>
+              <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px">Configurar recebimento</div>
               <input id="snack-pix-key" placeholder="Chave PIX" value="${esc(cfg.chave)}" style="width:100%;max-width:280px;padding:6px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:13px;margin-bottom:6px">
               <input id="snack-pix-name" placeholder="Nome do recebedor" value="${esc(cfg.nome)}" style="width:100%;max-width:280px;padding:6px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:13px;margin-bottom:6px">
+              <input id="snack-pix-bank" placeholder="Banco" value="${esc(cfg.banco)}" style="width:100%;max-width:280px;padding:6px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:13px;margin-bottom:6px">
               <input id="snack-pix-city" placeholder="Cidade" value="${esc(cfg.cidade)}" style="width:100%;max-width:280px;padding:6px 8px;border:1px solid var(--gray-300);border-radius:4px;font-size:13px;margin-bottom:8px">
               <button class="btn btn-default btn-sm" onclick="salvarConfigPix()"><i class="fa fa-save"></i> Salvar</button>
             </div>
