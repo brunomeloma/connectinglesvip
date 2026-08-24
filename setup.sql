@@ -2841,3 +2841,20 @@ AS $$ BEGIN
       AND EXTRACT(DAY FROM i.date_birth) = EXTRACT(DAY FROM CURRENT_DATE)
     ORDER BY i.name;
 END; $$;
+
+-- #####################################################################
+-- 37. CAPTAÇÃO GANHA ACESSO A DÉBITOS DE LANCHE (pra poder cobrar)
+-- #####################################################################
+-- Mesmo raciocínio da Seção 36: acesso pontual só nessa tabela e na de
+-- config do PIX (leitura, pra montar a mensagem/QR de cobrança) — sem
+-- abrir nenhum outro dado interno da escola pra esse papel.
+
+DROP POLICY IF EXISTS "snack_debts_select" ON snack_debts;
+DROP POLICY IF EXISTS "snack_debts_insert" ON snack_debts;
+DROP POLICY IF EXISTS "snack_debts_update" ON snack_debts;
+CREATE POLICY "snack_debts_select" ON snack_debts FOR SELECT USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+CREATE POLICY "snack_debts_insert" ON snack_debts FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+CREATE POLICY "snack_debts_update" ON snack_debts FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+
+DROP POLICY IF EXISTS "app_settings_select" ON app_settings;
+CREATE POLICY "app_settings_select" ON app_settings FOR SELECT USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
