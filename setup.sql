@@ -2814,3 +2814,30 @@ CREATE POLICY "snack_debts_select" ON snack_debts FOR SELECT USING (has_role(ARR
 CREATE POLICY "snack_debts_insert" ON snack_debts FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
 CREATE POLICY "snack_debts_update" ON snack_debts FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
 CREATE POLICY "snack_debts_delete" ON snack_debts FOR DELETE USING (is_admin());
+
+-- #####################################################################
+-- 36. CAPTAÇÃO GANHA ACESSO A INATIVOS (reengajamento é literalmente o
+--     trabalho dela — ex-aluno é lead frio pra recuperar)
+-- #####################################################################
+-- Captação continua sem acesso a nenhum outro dado interno (aluno,
+-- financeiro, turma, professor, documentos) — só essa tabela específica,
+-- pra poder ver a lista, marcar aniversário e reengajar via WhatsApp.
+
+DROP POLICY IF EXISTS "inactive_students_select" ON inactive_students;
+DROP POLICY IF EXISTS "inactive_students_update" ON inactive_students;
+CREATE POLICY "inactive_students_select" ON inactive_students FOR SELECT USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+CREATE POLICY "inactive_students_update" ON inactive_students FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+
+CREATE OR REPLACE FUNCTION get_aniversariantes_inativos()
+RETURNS TABLE(id uuid, name text, phone text, date_birth date)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT i.id, i.name, i.phone, i.date_birth
+    FROM inactive_students i
+    WHERE i.date_birth IS NOT NULL
+      AND EXTRACT(MONTH FROM i.date_birth) = EXTRACT(MONTH FROM CURRENT_DATE)
+      AND EXTRACT(DAY FROM i.date_birth) = EXTRACT(DAY FROM CURRENT_DATE)
+    ORDER BY i.name;
+END; $$;
