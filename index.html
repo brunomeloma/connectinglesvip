@@ -1394,6 +1394,7 @@ function capSkipCurrent(){capState.index++;capRenderRunPanel();capShowCampaignMo
 // INATIVOS (reengajamento + aniversariantes de ex-alunos)
 // ============================
 const INATIVO_RETENCAO_MSG='Olá, {nome}! 😊\nFaz um tempo que você não estuda com a gente na *Connect Inglês VIP*! Passando pra saber como você está e se topa voltar — temos turmas e horários novos que podem te interessar. Vamos conversar?';
+const INATIVO_PROMO_MSG='🚨 Condição especial só para hoje!\n\nQuer aprender inglês de verdade e conquistar novas oportunidades? A Connect Inglês VIP está com condições exclusivas para quem fechar a matrícula ainda hoje!\n\nNão deixe essa chance passar. Fale com a gente agora e garanta sua vaga com um benefício especial! 🇺🇸✨\n\n📲 Chame no WhatsApp e saiba mais.';
 
 // BR no formato "(DDD) XXXXX-XXXX" -> prefixa 55; números já internacionais
 // (sem parênteses, ex: telefones dos EUA/Irlanda que vieram na lista) usam
@@ -1408,6 +1409,12 @@ function inativoWppNumero(telefoneRaw){
 function enviarReengajamentoInativo(nome,numero){
   const texto=INATIVO_RETENCAO_MSG.replace(/\{nome\}/g,nome);
   window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(texto),'_blank');
+}
+function enviarPromoInativo(numero){
+  window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(INATIVO_PROMO_MSG),'_blank');
+}
+function copiarPromoInativo(){
+  navigator.clipboard.writeText(INATIVO_PROMO_MSG).then(()=>showAlert('page-alert','Mensagem promocional copiada.','success'));
 }
 function enviarAniversarioInativo(nome,numero){
   const texto=ANIVERSARIO_MSG.replace(/\{nome\}/g,nome);
@@ -1464,7 +1471,7 @@ pages.inativos=async function({ano}={}){
     ${painelAniversario}
     ${tabBar}
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">Inativos ${anoAtivo}</span><span style="font-size:12px;color:var(--gray-500)">${filtrados.length} de ${doAno.length}</span></div>
+      <div class="panel-head"><span class="panel-title">Inativos ${anoAtivo}</span><div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--gray-500)">${filtrados.length} de ${doAno.length}</span><button class="btn btn-default btn-sm" onclick="copiarPromoInativo()" title="Copia a mensagem promocional de reativação pra colar onde quiser"><i class="fa fa-copy"></i> Copiar promoção</button></div></div>
       <div class="panel-body" style="padding-bottom:0">
         <input id="inat-search" placeholder="Buscar por nome, curso, turma ou telefone…" value="${esc(getFilter('inat-search'))}" oninput="saveFilters(['inat-search']);nav('inativos',{ano:${anoAtivo}})" style="width:100%;max-width:360px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;margin-bottom:14px">
       </div>
@@ -1479,7 +1486,7 @@ pages.inativos=async function({ano}={}){
             <td>${esc(i.cancel_month)||'—'}</td>
             <td><input type="date" value="${i.date_birth||''}" style="padding:4px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px" onchange="salvarNascimentoInativo('${i.id}',this.value)"></td>
             <td>${numFmt?`<a href="https://wa.me/${numFmt}" target="_blank" style="color:#25D366;font-weight:600"><i class="fab fa-whatsapp"></i> ${esc(i.phone)}</a>`:(esc(i.phone)||'Sem telefone')}</td>
-            <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarReengajamentoInativo('${esc(i.name)}','${numFmt}')" title="Tentar reengajar"><i class="fab fa-whatsapp"></i> Reengajar</button>`:'—'}</td>
+            <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarReengajamentoInativo('${esc(i.name)}','${numFmt}')" title="Tentar reengajar"><i class="fab fa-whatsapp"></i> Reengajar</button> <button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarPromoInativo('${numFmt}')" title="Enviar promoção de matrícula"><i class="fa fa-bullhorn"></i> Promoção</button>`:'—'}</td>
           </tr>`;
         }).join(''):'<tr><td colspan="7"><div class="empty-state"><i class="fa fa-user-slash"></i>Nenhum inativo encontrado</div></td></tr>'}
         </tbody>
@@ -1498,31 +1505,66 @@ function snackDebtWppNumero(telefoneRaw){
   return telefoneRaw.includes('(')?(digits.startsWith('55')?digits:'55'+digits):digits;
 }
 
-// Utilitário puro: monta o link do WhatsApp já com a mensagem de cobrança preenchida.
-function gerarLinkCobrancaLanche(nome,valor,chavePix,telefone){
+// Utilitário puro: monta o link do WhatsApp já com a mensagem de cobrança
+// preenchida — endereçada ao RESPONSÁVEL (pai/mãe), nunca ao aluno.
+function gerarLinkCobrancaLanche({nomeAluno,nomeResponsavel,item,valor,chavePix,telefone}){
   const valorFmt=Number(valor||0).toFixed(2).replace('.',',');
-  const msg=`Olá ${nome}! Consta um débito pendente de lanche no valor de R$ ${valorFmt}. O pagamento pode ser feito via PIX pela chave ${chavePix||'(a definir)'}. Após pagar, nos envie o comprovante.`;
+  const itens=(item||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const listaItens=(itens.length?itens:[item||'']).map(i=>`- ${i}`).join('\n');
+  const saudacao=nomeResponsavel||'responsável';
+  const msg=`Olá, ${saudacao}, tudo bem?\nInformamos o consumo do(a) ${nomeAluno} na cantina hoje:\n${listaItens}\nTotal: R$ ${valorFmt}\n\nSegue a chave Pix para pagamento: ${chavePix||'(a definir)'}\nAgradecemos a atenção!`;
   const numero=snackDebtWppNumero(telefone||'');
   return `https://wa.me/${numero}?text=${encodeURIComponent(msg)}`;
 }
 
-async function cobrarDebitoLanche(nome,valor,numero){
+async function cobrarDebitoLanche(nomeAluno,nomeResponsavel,item,valor,numero){
   const cfg=await carregarConfigPix();
-  window.open(gerarLinkCobrancaLanche(nome,valor,cfg.chave,numero),'_blank');
+  window.open(gerarLinkCobrancaLanche({nomeAluno,nomeResponsavel,item,valor,chavePix:cfg.chave,telefone:numero}),'_blank');
+}
+
+// --- Produtos fixos da cantina (botões com contador +/-) ---
+const PRODUTOS_CANTINA=[
+  {nome:'Chilito / Bolinho',valor:3.00},
+  {nome:'Suco / Refrigerante',valor:4.00},
+  {nome:'Nucita / Pirulito',valor:1.00},
+  {nome:'Salgado',valor:6.00},
+];
+let _carrinhoLanche={};
+function slugCantina(nome){return nome.toLowerCase().replace(/[^a-z0-9]+/g,'-');}
+
+function alterarCarrinhoLanche(nome,delta){
+  const atual=_carrinhoLanche[nome]||0;
+  const novo=Math.max(0,atual+delta);
+  if(novo===0) delete _carrinhoLanche[nome]; else _carrinhoLanche[nome]=novo;
+  renderCarrinhoLanche();
+}
+
+function renderCarrinhoLanche(){
+  PRODUTOS_CANTINA.forEach(p=>{
+    const el=$('lanche-qty-'+slugCantina(p.nome));
+    if(el) el.textContent=_carrinhoLanche[p.nome]||0;
+  });
+  const itens=Object.entries(_carrinhoLanche);
+  const total=itens.reduce((s,[nome,qtd])=>s+qtd*PRODUTOS_CANTINA.find(p=>p.nome===nome).valor,0);
+  const desc=itens.map(([nome,qtd])=>`${qtd}x ${nome}`).join(', ');
+  if($('lanche-item')) $('lanche-item').value=desc;
+  if($('lanche-valor')) $('lanche-valor').value=total?total.toFixed(2):'';
 }
 
 async function lancarDebitoLanche(){
   const nome=$('lanche-nome').value.trim();
+  const responsavel=$('lanche-responsavel').value.trim();
   const telefone=$('lanche-telefone').value.trim();
   const item=$('lanche-item').value.trim();
   const valor=parseFloat($('lanche-valor').value);
   const data=$('lanche-data').value;
-  if(!nome||!item||!valor||valor<=0||!data){showAlert('page-alert','Preencha nome, item, valor e data.','danger');return;}
-  const{error}=await sb.from('snack_debts').insert({person_name:nome,phone:telefone||null,item,amount:valor,debt_date:data});
+  if(!nome||!item||!valor||valor<=0||!data){showAlert('page-alert','Preencha nome do aluno, item, valor e data.','danger');return;}
+  const{error}=await sb.from('snack_debts').insert({person_name:nome,responsible_name:responsavel||null,phone:telefone||null,item,amount:valor,debt_date:data});
   if(error){showAlert('page-alert','Erro ao lançar débito: '+error.message,'danger');return;}
+  _carrinhoLanche={};
   if(telefone){
     const cfg=await carregarConfigPix();
-    mostrarCobrancaLancheBox(nome,valor,gerarLinkCobrancaLanche(nome,valor,cfg.chave,telefone));
+    mostrarCobrancaLancheBox(nome,valor,gerarLinkCobrancaLanche({nomeAluno:nome,nomeResponsavel:responsavel,item,valor,chavePix:cfg.chave,telefone}));
   }else{
     showAlert('page-alert','Débito lançado. Cadastre um telefone pra poder cobrar direto pelo WhatsApp.','success');
   }
@@ -1642,6 +1684,7 @@ pages.debitosLanche=async function({status}={}){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const statusAtivo=status||'pendentes';
   const search=getFilter('lanche-search').toLowerCase();
+  _carrinhoLanche={};
 
   const[{data:debitos=[]},cfg]=await Promise.all([
     sb.from('snack_debts').select('*').order('debt_date',{ascending:false}),
@@ -1650,28 +1693,57 @@ pages.debitosLanche=async function({status}={}){
 
   const pendentes=debitos.filter(d=>d.status==='pendente');
   const totalPendente=pendentes.reduce((s,d)=>s+Number(d.amount),0);
-  const listaBase=statusAtivo==='pendentes'?pendentes:statusAtivo==='pagos'?debitos.filter(d=>d.status==='pago'):debitos;
+  const listaBase=statusAtivo==='pendentes'?pendentes:statusAtivo==='pagos'?debitos.filter(d=>d.status==='pago'):statusAtivo==='relatorio'?debitos:debitos;
   const filtrados=listaBase.filter(d=>{
     if(!search) return true;
-    return (d.person_name+' '+d.item).toLowerCase().includes(search);
+    return (d.person_name+' '+d.item+' '+(d.responsible_name||'')).toLowerCase().includes(search);
   });
+
+  const relIni=getFilter('lanche-rel-ini');
+  const relFim=getFilter('lanche-rel-fim');
+  const relatorioItens=debitos.filter(d=>{
+    if(search&&!(d.person_name+' '+d.item+' '+(d.responsible_name||'')).toLowerCase().includes(search)) return false;
+    if(relIni&&d.debt_date<relIni) return false;
+    if(relFim&&d.debt_date>relFim) return false;
+    return true;
+  });
+  const porAluno={};
+  relatorioItens.forEach(d=>{(porAluno[d.person_name]=porAluno[d.person_name]||[]).push(d);});
 
   const tabBar=`<div class="tab-bar">
     <button class="tab-btn${statusAtivo==='pendentes'?' active':''}" onclick="clearFilters(['lanche-search']);nav('debitosLanche',{status:'pendentes'})"><i class="fa fa-clock"></i> Pendentes (${pendentes.length})</button>
     <button class="tab-btn${statusAtivo==='pagos'?' active':''}" onclick="clearFilters(['lanche-search']);nav('debitosLanche',{status:'pagos'})"><i class="fa fa-check"></i> Pagos</button>
     <button class="tab-btn${statusAtivo==='todos'?' active':''}" onclick="clearFilters(['lanche-search']);nav('debitosLanche',{status:'todos'})"><i class="fa fa-list"></i> Todos</button>
+    <button class="tab-btn${statusAtivo==='relatorio'?' active':''}" onclick="clearFilters(['lanche-search']);nav('debitosLanche',{status:'relatorio'})"><i class="fa fa-chart-bar"></i> Relatório</button>
   </div>`;
 
   const painelLancamento=`
     <div class="panel" style="margin-bottom:18px">
       <div class="panel-head"><span class="panel-title"><i class="fa fa-plus"></i> Lançar consumo</span></div>
-      <div class="panel-body" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Nome</label><input id="lanche-nome" placeholder="Nome do aluno/colaborador" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:200px"></div>
-        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Telefone (p/ cobrança)</label><input id="lanche-telefone" placeholder="(99) 99999-9999" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:160px"></div>
-        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Item/Descrição</label><input id="lanche-item" placeholder="Ex: Salgado + suco" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:200px"></div>
-        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Valor (R$)</label><input id="lanche-valor" type="number" step="0.01" min="0.01" placeholder="0,00" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:110px"></div>
-        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Data</label><input id="lanche-data" type="date" value="${new Date().toISOString().slice(0,10)}" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px"></div>
-        <button class="btn btn-primary" onclick="lancarDebitoLanche()"><i class="fa fa-plus"></i> Lançar</button>
+      <div class="panel-body">
+        <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px">Produtos (clique pra somar ao consumo)</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+          ${PRODUTOS_CANTINA.map(p=>`
+            <div style="border:1px solid var(--gray-300);border-radius:var(--radius);padding:8px 10px;min-width:150px">
+              <div style="font-size:13px;font-weight:600">${esc(p.nome)}</div>
+              <div style="font-size:12px;color:var(--gray-500);margin-bottom:6px">${fmtBRL(p.valor)}</div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <button type="button" class="btn btn-default btn-sm" onclick="alterarCarrinhoLanche('${p.nome}',-1)">−</button>
+                <span id="lanche-qty-${slugCantina(p.nome)}" style="min-width:18px;text-align:center;font-weight:600">0</span>
+                <button type="button" class="btn btn-default btn-sm" onclick="alterarCarrinhoLanche('${p.nome}',1)">+</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Nome do aluno</label><input id="lanche-nome" placeholder="Nome do aluno" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:180px"></div>
+          <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Nome do responsável</label><input id="lanche-responsavel" placeholder="Nome de quem recebe a cobrança" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:200px"></div>
+          <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Telefone do responsável</label><input id="lanche-telefone" placeholder="(99) 99999-9999" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:160px"></div>
+          <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Item/Descrição</label><input id="lanche-item" placeholder="Preenche sozinho ao clicar nos produtos" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:220px"></div>
+          <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Valor (R$)</label><input id="lanche-valor" type="number" step="0.01" min="0.01" placeholder="0,00" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:110px"></div>
+          <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Data</label><input id="lanche-data" type="date" value="${new Date().toISOString().slice(0,10)}" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px"></div>
+          <button class="btn btn-primary" onclick="lancarDebitoLanche()"><i class="fa fa-plus"></i> Lançar</button>
+        </div>
       </div>
     </div>`;
 
@@ -1700,6 +1772,64 @@ pages.debitosLanche=async function({status}={}){
       </div>
     </div>`;
 
+  const painelListaPadrao=`
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">${statusAtivo==='pendentes'?'Pendências':statusAtivo==='pagos'?'Pagos':'Todos os débitos'}</span><span style="font-size:12px;color:var(--gray-500)">${filtrados.length}${statusAtivo==='pendentes'?` · Total pendente: ${fmtBRL(totalPendente)}`:''}</span></div>
+      <div class="panel-body" style="padding-bottom:0">
+        <input id="lanche-search" placeholder="Buscar por nome, responsável ou item…" value="${esc(getFilter('lanche-search'))}" oninput="saveFilters(['lanche-search']);nav('debitosLanche',{status:'${statusAtivo}'})" style="width:100%;max-width:320px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;margin-bottom:14px">
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Aluno</th><th>Responsável</th><th>Item</th><th>Valor</th><th>Data</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody>${filtrados.length?filtrados.map(d=>{
+          const numFmt=snackDebtWppNumero(d.phone||'');
+          return `<tr>
+            <td><strong>${esc(d.person_name)}</strong></td>
+            <td>${esc(d.responsible_name)||'—'}</td>
+            <td>${esc(d.item)}</td>
+            <td>${fmtBRL(d.amount)}</td>
+            <td>${new Date(d.debt_date+'T00:00:00').toLocaleDateString('pt-BR')}</td>
+            <td><button class="badge ${d.status==='pago'?'badge-success':'badge-warning'}" style="border:none;cursor:pointer" onclick="toggleStatusDebitoLanche('${d.id}','${d.status}')" title="Clique pra alternar">${d.status==='pago'?'Pago':'Pendente'}</button></td>
+            <td>
+              ${d.status==='pendente'&&numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="cobrarDebitoLanche('${esc(d.person_name)}','${esc(d.responsible_name||'')}','${esc(d.item)}',${d.amount},'${numFmt}')" title="Cobrar via WhatsApp"><i class="fab fa-whatsapp"></i> Cobrar</button>`:''}
+              ${d.status==='pendente'?`<button class="btn btn-default btn-sm" onclick="toggleStatusDebitoLanche('${d.id}','${d.status}')" title="Dar baixa"><i class="fa fa-check"></i> Baixar</button>`:''}
+            </td>
+          </tr>`;
+        }).join(''):'<tr><td colspan="7"><div class="empty-state"><i class="fa fa-utensils"></i>Nenhum débito encontrado</div></td></tr>'}
+        </tbody>
+      </table></div>
+    </div>`;
+
+  const painelRelatorio=`
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Relatório de consumo por aluno</span><span style="font-size:12px;color:var(--gray-500)">${Object.keys(porAluno).length} aluno(s)</span></div>
+      <div class="panel-body" style="padding-bottom:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Buscar aluno/responsável</label><input id="lanche-search" placeholder="Nome…" value="${esc(getFilter('lanche-search'))}" oninput="saveFilters(['lanche-search']);nav('debitosLanche',{status:'relatorio'})" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:220px"></div>
+        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">De</label><input id="lanche-rel-ini" type="date" value="${esc(relIni)}" onchange="saveFilters(['lanche-rel-ini']);nav('debitosLanche',{status:'relatorio'})" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px"></div>
+        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Até</label><input id="lanche-rel-fim" type="date" value="${esc(relFim)}" onchange="saveFilters(['lanche-rel-fim']);nav('debitosLanche',{status:'relatorio'})" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px"></div>
+      </div>
+      <div class="panel-body">
+        ${Object.keys(porAluno).length?Object.entries(porAluno).sort((a,b)=>a[0].localeCompare(b[0])).map(([aluno,itens])=>{
+          const totalPago=itens.filter(i=>i.status==='pago').reduce((s,i)=>s+Number(i.amount),0);
+          const totalPend=itens.filter(i=>i.status==='pendente').reduce((s,i)=>s+Number(i.amount),0);
+          return `
+            <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px;margin-bottom:12px">
+              <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+                <strong>${esc(aluno)}</strong>
+                <span style="font-size:12px;color:var(--gray-500)">Pago: ${fmtBRL(totalPago)} · Pendente: ${fmtBRL(totalPend)}</span>
+              </div>
+              <table style="width:100%">
+                <thead><tr><th>Item</th><th>Data</th><th>Status</th></tr></thead>
+                <tbody>${itens.map(i=>`<tr>
+                  <td>${esc(i.item)}</td>
+                  <td>${new Date(i.debt_date+'T00:00:00').toLocaleDateString('pt-BR')}</td>
+                  <td>${i.status==='pago'?'<span class="badge badge-success">Pago</span>':'<span class="badge badge-warning">Pendente</span>'}</td>
+                </tr>`).join('')}</tbody>
+              </table>
+            </div>`;
+        }).join(''):'<div class="empty-state"><i class="fa fa-chart-bar"></i>Nenhum consumo no período/filtro selecionado</div>'}
+      </div>
+    </div>`;
+
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>Débitos de Lanche</span></div>
     <div class="page-title"><i class="fa fa-utensils"></i> Débitos de Lanche</div>
@@ -1707,30 +1837,7 @@ pages.debitosLanche=async function({status}={}){
     ${painelLancamento}
     ${painelPix}
     ${tabBar}
-    <div class="panel">
-      <div class="panel-head"><span class="panel-title">${statusAtivo==='pendentes'?'Pendências':statusAtivo==='pagos'?'Pagos':'Todos os débitos'}</span><span style="font-size:12px;color:var(--gray-500)">${filtrados.length}${statusAtivo==='pendentes'?` · Total pendente: ${fmtBRL(totalPendente)}`:''}</span></div>
-      <div class="panel-body" style="padding-bottom:0">
-        <input id="lanche-search" placeholder="Buscar por nome ou item…" value="${esc(getFilter('lanche-search'))}" oninput="saveFilters(['lanche-search']);nav('debitosLanche',{status:'${statusAtivo}'})" style="width:100%;max-width:320px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;margin-bottom:14px">
-      </div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Nome</th><th>Item</th><th>Valor</th><th>Data</th><th>Status</th><th>Ações</th></tr></thead>
-        <tbody>${filtrados.length?filtrados.map(d=>{
-          const numFmt=snackDebtWppNumero(d.phone||'');
-          return `<tr>
-            <td><strong>${esc(d.person_name)}</strong></td>
-            <td>${esc(d.item)}</td>
-            <td>${fmtBRL(d.amount)}</td>
-            <td>${new Date(d.debt_date+'T00:00:00').toLocaleDateString('pt-BR')}</td>
-            <td><button class="badge ${d.status==='pago'?'badge-success':'badge-warning'}" style="border:none;cursor:pointer" onclick="toggleStatusDebitoLanche('${d.id}','${d.status}')" title="Clique pra alternar">${d.status==='pago'?'Pago':'Pendente'}</button></td>
-            <td>
-              ${d.status==='pendente'&&numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="cobrarDebitoLanche('${esc(d.person_name)}',${d.amount},'${numFmt}')" title="Cobrar via WhatsApp"><i class="fab fa-whatsapp"></i> Cobrar</button>`:''}
-              ${d.status==='pendente'?`<button class="btn btn-default btn-sm" onclick="toggleStatusDebitoLanche('${d.id}','${d.status}')" title="Dar baixa"><i class="fa fa-check"></i> Baixar</button>`:''}
-            </td>
-          </tr>`;
-        }).join(''):'<tr><td colspan="6"><div class="empty-state"><i class="fa fa-utensils"></i>Nenhum débito encontrado</div></td></tr>'}
-        </tbody>
-      </table></div>
-    </div>
+    ${statusAtivo==='relatorio'?painelRelatorio:painelListaPadrao}
   `);
 
   if(cfg.chave){renderQrPix('snack-pix-qr',montarPayloadPix(cfg));}
@@ -2173,7 +2280,7 @@ pages.students=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Lista de alunos</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="5">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="6">Ações</th></tr></thead>
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
@@ -2187,6 +2294,7 @@ pages.students=async function({view,id}={}){
               <td><button class="btn-icon" onclick="nav('students',{view:'frequencia',id:'${s.id}'})" title="Histórico de frequência"><i class="fa fa-calendar-check"></i></button></td>
               <td><button class="btn-icon" onclick="nav('students',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
               <td><button class="btn-icon" onclick="imprimirRelatorioAluno('${s.id}')" title="Imprimir relatório"><i class="fa fa-file-pdf"></i></button></td>
+              <td><button class="btn-icon" onclick="imprimirContratoAluno('${s.id}')" title="Imprimir contrato"><i class="fa fa-file-contract"></i></button></td>
               <td><button class="btn-icon" style="color:var(--brand)" onclick="gerarLinkPortal('${s.id}')" title="Link do portal do responsável"><i class="fa fa-user-shield"></i></button></td>
               <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('students','${s.id}','students')"><i class="fa fa-trash"></i></button></td>
             </tr>`).join(''):`<tr><td colspan="13"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
@@ -2309,6 +2417,7 @@ async function studentForm(id){
       <div class="panel-footer">
         <button class="btn btn-default" onclick="nav('students')">Cancelar</button>
         ${id?`<button class="btn btn-default" onclick="imprimirRelatorioAluno('${id}')"><i class="fa fa-file-pdf"></i> Imprimir Relatório</button>`:''}
+        ${id?`<button class="btn btn-default" onclick="imprimirContratoAluno('${id}')"><i class="fa fa-file-contract"></i> Imprimir Contrato</button>`:''}
         <button class="btn btn-primary" onclick="saveStudent('${id||''}')"><i class="fa fa-save"></i> ${id?'Atualizar':'Adicionar'}</button>
       </div>
     </div>
@@ -2321,6 +2430,19 @@ async function saveStudent(id){
   const doj=$('f-doj').value;
   const mobile=$('f-mobile').value.trim();
   if(!fn||!ln||!doj||!mobile){showAlert('page-alert','Preencha os campos obrigatórios.','danger');return;}
+  const dob=$('f-dob').value;
+  const parentName=$('f-parent-name').value.trim();
+  const parentCpf=$('f-parent-cpf').value.trim();
+  if(dob){
+    const hoje=new Date(),nasc=new Date(dob+'T00:00:00');
+    let idade=hoje.getFullYear()-nasc.getFullYear();
+    const aindaNaoFezAniversario=(hoje.getMonth()<nasc.getMonth())||(hoje.getMonth()===nasc.getMonth()&&hoje.getDate()<nasc.getDate());
+    if(aindaNaoFezAniversario) idade--;
+    if(idade<18&&(!parentName||!parentCpf)){
+      showAlert('page-alert','Aluno menor de idade: nome e CPF do responsável são obrigatórios (seção "Dados do Responsável").','danger');
+      return;
+    }
+  }
   const novaTurmaId=$('f-class').value||null;
   let turmaAnteriorId=null;
   if(id){
@@ -5167,6 +5289,50 @@ function calcularIdade(dataNasc){
   const m=hoje.getMonth()-nasc.getMonth();
   if(m<0||(m===0&&hoje.getDate()<nasc.getDate())) idade--;
   return idade;
+}
+
+// Imprime o contrato preenchido do aluno: usa o documento mais recente
+// gerado pra ele (prioriza um já assinado) e reaproveita o mesmo texto
+// (buildContractHtml) e mesma tela usados na assinatura eletrônica.
+async function imprimirContratoAluno(id){
+  const win=window.open('','_blank');
+  if(!win){alert('Não foi possível abrir a janela de impressão. Verifique se o navegador está bloqueando pop-ups.');return;}
+  win.document.write('<p style="font-family:sans-serif;padding:40px">Gerando contrato...</p>');
+
+  const{data:docs=[],error}=await sb.rpc('listar_documentos_assinatura',{p_student_id:id});
+  if(error){win.close();alert('Erro ao buscar contratos: '+error.message);return;}
+  const doc=docs.find(d=>d.status==='assinado')||docs[0];
+  if(!doc){
+    win.close();
+    alert('Esse aluno ainda não tem nenhum contrato gerado. Gere o link de assinatura primeiro na aba Documentos.');
+    return;
+  }
+
+  const nomeAluno=`${doc.first_name} ${doc.last_name}`;
+  const corpoContrato=buildContractHtml(doc.document_type,nomeAluno);
+  const assinaturaHtml=doc.status==='assinado'?`
+    <h4>Assinatura eletrônica registrada</h4>
+    <p><strong>Responsável:</strong> ${esc(doc.signer_name)||'—'} — CPF ${esc(doc.signer_cpf)||'—'}</p>
+    <p><strong>Assinado em:</strong> ${new Date(doc.signed_at).toLocaleString('pt-BR')} — IP ${esc(doc.ip_address)||'—'}</p>
+  `:`<p style="color:#b00020"><strong>Documento ainda não assinado eletronicamente</strong> (status: ${esc(DOC_STATUS_LABELS[doc.status]||doc.status)}). Este impresso serve como minuta pra colher assinatura física, se necessário.</p>`;
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Contrato — ${esc(nomeAluno)}</title>
+    <style>
+      body{font-family:Arial,Helvetica,sans-serif;font-size:12.5px;color:#222;max-width:800px;margin:24px auto;line-height:1.5;padding:0 16px}
+      .sign-doc-title{font-weight:bold;text-align:center;font-size:14px;margin-bottom:10px}
+      h4{margin:14px 0 6px;font-size:13px;border-left:4px solid #D4A017;padding-left:8px}
+      p{margin:0 0 8px}
+      .help-text{color:#777;font-size:11px}
+      .no-print{text-align:center;margin-top:24px}
+      @media print{.no-print{display:none}}
+    </style></head><body>
+    ${corpoContrato}
+    ${assinaturaHtml}
+    <div class="no-print"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">Imprimir / Salvar PDF</button></div>
+  </body></html>`;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
 }
 
 async function imprimirRelatorioAluno(id){
