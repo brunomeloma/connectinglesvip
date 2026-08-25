@@ -1235,6 +1235,9 @@
       <div class="card">
         <h2>Orientação de TCC II <span class="pill" style="text-transform:none;font-weight:600">${state.alunosTcc.length}</span></h2>
         <div class="field"><input id="a-busca" placeholder="Buscar por nome ou tema..." value="${esc(state.filtroAlunosTcc.busca)}"></div>
+        <div class="toggle-group" style="margin-bottom:10px">
+          <button type="button" class="btn" id="a-relatorio-geral" style="background:var(--surface-sunken);color:var(--text)">${ICONS.fileText} Relatório geral (${rows.length})</button>
+        </div>
         ${rows.length===0 ? `<p class="empty">Nenhum aluno encontrado.</p>` : `
         <div class="list">
           ${rows.map(a => `
@@ -1321,6 +1324,69 @@
     if (!win) { alert('Não foi possível abrir o relatório — verifique se o navegador está bloqueando pop-ups.'); return; }
     win.document.open();
     win.document.write(buildRelatorioTccHtml(a));
+    win.document.close();
+  }
+
+  function buildRelatorioGeralTccHtml(alunos){
+    const geradoEm = new Date().toLocaleString('pt-BR');
+    const linhas = alunos.map((a, i) => `
+      <article class="aluno" ${i > 0 ? 'style="page-break-inside:avoid"' : ''}>
+        <h2>${i+1}. ${esc(a.nome)}</h2>
+        <div class="campo"><span class="rotulo">Período:</span> ${esc(a.periodo) || 'Não informado'}</div>
+        <div class="campo"><span class="rotulo">E-mail:</span> ${esc(a.email) || 'Não informado'}</div>
+        <div class="campo"><span class="rotulo">Tema do TCC:</span></div>
+        <div class="tema">${esc(a.tema) || 'Tema ainda não informado.'}</div>
+      </article>`).join('');
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório geral — Orientação de TCC II</title>
+<style>
+  @page { margin: 2.2cm; }
+  body{ font-family: Georgia, 'Times New Roman', serif; color:#242220; max-width:760px; margin:0 auto; padding:32px 24px; line-height:1.5; }
+  header{ border-bottom:2px solid #c49a3d; padding-bottom:16px; margin-bottom:24px; }
+  header h1{ font-size:1.4rem; margin:0 0 4px; }
+  header p{ margin:0; color:#736C5F; font-size:.9rem; }
+  .resumo{ margin-bottom:28px; font-size:.95rem; color:#736C5F; }
+  .aluno{ margin-bottom:26px; padding-bottom:18px; border-bottom:1px solid #E3DFD5; }
+  .aluno h2{ font-size:1.05rem; margin:0 0 8px; }
+  .campo{ font-size:.92rem; margin-bottom:3px; }
+  .campo .rotulo{ font-weight:600; color:#736C5F; }
+  .tema{ font-size:.95rem; white-space:pre-wrap; margin-top:2px; }
+  footer{ margin-top:32px; padding-top:16px; border-top:1px solid #E3DFD5; font-size:.78rem; color:#736C5F; display:flex; justify-content:space-between; }
+  .no-print{ margin-top:24px; text-align:center; }
+  .btn{ font-family: inherit; padding:10px 18px; border-radius:8px; border:1px solid #c49a3d; background:#c49a3d; color:#fff; font-size:.9rem; cursor:pointer; }
+  @media print{ .no-print{ display:none; } body{ padding:0; } }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Relatório Geral de Orientação de TCC II</h1>
+    <p>Faculdade de Educação Superior do Tocantins — FEST · Curso de Direito</p>
+  </header>
+
+  <div class="resumo">${alunos.length} aluno${alunos.length===1?'':'s'} listado${alunos.length===1?'':'s'}.</div>
+
+  ${linhas || '<p>Nenhum aluno encontrado.</p>'}
+
+  <footer>
+    <span>Painel da Coordenação — FEST</span>
+    <span>Relatório gerado em ${esc(geradoEm)}</span>
+  </footer>
+
+  <div class="no-print">
+    <button class="btn" onclick="window.print()">Imprimir / Salvar como PDF</button>
+  </div>
+</body>
+</html>`;
+  }
+
+  function abrirRelatorioGeralTcc(alunos){
+    const win = window.open('', '_blank');
+    if (!win) { alert('Não foi possível abrir o relatório — verifique se o navegador está bloqueando pop-ups.'); return; }
+    win.document.open();
+    win.document.write(buildRelatorioGeralTccHtml(alunos));
     win.document.close();
   }
 
@@ -1965,6 +2031,9 @@
       document.getElementById('a-busca').addEventListener('input', e=>{
         state.filtroAlunosTcc.busca = e.target.value;
         renderAll();
+      });
+      document.getElementById('a-relatorio-geral').addEventListener('click', ()=>{
+        abrirRelatorioGeralTcc(alunosTccFiltrados());
       });
       panel_query('[data-relatorio-alunotcc]').forEach(b=>b.addEventListener('click', ()=>{
         const item = state.alunosTcc.find(a => String(a.id) === b.dataset.relatorioAlunotcc);
