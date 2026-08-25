@@ -1249,6 +1249,7 @@
               </div>
               <div style="display:flex;gap:2px">
                 ${a.email ? `<a class="icon-btn mail-row" href="mailto:${esc(a.email)}?subject=${encodeURIComponent('Orientação de TCC II')}" aria-label="Enviar e-mail para ${esc(a.nome)}" title="Enviar e-mail">${ICONS.mail}</a>` : ''}
+                <button class="icon-btn" data-relatorio-alunotcc="${a.id}" aria-label="Gerar relatório de ${esc(a.nome)}" title="Gerar relatório">${ICONS.fileText}</button>
                 <button class="icon-btn" data-edit-alunotcc="${a.id}" aria-label="Editar aluno">${ICONS.edit}</button>
                 <button class="icon-btn" data-del-alunotcc="${a.id}" aria-label="Remover aluno">${ICONS.trash}</button>
               </div>
@@ -1256,6 +1257,71 @@
         </div>`}
       </div>
     </div>`;
+  }
+
+  function buildRelatorioTccHtml(a){
+    const geradoEm = new Date().toLocaleString('pt-BR');
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório de TCC — ${esc(a.nome)}</title>
+<style>
+  @page { margin: 2.2cm; }
+  body{ font-family: Georgia, 'Times New Roman', serif; color:#242220; max-width:720px; margin:0 auto; padding:32px 24px; line-height:1.5; }
+  header{ border-bottom:2px solid #c49a3d; padding-bottom:16px; margin-bottom:24px; }
+  header h1{ font-size:1.4rem; margin:0 0 4px; }
+  header p{ margin:0; color:#736C5F; font-size:.9rem; }
+  h2{ font-size:1rem; text-transform:uppercase; letter-spacing:.05em; color:#736C5F; margin:28px 0 6px; border-bottom:1px solid #E3DFD5; padding-bottom:4px; }
+  .campo{ margin-bottom:10px; }
+  .campo .rotulo{ font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; color:#736C5F; }
+  .campo .valor{ font-size:1.02rem; margin-top:2px; }
+  .tema{ font-size:1.05rem; white-space:pre-wrap; }
+  footer{ margin-top:48px; padding-top:16px; border-top:1px solid #E3DFD5; font-size:.78rem; color:#736C5F; display:flex; justify-content:space-between; }
+  .assinatura{ margin-top:56px; text-align:center; }
+  .assinatura .linha{ border-top:1px solid #242220; width:280px; margin:0 auto 6px; }
+  .no-print{ margin-top:24px; }
+  .btn{ font-family: inherit; padding:10px 18px; border-radius:8px; border:1px solid #c49a3d; background:#c49a3d; color:#fff; font-size:.9rem; cursor:pointer; }
+  @media print{ .no-print{ display:none; } body{ padding:0; } }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Relatório de Orientação de TCC II</h1>
+    <p>Faculdade de Educação Superior do Tocantins — FEST · Curso de Direito</p>
+  </header>
+
+  <h2>Dados do Aluno</h2>
+  <div class="campo"><div class="rotulo">Nome completo</div><div class="valor">${esc(a.nome)}</div></div>
+  <div class="campo"><div class="rotulo">Período</div><div class="valor">${esc(a.periodo) || 'Não informado'}</div></div>
+  <div class="campo"><div class="rotulo">E-mail</div><div class="valor">${esc(a.email) || 'Não informado'}</div></div>
+
+  <h2>Tema do Trabalho de Conclusão de Curso</h2>
+  <div class="tema">${esc(a.tema) || 'Tema ainda não informado.'}</div>
+
+  <div class="assinatura">
+    <div class="linha"></div>
+    <div>Assinatura da Coordenação</div>
+  </div>
+
+  <footer>
+    <span>Painel da Coordenação — FEST</span>
+    <span>Relatório gerado em ${esc(geradoEm)}</span>
+  </footer>
+
+  <div class="no-print" style="text-align:center">
+    <button class="btn" onclick="window.print()">Imprimir / Salvar como PDF</button>
+  </div>
+</body>
+</html>`;
+  }
+
+  function abrirRelatorioTcc(a){
+    const win = window.open('', '_blank');
+    if (!win) { alert('Não foi possível abrir o relatório — verifique se o navegador está bloqueando pop-ups.'); return; }
+    win.document.open();
+    win.document.write(buildRelatorioTccHtml(a));
+    win.document.close();
   }
 
   function renderAgenda(){
@@ -1900,6 +1966,11 @@
         state.filtroAlunosTcc.busca = e.target.value;
         renderAll();
       });
+      panel_query('[data-relatorio-alunotcc]').forEach(b=>b.addEventListener('click', ()=>{
+        const item = state.alunosTcc.find(a => String(a.id) === b.dataset.relatorioAlunotcc);
+        if (!item) return;
+        abrirRelatorioTcc(item);
+      }));
       panel_query('[data-edit-alunotcc]').forEach(b=>b.addEventListener('click', ()=>{
         const item = state.alunosTcc.find(a => String(a.id) === b.dataset.editAlunotcc);
         if (!item) return;
