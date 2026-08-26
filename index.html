@@ -2420,46 +2420,42 @@ async function studentForm(id){
     <div class="page-title"><i class="fa fa-user-graduate"></i> ${id?'Editar':'Adicionar'} aluno</div>
     <div id="page-alert" class="alert"></div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">${id?'Atualizar':'Novo'} aluno</span></div>
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-user" style="color:var(--brand)"></i> 1. Dados Pessoais do Aluno</span></div>
       <div class="panel-body">
         <div class="form-grid">
           <div>
             <div class="field"><label>Primeiro nome <span class="required">*</span></label><input id="f-fn" value="${esc(s.first_name)}"></div>
             <div class="field"><label>Sobrenome <span class="required">*</span></label><input id="f-ln" value="${esc(s.last_name)}"></div>
             <div class="field"><label>Gênero</label><select id="f-gender"><option value="">Selecione</option><option value="male" ${s.gender==='male'?'selected':''}>Masculino</option><option value="female" ${s.gender==='female'?'selected':''}>Feminino</option></select></div>
-            <div class="field"><label>Nascimento</label><input id="f-dob" type="date" value="${s.date_birth||''}"></div>
-            <div class="field"><label>Data matrícula <span class="required">*</span></label><input id="f-doj" type="date" value="${s.date_joining||''}"></div>
-            <div class="field"><label>Celular <span class="required">*</span></label><input id="f-mobile" value="${esc(s.mobile_number)}"></div>
+            <div class="field"><label>Data de nascimento</label><input id="f-dob" type="date" value="${s.date_birth||''}"></div>
             <div class="field"><label>CPF do aluno</label><input id="f-cpf" value="${esc(s.cpf)}"></div>
             <div class="field"><label>RG do aluno</label><input id="f-rg" value="${esc(s.rg)}"></div>
+            <div class="field"><label>Telefone <span class="required">*</span></label><input id="f-mobile" value="${esc(s.mobile_number)}"></div>
             <div class="field"><label>E-mail do aluno</label><input id="f-email" type="email" value="${esc(s.email)}"></div>
           </div>
           <div>
+            <div class="field"><label>Pessoa para recado (nome)</label><input id="f-recado-nome" value="${esc(s.contato_recado_nome)}"></div>
+            <div class="field"><label>Telefone para recado</label><input id="f-recado-tel" value="${esc(s.contato_recado_telefone)}"></div>
             <div class="field"><label>Endereço</label><textarea id="f-address">${esc(s.address)}</textarea></div>
             <div class="field"><label>CEP</label><input id="f-cep" value="${esc(s.cep)}"></div>
-            <div class="field"><label>Escola</label><select id="f-school"><option value="">Nenhuma</option>${schoolOpts}</select></div>
-            <div class="field"><label>Turma</label><select id="f-class"><option value="">Nenhuma</option>${classOpts}</select></div>
-            <div class="field"><label>Modalidade</label><select id="f-modalidade"><option value="">Selecione</option>${modalidadeOpts}</select></div>
-            <div class="field"><label>Nível</label><select id="f-level">${nivelOptions(s.level)}</select></div>
             <div class="field"><label>Observação</label><textarea id="f-note">${esc(s.note)}</textarea></div>
-            <div class="field"><label>Status</label><select id="f-status"><option value="true" ${s.status!==false?'selected':''}>Ativo</option><option value="false" ${s.status===false?'selected':''}>Inativo</option></select></div>
           </div>
         </div>
       </div>
     </div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title"><i class="fa fa-user-shield" style="color:var(--brand)"></i> Dados do Responsável</span></div>
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-user-shield" style="color:var(--brand)"></i> 2. Dados do Responsável</span></div>
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Nome do responsável</label><input id="f-parent-name" value="${esc(s.parent_name)}"></div>
+            <div class="field"><label>Nome completo do responsável</label><input id="f-parent-name" value="${esc(s.parent_name)}"></div>
             <div class="field"><label>CPF do responsável</label><input id="f-parent-cpf" value="${esc(s.parent_cpf)}"></div>
             <div class="field"><label>RG do responsável</label><input id="f-parent-rg" value="${esc(s.parent_rg)}"></div>
             <div class="field"><label>Telefone / WhatsApp do responsável</label><input id="f-parent-mobile" value="${esc(s.parent_mobile)}"></div>
           </div>
           <div>
             <div class="field"><label>E-mail do responsável</label><input id="f-parent-email" type="email" value="${esc(s.parent_email)}"></div>
-            <div class="field"><label>Endereço</label><textarea id="f-parent-address">${esc(s.parent_address)}</textarea></div>
+            <div class="field"><label>Endereço do responsável</label><textarea id="f-parent-address">${esc(s.parent_address)}</textarea></div>
             <div class="field"><label>Comprovante de residência</label><input id="f-parent-comprovante" type="file" accept="image/*,.pdf">
               <input id="f-parent-comprovante-link" placeholder="Ou cole um link do comprovante (opcional)" style="margin-top:6px">
             </div>
@@ -2470,17 +2466,32 @@ async function studentForm(id){
       </div>
     </div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title"><i class="fa fa-phone-volume" style="color:var(--brand)"></i> Pessoa para recado / Financeiro</span></div>
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-graduation-cap" style="color:var(--brand)"></i> 3. Informações Acadêmicas</span></div>
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Pessoa para recado (nome)</label><input id="f-recado-nome" value="${esc(s.contato_recado_nome)}"></div>
-            <div class="field"><label>Telefone de quem vai receber o recado</label><input id="f-recado-tel" value="${esc(s.contato_recado_telefone)}"></div>
+            <div class="field"><label>Turma</label><select id="f-class"><option value="">Nenhuma</option>${classOpts}</select></div>
+            <div class="field"><label>Escola / Unidade</label><select id="f-school"><option value="">Nenhuma</option>${schoolOpts}</select></div>
           </div>
           <div>
-            <div class="field"><label>Mensalidade (R$)</label><input id="f-mensalidade-valor" type="number" step="0.01" min="0" value="${s.mensalidade_valor??''}"></div>
-            <div class="field"><label>Dia de vencimento</label><input id="f-mensalidade-venc" type="number" min="1" max="31" value="${s.mensalidade_vencimento_dia??''}"></div>
-            <div class="field"><label>Material didático</label><select id="f-material-incluso"><option value="">Não informado</option><option value="true" ${s.material_incluso===true?'selected':''}>Incluso</option><option value="false" ${s.material_incluso===false?'selected':''}>Não incluso</option></select></div>
+            <div class="field"><label>Modalidade</label><select id="f-modalidade"><option value="">Selecione</option>${modalidadeOpts}</select></div>
+            <div class="field"><label>Nível</label><select id="f-level">${nivelOptions(s.level)}</select></div>
+            <div class="field"><label>Status</label><select id="f-status"><option value="true" ${s.status!==false?'selected':''}>Ativo</option><option value="false" ${s.status===false?'selected':''}>Inativo</option></select></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-file-contract" style="color:var(--brand)"></i> 4. Informações do Contrato / Financeiro</span></div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div>
+            <div class="field"><label>Data da Matrícula <span class="required">*</span></label><input id="f-doj" type="date" value="${s.date_joining||''}"></div>
+            <div class="field"><label>Valor da Mensalidade (R$)</label><input id="f-mensalidade-valor" type="number" step="0.01" min="0" value="${s.mensalidade_valor??''}"></div>
+          </div>
+          <div>
+            <div class="field"><label>Dia de Vencimento</label><input id="f-mensalidade-venc" type="number" min="1" max="31" placeholder="Ex: 10" value="${s.mensalidade_vencimento_dia??''}"></div>
+            <div class="field"><label>Material Incluso</label><select id="f-material-incluso"><option value="">Não informado</option><option value="true" ${s.material_incluso===true?'selected':''}>Sim</option><option value="false" ${s.material_incluso===false?'selected':''}>Não</option></select></div>
           </div>
         </div>
       </div>
