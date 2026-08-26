@@ -1849,17 +1849,36 @@ pages.debitosLanche=async function({status}={}){
 // ============================
 const FALTA_MSG='Olá, bom dia😊❤️\nEspero que você esteja bem! Notamos a ausência de {nome} na aula de {dia} e sentimos muito a sua falta.😊\nQueremos garantir que você não perca o conteúdo que foi abordado em sala de aula, para que você consiga acompanhar o que foi ensinado, aqui estão as atividades que realizamos: *Atividade trabalhada em sala- pág. {pagina_sala}{atividade_extra_txt}* \n*atividade de casa: pág. {pagina_casa}*';
 
+let _faltaAnexos={pdfUrl:null,audioUrl:null};
+
+async function uploadFaltaAnexo(tipo){
+  const input=$(tipo==='pdf'?'falta-pdf-file':'falta-audio-file');
+  const file=input?.files[0];
+  if(!file){showAlert('page-alert','Selecione um arquivo primeiro.','danger');return;}
+  const ext=file.name.split('.').pop();
+  const path=tipo+'-'+Date.now()+'.'+ext;
+  const{error}=await sb.storage.from('aula-conteudo').upload(path,file,{upsert:true});
+  if(error){showAlert('page-alert','Erro ao enviar arquivo: '+error.message,'danger');return;}
+  const{data}=sb.storage.from('aula-conteudo').getPublicUrl(path);
+  if(tipo==='pdf') _faltaAnexos.pdfUrl=data.publicUrl; else _faltaAnexos.audioUrl=data.publicUrl;
+  const status=$(tipo==='pdf'?'falta-pdf-status':'falta-audio-status');
+  if(status) status.innerHTML=`<i class="fa fa-check-circle" style="color:var(--success)"></i> Anexado — <a href="${data.publicUrl}" target="_blank">ver arquivo</a>`;
+  showAlert('page-alert','Arquivo salvo no sistema.','success');
+}
+
 function enviarAvisoFalta(nome,numero){
   const dia=$('falta-dia').value.trim()||'hoje';
   const paginaSala=$('falta-pag-sala').value.trim()||'—';
   const atividadeExtra=$('falta-ativ-extra').value.trim();
   const paginaCasa=$('falta-pag-casa').value.trim()||'—';
-  const texto=FALTA_MSG
+  let texto=FALTA_MSG
     .replace(/\{nome\}/g,nome)
     .replace(/\{dia\}/g,dia)
     .replace(/\{pagina_sala\}/g,paginaSala)
     .replace(/\{atividade_extra_txt\}/g,atividadeExtra?' e atividade extra: '+atividadeExtra:'')
     .replace(/\{pagina_casa\}/g,paginaCasa);
+  if(_faltaAnexos.pdfUrl) texto+='\n\n📎 Atividade em PDF: '+_faltaAnexos.pdfUrl;
+  if(_faltaAnexos.audioUrl) texto+='\n🎧 Áudio explicativo: '+_faltaAnexos.audioUrl;
   window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(texto),'_blank');
 }
 
@@ -1869,6 +1888,7 @@ pages.avisarFalta=async function(){
   const search=getFilter('falta-search').toLowerCase();
   const diasSemana=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
   const diaHoje=diasSemana[new Date().getDay()];
+  _faltaAnexos={pdfUrl:null,audioUrl:null};
 
   const{data:alunos=[]}=await sb.rpc('get_alunos_ativos_basico');
   const filtrados=alunos.filter(a=>{
@@ -1887,6 +1907,20 @@ pages.avisarFalta=async function(){
         <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Página trabalhada em sala</label><input id="falta-pag-sala" placeholder="Ex: 38" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:140px"></div>
         <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Atividade extra (opcional)</label><input id="falta-ativ-extra" placeholder="Ex: ficha de vocabulário" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:220px"></div>
         <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Página de casa</label><input id="falta-pag-casa" placeholder="Ex: 39" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:140px"></div>
+      </div>
+      <div class="panel-body" style="display:flex;gap:20px;flex-wrap:wrap;border-top:1px solid var(--gray-200)">
+        <div>
+          <label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Anexar PDF da atividade</label>
+          <input id="falta-pdf-file" type="file" accept="application/pdf" style="font-size:12px">
+          <button class="btn btn-default btn-sm" onclick="uploadFaltaAnexo('pdf')" style="margin-left:6px"><i class="fa fa-upload"></i> Enviar</button>
+          <div id="falta-pdf-status" style="font-size:12px;margin-top:4px;color:var(--gray-500)"></div>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Anexar áudio explicativo</label>
+          <input id="falta-audio-file" type="file" accept="audio/*" style="font-size:12px">
+          <button class="btn btn-default btn-sm" onclick="uploadFaltaAnexo('audio')" style="margin-left:6px"><i class="fa fa-upload"></i> Enviar</button>
+          <div id="falta-audio-status" style="font-size:12px;margin-top:4px;color:var(--gray-500)"></div>
+        </div>
       </div>
     </div>
     <div class="panel">

@@ -2902,3 +2902,20 @@ AS $$ BEGIN
     WHERE s.status = true
     ORDER BY s.first_name;
 END; $$;
+
+-- #####################################################################
+-- 40. ANEXO DE PDF/ÁUDIO NO AVISO DE FALTA
+-- #####################################################################
+-- Bucket público (ao contrário de "comprovantes"): o link do arquivo é
+-- enviado pra fora, direto pro responsável via WhatsApp, então precisa
+-- abrir sem estar logado no sistema. Upload continua restrito à equipe.
+
+INSERT INTO storage.buckets (id, name, public) VALUES ('aula-conteudo', 'aula-conteudo', true)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "aula_conteudo_select" ON storage.objects;
+DROP POLICY IF EXISTS "aula_conteudo_insert" ON storage.objects;
+DROP POLICY IF EXISTS "aula_conteudo_delete" ON storage.objects;
+CREATE POLICY "aula_conteudo_select" ON storage.objects FOR SELECT USING (bucket_id='aula-conteudo');
+CREATE POLICY "aula_conteudo_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id='aula-conteudo' AND has_role(ARRAY['super_admin','direcao','secretaria','captacao']));
+CREATE POLICY "aula_conteudo_delete" ON storage.objects FOR DELETE USING (bucket_id='aula-conteudo' AND has_role(ARRAY['super_admin','direcao','secretaria','captacao']));
