@@ -2919,3 +2919,21 @@ DROP POLICY IF EXISTS "aula_conteudo_delete" ON storage.objects;
 CREATE POLICY "aula_conteudo_select" ON storage.objects FOR SELECT USING (bucket_id='aula-conteudo');
 CREATE POLICY "aula_conteudo_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id='aula-conteudo' AND has_role(ARRAY['super_admin','direcao','secretaria','captacao']));
 CREATE POLICY "aula_conteudo_delete" ON storage.objects FOR DELETE USING (bucket_id='aula-conteudo' AND has_role(ARRAY['super_admin','direcao','secretaria','captacao']));
+
+-- #####################################################################
+-- 41. RESTRINGE TIPO E TAMANHO DE ARQUIVO NOS BUCKETS DE UPLOAD
+-- #####################################################################
+-- Antes, qualquer tipo/tamanho de arquivo era aceito (o "accept" do
+-- <input type="file"> no front-end é só cosmético, não impede nada se
+-- alguém chamar a API de upload diretamente). Agora o próprio Storage
+-- do Supabase rejeita antes de gravar.
+
+UPDATE storage.buckets SET
+  file_size_limit = 10485760, -- 10MB
+  allowed_mime_types = ARRAY['image/jpeg','image/png','image/webp','application/pdf']
+WHERE id = 'comprovantes';
+
+UPDATE storage.buckets SET
+  file_size_limit = 20971520, -- 20MB
+  allowed_mime_types = ARRAY['application/pdf','audio/mpeg','audio/mp4','audio/ogg','audio/wav','audio/webm','audio/x-m4a','audio/aac']
+WHERE id = 'aula-conteudo';
