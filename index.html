@@ -523,6 +523,7 @@ let currentUser = null;
     <div class="sb-item no-captacao" data-page="relatorios" onclick="nav('relatorios')"><i class="fa fa-chart-bar"></i> Relatórios</div>
     <div class="sb-item no-professor" data-page="inativos" onclick="nav('inativos')"><i class="fa fa-user-slash"></i> Inativos</div>
     <div class="sb-item no-professor" data-page="debitosLanche" onclick="nav('debitosLanche')"><i class="fa fa-utensils"></i> Débitos de Lanche</div>
+    <div class="sb-item no-professor" data-page="avisarFalta" onclick="nav('avisarFalta')"><i class="fa fa-user-clock"></i> Aviso de Falta</div>
     <div class="sb-item captacao-item" data-page="captacao" onclick="nav('captacao')"><i class="fa fa-bullhorn"></i> Captação</div>
     <div class="sb-logout">
       <div class="sb-item" onclick="doLogout()"><i class="fa fa-sign-out-alt"></i> Sair</div>
@@ -711,7 +712,7 @@ function setActive(page){
   if(el)el.classList.add('active');
 }
 function nav(page, params={}){
-  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='inativos'&&page!=='debitosLanche'){page='captacao';params={};}
+  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='inativos'&&page!=='debitosLanche'&&page!=='avisarFalta'){page='captacao';params={};}
   setActive(page);
   pages[page]&&pages[page](params);
   closeSidebar();
@@ -1843,6 +1844,53 @@ pages.debitosLanche=async function({status}={}){
   if(cfg.chave){renderQrPix('snack-pix-qr',montarPayloadPix(cfg));}
 };
 
+// ============================
+// AVISO DE FALTA — mensagem rápida pra quem faltou hoje
+// ============================
+const FALTA_MSG='Olá, {nome}! 👋\nNotamos que você não compareceu à aula de inglês hoje na *Connect Inglês VIP*. Está tudo bem?\nSe precisar reagendar ou avisar algum motivo, é só nos chamar por aqui. Estamos à disposição!';
+
+function enviarAvisoFalta(nome,numero){
+  const texto=FALTA_MSG.replace(/\{nome\}/g,nome);
+  window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(texto),'_blank');
+}
+
+pages.avisarFalta=async function(){
+  if(!canManageBilling()&&!isAdmin()&&currentUser?.role!=='captacao'){nav('dashboard');return;}
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const search=getFilter('falta-search').toLowerCase();
+
+  const{data:alunos=[]}=await sb.rpc('get_alunos_ativos_basico');
+  const filtrados=alunos.filter(a=>{
+    if(!search) return true;
+    return (a.first_name+' '+a.last_name).toLowerCase().includes(search);
+  });
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Aviso de Falta</span></div>
+    <div class="page-title"><i class="fa fa-user-clock"></i> Aviso de Falta</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Alunos ativos</span><span style="font-size:12px;color:var(--gray-500)">${filtrados.length} de ${alunos.length}</span></div>
+      <div class="panel-body" style="padding-bottom:0">
+        <input id="falta-search" placeholder="Buscar pelo nome do aluno…" value="${esc(getFilter('falta-search'))}" oninput="saveFilters(['falta-search']);nav('avisarFalta')" style="width:100%;max-width:320px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;margin-bottom:14px">
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Nome</th><th>Telefone</th><th>Ações</th></tr></thead>
+        <tbody>${filtrados.length?filtrados.map(a=>{
+          const numFmt=snackDebtWppNumero(a.whatsapp||a.mobile_number||'');
+          const nomeCompleto=`${a.first_name} ${a.last_name}`;
+          return `<tr>
+            <td><strong>${esc(nomeCompleto)}</strong></td>
+            <td>${esc(a.whatsapp||a.mobile_number)||'Sem telefone'}</td>
+            <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarAvisoFalta('${esc(nomeCompleto)}','${numFmt}')" title="Avisar falta via WhatsApp"><i class="fab fa-whatsapp"></i> Avisar falta</button>`:'—'}</td>
+          </tr>`;
+        }).join(''):'<tr><td colspan="3"><div class="empty-state"><i class="fa fa-user-clock"></i>Nenhum aluno encontrado</div></td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+  `);
+};
+
 // --- SCHOOLS ---
 pages.schools=async function({view,id}={}){
   if(view==='form') return schoolForm(id);
@@ -2280,7 +2328,7 @@ pages.students=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Lista de alunos</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="6">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="8">Ações</th></tr></thead>
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
@@ -2295,6 +2343,8 @@ pages.students=async function({view,id}={}){
               <td><button class="btn-icon" onclick="nav('students',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
               <td><button class="btn-icon" onclick="imprimirRelatorioAluno('${s.id}')" title="Imprimir relatório"><i class="fa fa-file-pdf"></i></button></td>
               <td><button class="btn-icon" onclick="imprimirContratoAluno('${s.id}')" title="Imprimir contrato"><i class="fa fa-file-contract"></i></button></td>
+              <td><button class="btn-icon" onclick="imprimirFichaCadastro('${s.id}')" title="Imprimir ficha de cadastro"><i class="fa fa-id-card"></i></button></td>
+              <td><button class="btn-icon" onclick="imprimirCapaDossie('${s.id}')" title="Imprimir capa do dossiê"><i class="fa fa-folder-open"></i></button></td>
               <td><button class="btn-icon" style="color:var(--brand)" onclick="gerarLinkPortal('${s.id}')" title="Link do portal do responsável"><i class="fa fa-user-shield"></i></button></td>
               <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('students','${s.id}','students')"><i class="fa fa-trash"></i></button></td>
             </tr>`).join(''):`<tr><td colspan="13"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
@@ -2380,9 +2430,13 @@ async function studentForm(id){
             <div class="field"><label>Nascimento</label><input id="f-dob" type="date" value="${s.date_birth||''}"></div>
             <div class="field"><label>Data matrícula <span class="required">*</span></label><input id="f-doj" type="date" value="${s.date_joining||''}"></div>
             <div class="field"><label>Celular <span class="required">*</span></label><input id="f-mobile" value="${esc(s.mobile_number)}"></div>
-            <div class="field"><label>Endereço</label><textarea id="f-address">${esc(s.address)}</textarea></div>
+            <div class="field"><label>CPF do aluno</label><input id="f-cpf" value="${esc(s.cpf)}"></div>
+            <div class="field"><label>RG do aluno</label><input id="f-rg" value="${esc(s.rg)}"></div>
+            <div class="field"><label>E-mail do aluno</label><input id="f-email" type="email" value="${esc(s.email)}"></div>
           </div>
           <div>
+            <div class="field"><label>Endereço</label><textarea id="f-address">${esc(s.address)}</textarea></div>
+            <div class="field"><label>CEP</label><input id="f-cep" value="${esc(s.cep)}"></div>
             <div class="field"><label>Escola</label><select id="f-school"><option value="">Nenhuma</option>${schoolOpts}</select></div>
             <div class="field"><label>Turma</label><select id="f-class"><option value="">Nenhuma</option>${classOpts}</select></div>
             <div class="field"><label>Modalidade</label><select id="f-modalidade"><option value="">Selecione</option>${modalidadeOpts}</select></div>
@@ -2414,10 +2468,28 @@ async function studentForm(id){
           </div>
         </div>
       </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-phone-volume" style="color:var(--brand)"></i> Pessoa para recado / Financeiro</span></div>
+      <div class="panel-body">
+        <div class="form-grid">
+          <div>
+            <div class="field"><label>Pessoa para recado (nome)</label><input id="f-recado-nome" value="${esc(s.contato_recado_nome)}"></div>
+            <div class="field"><label>Telefone de quem vai receber o recado</label><input id="f-recado-tel" value="${esc(s.contato_recado_telefone)}"></div>
+          </div>
+          <div>
+            <div class="field"><label>Mensalidade (R$)</label><input id="f-mensalidade-valor" type="number" step="0.01" min="0" value="${s.mensalidade_valor??''}"></div>
+            <div class="field"><label>Dia de vencimento</label><input id="f-mensalidade-venc" type="number" min="1" max="31" value="${s.mensalidade_vencimento_dia??''}"></div>
+            <div class="field"><label>Material didático</label><select id="f-material-incluso"><option value="">Não informado</option><option value="true" ${s.material_incluso===true?'selected':''}>Incluso</option><option value="false" ${s.material_incluso===false?'selected':''}>Não incluso</option></select></div>
+          </div>
+        </div>
+      </div>
       <div class="panel-footer">
         <button class="btn btn-default" onclick="nav('students')">Cancelar</button>
         ${id?`<button class="btn btn-default" onclick="imprimirRelatorioAluno('${id}')"><i class="fa fa-file-pdf"></i> Imprimir Relatório</button>`:''}
         ${id?`<button class="btn btn-default" onclick="imprimirContratoAluno('${id}')"><i class="fa fa-file-contract"></i> Imprimir Contrato</button>`:''}
+        ${id?`<button class="btn btn-default" onclick="imprimirFichaCadastro('${id}')"><i class="fa fa-id-card"></i> Imprimir Ficha</button>`:''}
+        ${id?`<button class="btn btn-default" onclick="imprimirCapaDossie('${id}')"><i class="fa fa-folder-open"></i> Imprimir Capa</button>`:''}
         <button class="btn btn-primary" onclick="saveStudent('${id||''}')"><i class="fa fa-save"></i> ${id?'Atualizar':'Adicionar'}</button>
       </div>
     </div>
@@ -2468,6 +2540,15 @@ async function saveStudent(id){
     parent_email:$('f-parent-email').value||null,
     parent_address:$('f-parent-address').value||null,
     parent_notes:$('f-parent-notes').value||null,
+    cpf:$('f-cpf').value||null,
+    rg:$('f-rg').value||null,
+    email:$('f-email').value||null,
+    cep:$('f-cep').value||null,
+    contato_recado_nome:$('f-recado-nome').value||null,
+    contato_recado_telefone:$('f-recado-tel').value||null,
+    mensalidade_valor:$('f-mensalidade-valor').value?parseFloat($('f-mensalidade-valor').value):null,
+    mensalidade_vencimento_dia:$('f-mensalidade-venc').value?parseInt($('f-mensalidade-venc').value):null,
+    material_incluso:$('f-material-incluso').value===''?null:$('f-material-incluso').value==='true',
   };
   let err,studentId=id;
   if(id){
@@ -5335,6 +5416,95 @@ async function imprimirContratoAluno(id){
   win.document.close();
 }
 
+// Ficha de Cadastro — réplica do formulário de matrícula em papel (nome,
+// CPF/RG, endereço, responsável e financeiro), pra imprimir e arquivar
+// junto com o dossiê físico do aluno.
+async function imprimirFichaCadastro(id){
+  const win=window.open('','_blank');
+  if(!win){alert('Não foi possível abrir a janela de impressão. Verifique se o navegador está bloqueando pop-ups.');return;}
+  win.document.write('<p style="font-family:sans-serif;padding:40px">Gerando ficha...</p>');
+  const{data:s,error}=await sb.from('students').select('*,class:classes(name)').eq('id',id).single();
+  if(error||!s){win.close();alert('Não foi possível carregar os dados do aluno.'+(error?' '+error.message:''));return;}
+  win.document.open();
+  win.document.write(buildFichaCadastroHtml(s));
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(),300);
+}
+
+function buildFichaCadastroHtml(s){
+  const cell=(label,value)=>`<td><strong>${esc(label)}:</strong> ${value!=null&&value!==''?esc(String(value)):''}</td>`;
+  const rowFull=(label,value)=>`<tr><td colspan="2"><strong>${esc(label)}:</strong> ${value!=null&&value!==''?esc(String(value)):''}</td></tr>`;
+  const rowPair=(l1,v1,l2,v2)=>`<tr>${cell(l1,v1)}${cell(l2,v2)}</tr>`;
+  const materialTxt=s.material_incluso===true?'INCLUSO':(s.material_incluso===false?'NÃO INCLUSO':'');
+  const mensalidadeTxt=s.mensalidade_valor!=null?'R$ '+Number(s.mensalidade_valor).toFixed(2).replace('.',','):'';
+  const vencTxt=s.mensalidade_vencimento_dia!=null?'VENC '+s.mensalidade_vencimento_dia:'';
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ficha de Cadastro — ${esc(s.first_name)} ${esc(s.last_name)}</title>
+  <style>
+    @page{size:A4;margin:16mm}
+    body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:12px;margin:0}
+    h1{font-size:15px;text-align:center;margin:0 0 14px;text-transform:uppercase}
+    table{width:100%;border-collapse:collapse;margin-bottom:14px}
+    td{border:1px solid #999;padding:6px 8px;vertical-align:top}
+    .secao-titulo{background:#D4A017;color:#fff;font-weight:bold;text-align:center;padding:5px;text-transform:uppercase;font-size:12.5px}
+    .no-print{text-align:center;margin-top:20px}
+    @media print{.no-print{display:none}}
+  </style></head><body>
+    <h1>Ficha de Cadastro — Connect Inglês VIP</h1>
+    <table>
+      <tr><td colspan="2" class="secao-titulo">Aluno</td></tr>
+      ${rowPair('NOME',esc(s.first_name)+' '+esc(s.last_name),'DATA NASC',s.date_birth?new Date(s.date_birth+'T00:00:00').toLocaleDateString('pt-BR'):'')}
+      ${rowPair('CPF',s.cpf,'RG',s.rg)}
+      ${rowFull('ENDEREÇO',s.address)}
+      ${rowPair('CEP',s.cep,'TURMA',s.class?.name)}
+      ${rowPair('TELEFONE',s.mobile_number,'E-MAIL',s.email)}
+      ${rowPair('PESSOA PARA RECADO',s.contato_recado_nome,'TELEFONE',s.contato_recado_telefone)}
+    </table>
+    <table>
+      <tr><td colspan="2" class="secao-titulo">Responsável</td></tr>
+      ${rowFull('NOME',s.parent_name)}
+      ${rowPair('CPF',s.parent_cpf,'RG',s.parent_rg)}
+      ${rowFull('ENDEREÇO',s.parent_address)}
+      ${rowPair('TELEFONE',s.parent_mobile,'E-MAIL',s.parent_email)}
+    </table>
+    <table>
+      <tr><td colspan="2" class="secao-titulo">Financeiro</td></tr>
+      ${rowPair('MENSALIDADE',mensalidadeTxt,'PAGAMENTO',vencTxt)}
+      ${rowPair('MATERIAL',materialTxt,'TURMA',s.class?.name)}
+    </table>
+    <div class="no-print"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">Imprimir / Salvar PDF</button></div>
+  </body></html>`;
+}
+
+// Capa do Dossiê — folha simples com o logo e o nome do aluno em
+// destaque, pra colar na frente da pasta física do aluno.
+async function imprimirCapaDossie(id){
+  const win=window.open('','_blank');
+  if(!win){alert('Não foi possível abrir a janela de impressão. Verifique se o navegador está bloqueando pop-ups.');return;}
+  win.document.write('<p style="font-family:sans-serif;padding:40px">Gerando capa...</p>');
+  const{data:s,error}=await sb.from('students').select('first_name,last_name').eq('id',id).single();
+  if(error||!s){win.close();alert('Não foi possível carregar os dados do aluno.'+(error?' '+error.message:''));return;}
+  const nomeAluno=`${s.first_name} ${s.last_name}`.toUpperCase();
+  win.document.open();
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Capa — ${esc(nomeAluno)}</title>
+    <style>
+      @page{size:A4;margin:0}
+      body{font-family:'Arial Black',Arial,Helvetica,sans-serif;margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:60px}
+      img{width:60%;max-width:420px}
+      .nome{font-size:32px;font-weight:900;text-align:center;padding:0 40px}
+      .no-print{position:fixed;bottom:20px;left:0;right:0;text-align:center}
+      @media print{.no-print{display:none}}
+    </style></head><body>
+    <img src="${location.origin}/icons/connect-logo.jpg" alt="Connect Inglês VIP">
+    <div class="nome">${esc(nomeAluno)}</div>
+    <div class="no-print"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">Imprimir / Salvar PDF</button></div>
+  </body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(),300);
+}
+
 async function imprimirRelatorioAluno(id){
   const win=window.open('','_blank');
   if(!win){alert('Não foi possível abrir a janela de impressão. Verifique se o navegador está bloqueando pop-ups.');return;}
@@ -5410,13 +5580,19 @@ function buildRelatorioAlunoHtml(s,boletos){
       row('Nome completo',esc(s.first_name)+' '+esc(s.last_name))+
       row('Data de nascimento',s.date_birth?new Date(s.date_birth+'T00:00:00').toLocaleDateString('pt-BR'):null)+
       row('Idade',idade!=null?idade+' anos':null)+
-      row('Sexo',generoTxt)
+      row('Sexo',generoTxt)+
+      row('CPF',esc(s.cpf))+
+      row('RG',esc(s.rg))
     )}
 
     ${secao('Contato',
       row('Telefone principal',esc(s.mobile_number))+
       row('WhatsApp / telefone secundário',esc(s.whatsapp))+
-      row('Endereço',esc(s.address))
+      row('E-mail',esc(s.email))+
+      row('Endereço',esc(s.address))+
+      row('CEP',esc(s.cep))+
+      row('Pessoa para recado',esc(s.contato_recado_nome))+
+      row('Telefone do recado',esc(s.contato_recado_telefone))
     )}
 
     ${secao('Dados do Responsável',
@@ -5437,11 +5613,14 @@ function buildRelatorioAlunoHtml(s,boletos){
       row('Status da matrícula',s.status!==false?'Ativo':'Inativo')+
       row('Professor responsável',s.class?.teacher?esc(s.class.teacher.first_name)+' '+esc(s.class.teacher.last_name):null)+
       row('Dias de aula',diasTxt)+
-      row('Horário das aulas',horario)
+      row('Horário das aulas',horario)+
+      row('Material didático',s.material_incluso===true?'Incluso':(s.material_incluso===false?'Não incluso':null))
     )}
 
     <div class="rel-secao">
       <h3>Informações Financeiras (ano ${new Date().getFullYear()})</h3>
+      ${row('Mensalidade',s.mensalidade_valor!=null?'R$ '+Number(s.mensalidade_valor).toFixed(2).replace('.',','):null)}
+      ${row('Dia de vencimento',s.mensalidade_vencimento_dia!=null?'Todo dia '+s.mensalidade_vencimento_dia:null)}
       ${row('Situação financeira',situacaoFinanceira)}
       ${boletosHtml}
     </div>
