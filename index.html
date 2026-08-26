@@ -2145,7 +2145,7 @@ async function confirmarImportacaoCaixa(mes,ano){
     data_vencimento:calcularVencimentoCaixa(ano,mes,vencMap[r.studentIdFinal]),
     valor:r.valor,
     status:r.statusOk?'pago':'aberto',
-    data_pagamento:r.statusOk?(r.dataPlanilha||calcularVencimentoCaixa(ano,mes,vencMap[r.studentIdFinal])):'',
+    data_pagamento:r.statusOk?(r.dataPlanilha||calcularVencimentoCaixa(ano,mes,vencMap[r.studentIdFinal])):null,
   }));
   const{error}=await sb.rpc('importar_caixa_mes',{p_rows:rows});
   if(error){showAlert('page-alert','Erro ao importar: '+error.message,'danger');return;}
@@ -4046,6 +4046,7 @@ async function finAluno(studentId){
   const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const totalPago=boletos.filter(b=>b.status==='pago').reduce((s,b)=>s+parseFloat(b.valor),0);
   const totalAberto=boletos.filter(b=>b.status==='aberto').reduce((s,b)=>s+parseFloat(b.valor),0);
+  const hojeInicio=new Date();hojeInicio.setHours(0,0,0,0);
 
   setContent(`
     <div class="breadcrumb"><a onclick="nav('financeiro')">Financeiro</a> › <span>${esc(student.first_name)} ${esc(student.last_name)}</span></div>
@@ -4057,7 +4058,7 @@ async function finAluno(studentId){
       <div class="fin-card c-dark"><i class="fa fa-file-invoice fin-card-icon"></i><div><div class="fin-card-num">${boletos.length}</div><div class="fin-card-label">Boletos lançados</div></div></div>
     </div>`:''}
     ${(()=>{
-      const vencidos=boletos.filter(b=>b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date());
+      const vencidos=boletos.filter(b=>b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento+'T00:00:00')<hojeInicio);
       if(!vencidos.length) return '';
       const n=vencidos.length;
       const ids=vencidos.map(b=>b.id);
@@ -4081,7 +4082,7 @@ async function finAluno(studentId){
         <table>
           <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pgto.</th><th>Observação</th><th>Boleto</th>${!isSecretaria()?'<th></th>':''}</tr></thead>
           <tbody>${boletos.length?boletos.map(b=>{
-            const vencido=b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento)<new Date();
+            const vencido=b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento+'T00:00:00')<hojeInicio;
             return `<tr id="row-${b.id}" data-vencimento="${b.data_vencimento||''}" style="${vencido?'background:#fff5f5;border-left:3px solid var(--danger)':''}">
               <td><strong>${meses[(b.mes_referencia-1)]} / ${b.ano_referencia}</strong>${vencido?'<span class="badge badge-danger" style="margin-left:6px">Vencido</span>':''}</td>
               <td style="${vencido?'color:var(--danger);font-weight:600':''}">${fdate(b.data_vencimento)}</td>
@@ -4270,7 +4271,7 @@ function pgtoArquivoSelecionado(input){
     };
     reader.readAsDataURL(file);
   } else {
-    preview.innerHTML='<i class="fa fa-file-pdf" style="color:var(--danger);font-size:20px"></i><span>'+file.name+'</span>';
+    preview.innerHTML='<i class="fa fa-file-pdf" style="color:var(--danger);font-size:20px"></i><span>'+esc(file.name)+'</span>';
     preview.style.display='flex';
   }
 }

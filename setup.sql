@@ -137,8 +137,18 @@ AS $$ BEGIN UPDATE profiles SET name=COALESCE(new_name,name), address=COALESCE(n
 
 CREATE OR REPLACE FUNCTION admin_update_profile(target_id uuid, new_role text DEFAULT NULL, new_status boolean DEFAULT NULL, new_name text DEFAULT NULL, new_address text DEFAULT NULL)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
-AS $$ BEGIN
+AS $$
+DECLARE
+  caller_is_super boolean;
+  target_role text;
+BEGIN
   IF NOT is_admin() THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  SELECT (role = 'super_admin') INTO caller_is_super FROM profiles WHERE id = auth.uid();
+  IF NOT caller_is_super THEN
+    SELECT role INTO target_role FROM profiles WHERE id = target_id;
+    IF target_role = 'super_admin' THEN RAISE EXCEPTION 'Apenas super_admin pode alterar outro super_admin'; END IF;
+    IF new_role = 'super_admin' THEN RAISE EXCEPTION 'Apenas super_admin pode promover a super_admin'; END IF;
+  END IF;
   UPDATE profiles SET role=COALESCE(new_role,role), status=COALESCE(new_status,status), name=COALESCE(new_name,name), address=COALESCE(new_address,address) WHERE id=target_id;
 END; $$;
 

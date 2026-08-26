@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://connectinglesvip.vercel.app",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
@@ -55,8 +55,9 @@ serve(async (req) => {
       if (!user_id) return err("user_id obrigatório");
 
       const { data: target } = await adminClient.from("profiles").select("role").eq("id", user_id).single();
+      if (!target) return err("Usuário não encontrado.", 404);
 
-      if (target?.role === "super_admin" && callerProfile.role !== "super_admin") {
+      if (target.role === "super_admin" && callerProfile.role !== "super_admin") {
         return err("Apenas super_admin pode alterar outro super_admin.", 403);
       }
       if (role === "super_admin" && callerProfile.role !== "super_admin") {
@@ -82,8 +83,9 @@ serve(async (req) => {
       if (new_password.length < 6) return err("Senha deve ter no mínimo 6 caracteres.");
 
       const { data: target } = await adminClient.from("profiles").select("role").eq("id", user_id).single();
+      if (!target) return err("Usuário não encontrado.", 404);
 
-      if (target?.role === "super_admin" && callerProfile.role !== "super_admin") {
+      if (target.role === "super_admin" && callerProfile.role !== "super_admin") {
         return err("Apenas super_admin pode resetar senha de outro super_admin.", 403);
       }
 
@@ -99,7 +101,8 @@ serve(async (req) => {
       if (user_id === caller.id) return err("Você não pode desativar a si mesmo.");
 
       const { data: target } = await adminClient.from("profiles").select("role").eq("id", user_id).single();
-      if (target?.role === "super_admin" && callerProfile.role !== "super_admin") {
+      if (!target) return err("Usuário não encontrado.", 404);
+      if (target.role === "super_admin" && callerProfile.role !== "super_admin") {
         return err("Apenas super_admin pode desativar outro super_admin.", 403);
       }
 

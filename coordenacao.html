@@ -1635,8 +1635,8 @@
     const link = buildDisparoLink(d, state.disparo.texto);
     const disabled = link === '#';
     return d.canal === 'email'
-      ? `<a class="btn btn-primary" data-disparo-key="${d.key}" href="${link}" ${disabled ? 'aria-disabled="true"' : ''} style="${disabled ? 'pointer-events:none;opacity:.45;' : ''}">${ICONS.mail} E-mail</a>`
-      : `<a class="btn btn-whats" data-disparo-key="${d.key}" href="${link}" target="_blank" rel="noopener noreferrer" ${disabled ? 'aria-disabled="true"' : ''} style="${disabled ? 'pointer-events:none;opacity:.45;' : ''}">${ICONS.send} WhatsApp</a>`;
+      ? `<a class="btn btn-primary" data-disparo-key="${d.key}" href="${esc(link)}" ${disabled ? 'aria-disabled="true"' : ''} style="${disabled ? 'pointer-events:none;opacity:.45;' : ''}">${ICONS.mail} E-mail</a>`
+      : `<a class="btn btn-whats" data-disparo-key="${d.key}" href="${esc(link)}" target="_blank" rel="noopener noreferrer" ${disabled ? 'aria-disabled="true"' : ''} style="${disabled ? 'pointer-events:none;opacity:.45;' : ''}">${ICONS.send} WhatsApp</a>`;
   }
 
   function renderMensagens(){
@@ -1729,11 +1729,11 @@
       f.addEventListener('submit', async e=>{
         e.preventDefault();
         if(!state.novoHorario.professor || !state.novoHorario.horario) return;
-        const conflitoProfessor = state.horarios.some(h => h.professor===state.novoHorario.professor && h.dia===state.novoHorario.dia && h.horario===state.novoHorario.horario);
+        const conflitoProfessor = state.horarios.some(h => h.id!==state.novoHorario.id && h.professor===state.novoHorario.professor && h.dia===state.novoHorario.dia && h.horario===state.novoHorario.horario);
         if (conflitoProfessor) { alert(state.novoHorario.professor + ' já tem uma aula alocada nesse dia e horário.'); return; }
         const turmaLimpa = state.novoHorario.turma.trim();
         if (turmaLimpa) {
-          const conflitoTurma = state.horarios.some(h => h.turma.trim()===turmaLimpa && h.dia===state.novoHorario.dia && h.horario===state.novoHorario.horario);
+          const conflitoTurma = state.horarios.some(h => h.id!==state.novoHorario.id && h.turma.trim()===turmaLimpa && h.dia===state.novoHorario.dia && h.horario===state.novoHorario.horario);
           if (conflitoTurma) { alert('A turma ' + turmaLimpa + ' já está ocupada nesse dia e horário.'); return; }
         }
         const btn = f.querySelector('button[type=submit]');
@@ -1784,7 +1784,7 @@
         if(!state.novoProf.nome) return;
         const cpfLimpo = state.novoProf.cpf.replace(/\D/g,'');
         const editando = state.novoProf.id;
-        if (cpfLimpo && state.professores.some(p => p.cpf.replace(/\D/g,'') === cpfLimpo && String(p.id) !== String(editando))) {
+        if (cpfLimpo && state.professores.some(p => p.cpf && p.cpf.replace(/\D/g,'') === cpfLimpo && String(p.id) !== String(editando))) {
           alert('Já existe um professor cadastrado com esse CPF.');
           return;
         }

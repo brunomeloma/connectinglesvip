@@ -25,6 +25,9 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  // /supabase/* é um rewrite pro backend (proxy same-origin) — nunca cachear,
+  // a resposta varia por usuário autenticado e a cache key (URL) não sabe disso.
+  if (url.pathname.startsWith('/supabase/')) return;
 
   if (req.mode === 'navigate') {
     event.respondWith(
