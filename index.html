@@ -2750,13 +2750,19 @@ async function studentForm(id){
         <div class="form-grid">
           <div>
             <div class="field"><label>Data da Matrícula <span class="required">*</span></label><input id="f-doj" type="date" value="${s.date_joining||''}"></div>
-            <div class="field"><label>Valor da Mensalidade (R$)</label><input id="f-mensalidade-valor" type="number" step="0.01" min="0" value="${s.mensalidade_valor??''}"></div>
+            <div class="field"><label>Início do Contrato</label><input id="f-contrato-inicio" type="month" value="${(s.contrato_inicio||'').slice(0,7)}"></div>
+            <div class="field"><label>Fim do Contrato</label><input id="f-contrato-fim" type="month" value="${(s.contrato_fim||'').slice(0,7)}"></div>
           </div>
           <div>
+            <div class="field"><label>Valor da Mensalidade (R$)</label><input id="f-mensalidade-valor" type="number" step="0.01" min="0" value="${s.mensalidade_valor??''}"></div>
             <div class="field"><label>Dia de Vencimento</label><input id="f-mensalidade-venc" type="number" min="1" max="31" placeholder="Ex: 10" value="${s.mensalidade_vencimento_dia??''}"></div>
             <div class="field"><label>Material Incluso</label><select id="f-material-incluso"><option value="">Não informado</option><option value="true" ${s.material_incluso===true?'selected':''}>Sim</option><option value="false" ${s.material_incluso===false?'selected':''}>Não</option></select></div>
           </div>
         </div>
+        ${id?`
+          <div class="help-text" style="margin-top:10px">Salve o cadastro com início, fim, valor e dia de vencimento preenchidos e depois clique abaixo — o sistema gera sozinho uma mensalidade por mês do período inteiro, sem sobrescrever nenhum mês que já esteja pago.</div>
+          <button class="btn btn-default btn-sm" style="margin-top:8px" onclick="gerarRecorrenciaBoletos('${id}')"><i class="fa fa-repeat"></i> Gerar parcelas do contrato</button>
+        `:''}
       </div>
       <div class="panel-footer">
         <button class="btn btn-default" onclick="nav('students')">Cancelar</button>
@@ -2823,6 +2829,8 @@ async function saveStudent(id){
     mensalidade_valor:$('f-mensalidade-valor').value?parseFloat($('f-mensalidade-valor').value):null,
     mensalidade_vencimento_dia:$('f-mensalidade-venc').value?parseInt($('f-mensalidade-venc').value):null,
     material_incluso:$('f-material-incluso').value===''?null:$('f-material-incluso').value==='true',
+    contrato_inicio:$('f-contrato-inicio').value?$('f-contrato-inicio').value+'-01':null,
+    contrato_fim:$('f-contrato-fim').value?$('f-contrato-fim').value+'-01':null,
   };
   let err,studentId=id;
   if(id){
@@ -2865,6 +2873,15 @@ async function saveStudent(id){
     await sb.from('students').update({parent_comprovante_path:comprovantePath}).eq('id',studentId);
   }
   nav('students');
+}
+
+// Gera todas as mensalidades do contrato de uma vez (mesma tabela boletos
+// que já alimenta Financeiro/Cobranças e o Importar Caixa — não precisa
+// de nenhuma sincronização extra, é a mesma linha lida em todo lugar).
+async function gerarRecorrenciaBoletos(id){
+  const{data:qtd,error}=await sb.rpc('gerar_recorrencia_boletos',{p_student_id:id});
+  if(error){showAlert('page-alert','Erro ao gerar parcelas: '+error.message,'danger');return;}
+  showAlert('page-alert',`${qtd} parcela(s) geradas/atualizadas. Confira em Financeiro.`,'success');
 }
 
 // --- CLASSES ---
