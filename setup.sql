@@ -2988,3 +2988,51 @@ AS $$ DECLARE r jsonb; BEGIN
       status=EXCLUDED.status, data_pagamento=EXCLUDED.data_pagamento;
   END LOOP;
 END; $$;
+
+-- #####################################################################
+-- 44. RECORRÊNCIA DE MENSALIDADE — gera as parcelas do contrato inteiro
+--     de uma vez, a partir da aba do próprio aluno
+-- #####################################################################
+-- contrato_inicio/contrato_fim ficam na aba do aluno; a geração usa
+-- mensalidade_valor e mensalidade_vencimento_dia (já existentes desde a
+-- Seção 39). Nunca sobrescreve status/data_pagamento de um boleto que
+-- já exista (ex: importado pelo Importar Caixa como "pago") — só cria o
+-- que falta e atualiza valor/vencimento dos que ainda estão em aberto.
+
+ALTER TABLE students ADD COLUMN IF NOT EXISTS contrato_inicio date;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS contrato_fim date;
+
+CREATE OR REPLACE FUNCTION gerar_recorrencia_boletos(p_student_id uuid)
+RETURNS int LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_inicio date; v_fim date; v_dia int; v_valor numeric;
+  v_cursor date; v_ultimo_dia int; v_dia_final int; v_count int := 0;
+BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  SELECT contrato_inicio, contrato_fim, mensalidade_vencimento_dia, mensalidade_valor
+    INTO v_inicio, v_fim, v_dia, v_valor
+    FROM students WHERE id = p_student_id;
+  IF v_inicio IS NULL OR v_fim IS NULL THEN RAISE EXCEPTION 'Informe início e fim do contrato antes de gerar as parcelas.'; END IF;
+  IF v_fim < v_inicio THEN RAISE EXCEPTION 'Fim do contrato não pode ser antes do início.'; END IF;
+  IF v_valor IS NULL OR v_valor <= 0 THEN RAISE EXCEPTION 'Informe o valor da mensalidade antes de gerar as parcelas.'; END IF;
+  v_dia := COALESCE(v_dia, 10);
+  v_cursor := date_trunc('month', v_inicio)::date;
+  WHILE v_cursor <= v_fim LOOP
+    v_ultimo_dia := EXTRACT(DAY FROM (date_trunc('month', v_cursor) + interval '1 month - 1 day'))::int;
+    v_dia_final := LEAST(v_dia, v_ultimo_dia);
+    INSERT INTO boletos (student_id, mes_referencia, ano_referencia, data_vencimento, valor)
+    VALUES (
+      p_student_id, EXTRACT(MONTH FROM v_cursor)::int, EXTRACT(YEAR FROM v_cursor)::int,
+      make_date(EXTRACT(YEAR FROM v_cursor)::int, EXTRACT(MONTH FROM v_cursor)::int, v_dia_final),
+      v_valor
+    )
+    ON CONFLICT (student_id, mes_referencia, ano_referencia) DO UPDATE SET
+      data_vencimento = EXCLUDED.data_vencimento,
+      valor = EXCLUDED.valor
+      WHERE boletos.status <> 'pago';
+    v_count := v_count + 1;
+    v_cursor := v_cursor + interval '1 month';
+  END LOOP;
+  RETURN v_count;
+END; $$;
