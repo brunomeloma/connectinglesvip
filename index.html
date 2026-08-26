@@ -1866,7 +1866,10 @@ async function uploadFaltaAnexo(tipo){
   showAlert('page-alert','Arquivo salvo no sistema.','success');
 }
 
-function enviarAvisoFalta(nome,numero){
+// KIDS (Ensino Infantil) recebe PDF + áudio; as demais modalidades
+// (Regular, VIP, Regular Online, Bolsa) recebem só o áudio — o PDF da
+// página do livro não faz sentido pra quem não é do infantil.
+function enviarAvisoFalta(nome,numero,modalidade){
   const dia=$('falta-dia').value.trim()||'hoje';
   const paginaSala=$('falta-pag-sala').value.trim()||'—';
   const atividadeExtra=$('falta-ativ-extra').value.trim();
@@ -1877,7 +1880,8 @@ function enviarAvisoFalta(nome,numero){
     .replace(/\{pagina_sala\}/g,paginaSala)
     .replace(/\{atividade_extra_txt\}/g,atividadeExtra?' e atividade extra: '+atividadeExtra:'')
     .replace(/\{pagina_casa\}/g,paginaCasa);
-  if(_faltaAnexos.pdfUrl) texto+='\n\n📎 Atividade em PDF: '+_faltaAnexos.pdfUrl;
+  const ehInfantil=modalidade==='KIDS';
+  if(ehInfantil&&_faltaAnexos.pdfUrl) texto+='\n\n📎 Atividade em PDF: '+_faltaAnexos.pdfUrl;
   if(_faltaAnexos.audioUrl) texto+='\n🎧 Áudio explicativo: '+_faltaAnexos.audioUrl;
   window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(texto),'_blank');
 }
@@ -1929,16 +1933,18 @@ pages.avisarFalta=async function(){
         <input id="falta-search" placeholder="Buscar pelo nome do aluno…" value="${esc(getFilter('falta-search'))}" oninput="saveFilters(['falta-search']);nav('avisarFalta')" style="width:100%;max-width:320px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;margin-bottom:14px">
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Nome</th><th>Telefone</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Nome</th><th>Modalidade</th><th>Telefone</th><th>Ações</th></tr></thead>
         <tbody>${filtrados.length?filtrados.map(a=>{
           const numFmt=snackDebtWppNumero(a.whatsapp||a.mobile_number||'');
           const nomeCompleto=`${a.first_name} ${a.last_name}`;
+          const modalidade=a.modalidade||'';
           return `<tr>
             <td><strong>${esc(nomeCompleto)}</strong></td>
+            <td>${esc(modalidade)||'—'}${modalidade==='KIDS'?' <span class="badge badge-info" title="Recebe PDF + áudio">Infantil</span>':''}</td>
             <td>${esc(a.whatsapp||a.mobile_number)||'Sem telefone'}</td>
-            <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarAvisoFalta('${esc(nomeCompleto)}','${numFmt}')" title="Avisar falta via WhatsApp"><i class="fab fa-whatsapp"></i> Avisar falta</button>`:'—'}</td>
+            <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarAvisoFalta('${esc(nomeCompleto)}','${numFmt}','${modalidade}')" title="Avisar falta via WhatsApp"><i class="fab fa-whatsapp"></i> Avisar falta</button>`:'—'}</td>
           </tr>`;
-        }).join(''):'<tr><td colspan="3"><div class="empty-state"><i class="fa fa-user-clock"></i>Nenhum aluno encontrado</div></td></tr>'}
+        }).join(''):'<tr><td colspan="4"><div class="empty-state"><i class="fa fa-user-clock"></i>Nenhum aluno encontrado</div></td></tr>'}
         </tbody>
       </table></div>
     </div>

@@ -2937,3 +2937,23 @@ UPDATE storage.buckets SET
   file_size_limit = 20971520, -- 20MB
   allowed_mime_types = ARRAY['application/pdf','audio/mpeg','audio/mp4','audio/ogg','audio/wav','audio/webm','audio/x-m4a','audio/aac']
 WHERE id = 'aula-conteudo';
+
+-- #####################################################################
+-- 42. AVISO DE FALTA — anexo condicional por modalidade (KIDS recebe
+--     PDF + áudio; demais modalidades recebem só áudio)
+-- #####################################################################
+-- DROP antes do CREATE: muda o retorno da função (nova coluna
+-- modalidade), Postgres não deixa CREATE OR REPLACE trocar o tipo.
+
+DROP FUNCTION IF EXISTS get_alunos_ativos_basico();
+CREATE FUNCTION get_alunos_ativos_basico()
+RETURNS TABLE(id uuid, first_name text, last_name text, mobile_number text, whatsapp text, modalidade text)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT s.id, s.first_name, s.last_name, s.mobile_number, s.whatsapp, s.modalidade
+    FROM students s
+    WHERE s.status = true
+    ORDER BY s.first_name;
+END; $$;
