@@ -2868,3 +2868,37 @@ CREATE POLICY "app_settings_select" ON app_settings FOR SELECT USING (has_role(A
 -- que consumiu (é por isso que o relatório agrupa por person_name).
 
 ALTER TABLE snack_debts ADD COLUMN IF NOT EXISTS responsible_name text;
+
+-- #####################################################################
+-- 39. FICHA DE CADASTRO COMPLETA + CAPA DO DOSSIÊ + AVISO DE FALTA
+-- #####################################################################
+-- Campos que existiam na ficha de matrícula em papel mas nunca tinham
+-- coluna própria no sistema (CPF/RG/e-mail do próprio aluno, CEP,
+-- pessoa pra recado, mensalidade fixa e se o material está incluso).
+-- Endereço continua um campo só (students.address) — CPF/RG/e-mail do
+-- responsável já existiam (parent_cpf/parent_rg/parent_email).
+
+ALTER TABLE students ADD COLUMN IF NOT EXISTS cpf text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS rg text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS email text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS cep text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS contato_recado_nome text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS contato_recado_telefone text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS mensalidade_valor numeric(10,2);
+ALTER TABLE students ADD COLUMN IF NOT EXISTS mensalidade_vencimento_dia int;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS material_incluso boolean;
+
+-- Lista básica de alunos ativos (só o necessário pra mandar mensagem de
+-- falta) — liberada pra captação também, sem expor CPF/endereço/dados
+-- financeiros do responsável que a tabela students carrega.
+CREATE OR REPLACE FUNCTION get_alunos_ativos_basico()
+RETURNS TABLE(id uuid, first_name text, last_name text, mobile_number text, whatsapp text)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT s.id, s.first_name, s.last_name, s.mobile_number, s.whatsapp
+    FROM students s
+    WHERE s.status = true
+    ORDER BY s.first_name;
+END; $$;
