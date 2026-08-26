@@ -2957,3 +2957,34 @@ AS $$ BEGIN
     WHERE s.status = true
     ORDER BY s.first_name;
 END; $$;
+
+-- #####################################################################
+-- 43. IMPORTAÇÃO DA PLANILHA DE CAIXA (baixa mensal em lote)
+-- #####################################################################
+-- A Juliana hoje controla pagamento de mensalidade numa planilha Excel
+-- (nome, "OK" quando pago, modalidade, valor, data). Em vez de digitar
+-- tudo de novo no sistema, ela sobe a planilha e o front-end casa cada
+-- linha com o aluno pelo nome antes de mandar pra essa RPC — que faz o
+-- mesmo upsert de lancar_boletos_aluno, mas já aceita status/data de
+-- pagamento prontos (a rotina existente sempre criava como 'aberto').
+
+CREATE OR REPLACE FUNCTION importar_caixa_mes(p_rows jsonb)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE r jsonb; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  FOR r IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
+    INSERT INTO boletos (student_id,mes_referencia,ano_referencia,data_vencimento,valor,status,data_pagamento)
+    VALUES (
+      (r->>'student_id')::uuid,
+      (r->>'mes_referencia')::int,
+      (r->>'ano_referencia')::int,
+      (r->>'data_vencimento')::date,
+      (r->>'valor')::numeric,
+      COALESCE(r->>'status','aberto'),
+      NULLIF(r->>'data_pagamento','')::date
+    )
+    ON CONFLICT (student_id,mes_referencia,ano_referencia) DO UPDATE SET
+      data_vencimento=EXCLUDED.data_vencimento, valor=EXCLUDED.valor,
+      status=EXCLUDED.status, data_pagamento=EXCLUDED.data_pagamento;
+  END LOOP;
+END; $$;

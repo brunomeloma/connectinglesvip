@@ -16,6 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -517,6 +518,7 @@ let currentUser = null;
     <div class="sb-item no-professor no-captacao" data-page="cobrancas" onclick="nav('cobrancas')"><i class="fa fa-calendar-check"></i> Cobranças</div>
     <div class="sb-item no-professor no-captacao" data-page="professores" onclick="nav('professores')"><i class="fa fa-user-clock"></i> Prof. — Horas</div>
     <div class="sb-item no-professor no-captacao" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
+    <div class="sb-item no-professor no-captacao" data-page="importarCaixa" onclick="nav('importarCaixa')"><i class="fa fa-file-excel"></i> Importar Caixa</div>
     <div class="sb-item no-professor no-captacao" data-page="vip" onclick="nav('vip')"><i class="fa fa-star"></i> VIP Online</div>
     <div class="sb-item no-professor no-captacao" data-page="documentos" onclick="nav('documentos')"><i class="fa fa-file-signature"></i> Documentos</div>
     <div class="sb-item no-professor no-captacao" data-page="nps" onclick="nav('nps')"><i class="fa fa-smile"></i> Pesquisa NPS</div>
@@ -1950,6 +1952,207 @@ pages.avisarFalta=async function(){
     </div>
   `);
 };
+
+// ============================
+// IMPORTAR CAIXA — importação em lote da planilha mensal de pagamento
+// ============================
+let _caixaParsed=[];
+
+function normalizarNomeCaixa(s){
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+}
+
+function excelDateToISO(v){
+  if(!v) return null;
+  if(v instanceof Date) return v.toISOString().slice(0,10);
+  if(typeof v==='number'){
+    const d=XLSX.SSF.parse_date_code(v);
+    if(!d) return null;
+    return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  }
+  return null;
+}
+
+function calcularVencimentoCaixa(ano,mes,diaVenc){
+  const dia=diaVenc&&diaVenc>=1&&diaVenc<=31?diaVenc:10;
+  const ultimoDia=new Date(ano,mes,0).getDate();
+  const diaFinal=Math.min(dia,ultimoDia);
+  return `${ano}-${String(mes).padStart(2,'0')}-${String(diaFinal).padStart(2,'0')}`;
+}
+
+pages.importarCaixa=async function(){
+  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  _caixaParsed=[];
+  const hoje=new Date();
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Importar Caixa</span></div>
+    <div class="page-title"><i class="fa fa-file-excel"></i> Importar Caixa</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel" style="margin-bottom:18px">
+      <div class="panel-head"><span class="panel-title">1. Selecionar planilha e mês</span></div>
+      <div class="panel-body" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Planilha (.xlsx)</label><input id="caixa-file" type="file" accept=".xlsx,.xls" style="font-size:13px"></div>
+        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Mês</label><select id="caixa-mes">${meses.map((m,i)=>`<option value="${i+1}" ${i+1===hoje.getMonth()+1?'selected':''}>${m}</option>`).join('')}</select></div>
+        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Ano</label><input id="caixa-ano" type="number" value="${hoje.getFullYear()}" style="width:90px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px"></div>
+        <button class="btn btn-primary" onclick="processarPlanilhaCaixa()"><i class="fa fa-upload"></i> Processar planilha</button>
+      </div>
+      <div class="panel-body" style="font-size:12px;color:var(--gray-500);padding-top:0">
+        A planilha precisa ter, nessa ordem de colunas: Nome, "OK" quando pago, Modalidade, Valor e (opcional) Data do pagamento — igual ao modelo que a escola já usa.
+      </div>
+    </div>
+    <div id="caixa-preview"></div>
+  `);
+};
+
+// Casamento por nome em duas camadas: exato (seguro, entra direto) e
+// "provável" (nome parecido mas não idêntico — ex: sobrenome abreviado
+// na planilha). Provável NUNCA entra sozinho: exige clique de
+// confirmação por linha, porque duas pessoas com primeiro nome comum
+// (ex: "Helena", "Maria") podem "bater" por engano e trocar o aluno de
+// quem o dinheiro é — errar isso é grave (é dado financeiro).
+function palavrasNomeCaixa(s){return normalizarNomeCaixa(s).split(' ').filter(Boolean);}
+
+function buscarProvavelCaixa(nomePlanilha,alunos){
+  const palavrasPlanilha=palavrasNomeCaixa(nomePlanilha);
+  if(!palavrasPlanilha.length) return null;
+  let melhor=null,melhorRatio=0;
+  alunos.forEach(a=>{
+    const palavrasAluno=palavrasNomeCaixa(a.first_name+' '+a.last_name);
+    const setAluno=new Set(palavrasAluno);
+    const comuns=palavrasPlanilha.filter(p=>setAluno.has(p));
+    const primeiroBate=palavrasPlanilha[0]===palavrasAluno[0];
+    const ratio=comuns.length/Math.max(palavrasPlanilha.length,palavrasAluno.length);
+    if(primeiroBate&&comuns.length>=2&&ratio>=0.6&&ratio>melhorRatio){melhorRatio=ratio;melhor=a;}
+  });
+  return melhor;
+}
+
+async function processarPlanilhaCaixa(){
+  const file=$('caixa-file').files[0];
+  if(!file){showAlert('page-alert','Selecione o arquivo da planilha.','danger');return;}
+  const mes=parseInt($('caixa-mes').value);
+  const ano=parseInt($('caixa-ano').value);
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array',cellDates:true});
+  const sheetName=wb.SheetNames.find(n=>{
+    const ws=wb.Sheets[n];
+    const a1=ws&&ws['A1']?String(ws['A1'].v||'').toUpperCase():'';
+    return a1.includes('NOME');
+  })||wb.SheetNames[wb.SheetNames.length-1];
+  const ws=wb.Sheets[sheetName];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+
+  const{data:alunos=[]}=await sb.from('students').select('id,first_name,last_name').eq('status',true);
+  const mapaExato={};
+  alunos.forEach(a=>{mapaExato[normalizarNomeCaixa(a.first_name+' '+a.last_name)]=a;});
+
+  const parsed=[];
+  rows.slice(1).forEach((row,idx)=>{
+    const nome=row[0];
+    if(!nome||typeof nome!=='string') return;
+    const statusOk=(row[1]||'').toString().trim().toUpperCase()==='OK';
+    const modalidade=row[2]||null;
+    const valorNum=typeof row[3]==='number'?row[3]:parseFloat(row[3]);
+    if(!valorNum) return;
+    const dataPlanilha=excelDateToISO(row[4]);
+    const exato=mapaExato[normalizarNomeCaixa(nome)]||null;
+    const provavel=exato?null:buscarProvavelCaixa(nome,alunos);
+    parsed.push({
+      linha:idx+2,nomePlanilha:nome,statusOk,modalidade,valor:valorNum,dataPlanilha,
+      studentId:exato?exato.id:null,
+      provavelId:provavel?provavel.id:null,
+      provavelNome:provavel?(provavel.first_name+' '+provavel.last_name):null,
+      confirmado:false,
+    });
+  });
+  _caixaParsed=parsed;
+  renderPreviewCaixa(mes,ano);
+}
+
+function confirmarLinhaCaixaProvavel(idx,checked){
+  _caixaParsed[idx].confirmado=checked;
+}
+
+function renderPreviewCaixa(mes,ano){
+  const exatos=_caixaParsed.filter(r=>r.studentId);
+  const provaveis=_caixaParsed.filter(r=>!r.studentId&&r.provavelId);
+  const naoEncontrados=_caixaParsed.filter(r=>!r.studentId&&!r.provavelId);
+  const linhaTabela=r=>`<tr>
+    <td>${esc(r.nomePlanilha)}</td>
+    <td>${esc(r.modalidade)||'—'}</td>
+    <td>${fmtBRL(r.valor)}</td>
+    <td>${r.statusOk?'<span class="badge badge-success">Pago</span>':'<span class="badge badge-warning">Em aberto</span>'}</td>
+    <td>${r.dataPlanilha?new Date(r.dataPlanilha+'T00:00:00').toLocaleDateString('pt-BR'):'—'}</td>
+  </tr>`;
+  $('caixa-preview').innerHTML=`
+    <div class="panel" style="margin-bottom:18px">
+      <div class="panel-head"><span class="panel-title">2. Encontrados (nome idêntico ao cadastro)</span><span style="font-size:12px;color:var(--gray-500)">${exatos.length}</span></div>
+      <div class="panel-body">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Nome</th><th>Modalidade</th><th>Valor</th><th>Status</th><th>Data</th></tr></thead>
+          <tbody>${exatos.length?exatos.map(linhaTabela).join(''):'<tr><td colspan="5"><div class="empty-state"><i class="fa fa-file-excel"></i>Nenhuma linha reconhecida</div></td></tr>'}</tbody>
+        </table></div>
+      </div>
+    </div>
+    ${provaveis.length?`
+    <div class="panel" style="margin-bottom:18px">
+      <div class="panel-head"><span class="panel-title">3. Prováveis — confira e marque um por um</span><span style="font-size:12px;color:var(--gray-500)">${provaveis.length}</span></div>
+      <div class="panel-body">
+        <div class="alert alert-warning" style="display:block;margin-bottom:14px">O nome da planilha não é idêntico ao do cadastro — confira se é a mesma pessoa antes de marcar. Sem marcar, a linha NÃO é importada.</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Nome na planilha</th><th>Aluno sugerido no sistema</th><th>Valor</th><th>Status</th></tr></thead>
+          <tbody>${provaveis.map(r=>{
+            const idx=_caixaParsed.indexOf(r);
+            return `<tr>
+              <td><input type="checkbox" onchange="confirmarLinhaCaixaProvavel(${idx},this.checked)"></td>
+              <td>${esc(r.nomePlanilha)}</td>
+              <td><strong>${esc(r.provavelNome)}</strong></td>
+              <td>${fmtBRL(r.valor)}</td>
+              <td>${r.statusOk?'<span class="badge badge-success">Pago</span>':'<span class="badge badge-warning">Em aberto</span>'}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table></div>
+      </div>
+    </div>`:''}
+    ${naoEncontrados.length?`
+    <div class="panel" style="margin-bottom:18px">
+      <div class="panel-head"><span class="panel-title">Não encontrados</span><span style="font-size:12px;color:var(--gray-500)">${naoEncontrados.length}</span></div>
+      <div class="panel-body">
+        <div class="alert alert-danger" style="display:block">Nenhum aluno ativo parecido foi encontrado — não serão importados. Confira a grafia ou cadastre o aluno antes de tentar de novo:
+          <ul style="margin:6px 0 0 18px">${naoEncontrados.map(r=>`<li>Linha ${r.linha}: ${esc(r.nomePlanilha)}</li>`).join('')}</ul>
+        </div>
+      </div>
+    </div>`:''}
+    <div class="panel">
+      <div class="panel-footer">
+        <button class="btn btn-primary" ${exatos.length?'':'disabled'} onclick="confirmarImportacaoCaixa(${mes},${ano})"><i class="fa fa-check"></i> Confirmar importação</button>
+      </div>
+    </div>
+  `;
+}
+
+async function confirmarImportacaoCaixa(mes,ano){
+  const linhas=_caixaParsed.filter(r=>r.studentId||(r.provavelId&&r.confirmado)).map(r=>({...r,studentIdFinal:r.studentId||r.provavelId}));
+  if(!linhas.length) return;
+  const{data:alunosVenc=[]}=await sb.from('students').select('id,mensalidade_vencimento_dia').in('id',linhas.map(r=>r.studentIdFinal));
+  const vencMap={};alunosVenc.forEach(a=>{vencMap[a.id]=a.mensalidade_vencimento_dia;});
+  const rows=linhas.map(r=>({
+    student_id:r.studentIdFinal,
+    mes_referencia:mes,
+    ano_referencia:ano,
+    data_vencimento:calcularVencimentoCaixa(ano,mes,vencMap[r.studentIdFinal]),
+    valor:r.valor,
+    status:r.statusOk?'pago':'aberto',
+    data_pagamento:r.statusOk?(r.dataPlanilha||calcularVencimentoCaixa(ano,mes,vencMap[r.studentIdFinal])):'',
+  }));
+  const{error}=await sb.rpc('importar_caixa_mes',{p_rows:rows});
+  if(error){showAlert('page-alert','Erro ao importar: '+error.message,'danger');return;}
+  showAlert('page-alert',`${rows.length} lançamento(s) importado(s) com sucesso.`,'success');
+  $('caixa-preview').innerHTML='';
+  _caixaParsed=[];
+}
 
 // --- SCHOOLS ---
 pages.schools=async function({view,id}={}){
