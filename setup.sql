@@ -3046,3 +3046,187 @@ BEGIN
   END LOOP;
   RETURN v_count;
 END; $$;
+
+-- #####################################################################
+-- CAIXA FINANCEIRO — importação segura, tela linha-a-linha e inadimplência
+-- #####################################################################
+
+-- 1) Modalidade: aceitar também ONLINE e CONVERSAÇÃO (vistos na planilha real)
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_modalidade_check;
+ALTER TABLE students ADD CONSTRAINT students_modalidade_check
+  CHECK (modalidade IS NULL OR modalidade IN ('KIDS','REGULAR','VIP','REGULAR ONLINE','BOLSA','ONLINE','CONVERSAÇÃO'));
+
+-- 2) Histórico de importações de caixa (rastreabilidade + segurança)
+CREATE TABLE IF NOT EXISTS caixa_imports (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  mes_referencia int NOT NULL CHECK (mes_referencia BETWEEN 1 AND 12),
+  ano_referencia int NOT NULL,
+  nome_arquivo text,
+  imported_by uuid REFERENCES profiles(id),
+  imported_at timestamptz NOT NULL DEFAULT now(),
+  total_linhas int NOT NULL DEFAULT 0,
+  total_novos int NOT NULL DEFAULT 0,
+  total_atualizados_aberto int NOT NULL DEFAULT 0,
+  total_atualizados_pago int NOT NULL DEFAULT 0,
+  total_pulados_protegidos int NOT NULL DEFAULT 0
+);
+
+ALTER TABLE boletos ADD COLUMN IF NOT EXISTS caixa_import_id uuid REFERENCES caixa_imports(id) ON DELETE SET NULL;
+
+ALTER TABLE caixa_imports ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "caixa_imports_select" ON caixa_imports;
+CREATE POLICY "caixa_imports_select" ON caixa_imports FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','financeiro']));
+-- sem policies de insert/update/delete diretas: só via RPC SECURITY DEFINER abaixo
+
+-- 3) Prévia de importação (diagnóstico, não grava nada)
+CREATE OR REPLACE FUNCTION preview_importacao_caixa(p_rows jsonb, p_mes int, p_ano int)
+RETURNS TABLE(
+  linha int, student_id uuid, categoria text,
+  valor_planilha numeric, valor_atual numeric,
+  status_planilha text, status_atual text,
+  data_pagamento_planilha date, data_pagamento_atual date
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE r jsonb; v_existing boletos%ROWTYPE; v_idx int := 0;
+BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  FOR r IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
+    v_idx := v_idx + 1;
+    SELECT * INTO v_existing FROM boletos
+      WHERE student_id=(r->>'student_id')::uuid AND mes_referencia=p_mes AND ano_referencia=p_ano;
+    IF NOT FOUND THEN
+      RETURN QUERY SELECT v_idx, (r->>'student_id')::uuid, 'novo'::text,
+        (r->>'valor')::numeric, NULL::numeric, r->>'status', NULL::text, NULLIF(r->>'data_pagamento','')::date, NULL::date;
+    ELSIF v_existing.status='pago' AND (
+            (r->>'status') IS DISTINCT FROM 'pago'
+            OR v_existing.valor IS DISTINCT FROM (r->>'valor')::numeric
+            OR v_existing.data_pagamento IS DISTINCT FROM NULLIF(r->>'data_pagamento','')::date
+          ) THEN
+      RETURN QUERY SELECT v_idx, v_existing.student_id, 'sobrescreve_pago'::text,
+        (r->>'valor')::numeric, v_existing.valor, r->>'status', v_existing.status,
+        NULLIF(r->>'data_pagamento','')::date, v_existing.data_pagamento;
+    ELSIF v_existing.valor IS DISTINCT FROM (r->>'valor')::numeric
+       OR v_existing.status IS DISTINCT FROM (r->>'status')
+       OR v_existing.data_vencimento IS DISTINCT FROM (r->>'data_vencimento')::date THEN
+      RETURN QUERY SELECT v_idx, v_existing.student_id, 'atualiza_aberto'::text,
+        (r->>'valor')::numeric, v_existing.valor, r->>'status', v_existing.status,
+        NULLIF(r->>'data_pagamento','')::date, v_existing.data_pagamento;
+    ELSE
+      RETURN QUERY SELECT v_idx, v_existing.student_id, 'sem_mudanca'::text,
+        (r->>'valor')::numeric, v_existing.valor, r->>'status', v_existing.status,
+        NULLIF(r->>'data_pagamento','')::date, v_existing.data_pagamento;
+    END IF;
+  END LOOP;
+END; $$;
+
+-- 4) Confirmação de importação (grava, protege boletos já pagos)
+CREATE OR REPLACE FUNCTION confirmar_importacao_caixa(
+  p_rows jsonb, p_mes int, p_ano int, p_nome_arquivo text DEFAULT NULL,
+  p_confirmar_pagos_ids uuid[] DEFAULT '{}'
+) RETURNS TABLE(total_novos int, total_atualizados_aberto int, total_atualizados_pago int, pulados_protegidos int)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE r jsonb; v_existing boletos%ROWTYPE; v_import_id uuid;
+  v_novos int:=0; v_upd_aberto int:=0; v_upd_pago int:=0; v_pulados int:=0;
+BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  INSERT INTO caixa_imports (mes_referencia,ano_referencia,nome_arquivo,imported_by,total_linhas)
+    VALUES (p_mes,p_ano,p_nome_arquivo,auth.uid(),jsonb_array_length(p_rows)) RETURNING id INTO v_import_id;
+  FOR r IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
+    SELECT * INTO v_existing FROM boletos
+      WHERE student_id=(r->>'student_id')::uuid AND mes_referencia=p_mes AND ano_referencia=p_ano;
+    IF NOT FOUND THEN
+      INSERT INTO boletos (student_id,mes_referencia,ano_referencia,data_vencimento,valor,status,data_pagamento,caixa_import_id)
+      VALUES ((r->>'student_id')::uuid,p_mes,p_ano,(r->>'data_vencimento')::date,(r->>'valor')::numeric,
+        COALESCE(r->>'status','aberto'),NULLIF(r->>'data_pagamento','')::date,v_import_id);
+      v_novos:=v_novos+1;
+    ELSIF v_existing.status='pago' AND NOT ((r->>'student_id')::uuid = ANY(p_confirmar_pagos_ids)) THEN
+      v_pulados:=v_pulados+1;
+    ELSE
+      UPDATE boletos SET data_vencimento=(r->>'data_vencimento')::date, valor=(r->>'valor')::numeric,
+        status=COALESCE(r->>'status','aberto'), data_pagamento=NULLIF(r->>'data_pagamento','')::date,
+        caixa_import_id=v_import_id
+      WHERE id=v_existing.id;
+      IF v_existing.status='pago' THEN v_upd_pago:=v_upd_pago+1; ELSE v_upd_aberto:=v_upd_aberto+1; END IF;
+    END IF;
+  END LOOP;
+  UPDATE caixa_imports SET total_novos=v_novos, total_atualizados_aberto=v_upd_aberto,
+    total_atualizados_pago=v_upd_pago, total_pulados_protegidos=v_pulados
+    WHERE id=v_import_id;
+  RETURN QUERY SELECT v_novos, v_upd_aberto, v_upd_pago, v_pulados;
+END; $$;
+
+-- 5) Histórico de importações (consultar caixas anteriores)
+CREATE OR REPLACE FUNCTION listar_caixa_imports(p_ano int DEFAULT NULL)
+RETURNS TABLE(
+  id uuid, mes_referencia int, ano_referencia int, nome_arquivo text,
+  imported_by_nome text, imported_at timestamptz,
+  total_linhas int, total_novos int, total_atualizados_aberto int,
+  total_atualizados_pago int, total_pulados_protegidos int
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT ci.id, ci.mes_referencia, ci.ano_referencia, ci.nome_arquivo,
+      p.name, ci.imported_at, ci.total_linhas, ci.total_novos,
+      ci.total_atualizados_aberto, ci.total_atualizados_pago, ci.total_pulados_protegidos
+    FROM caixa_imports ci LEFT JOIN profiles p ON p.id=ci.imported_by
+    WHERE p_ano IS NULL OR ci.ano_referencia=p_ano
+    ORDER BY ci.imported_at DESC;
+END; $$;
+
+-- 6) Tela Caixa: consulta linha-a-linha com filtros completos
+CREATE OR REPLACE FUNCTION get_boletos_caixa(
+  p_ano int, p_mes int DEFAULT NULL, p_status text DEFAULT NULL,
+  p_modalidade text DEFAULT NULL, p_nome text DEFAULT NULL
+) RETURNS TABLE(
+  id uuid, student_id uuid, first_name text, last_name text, modalidade text,
+  mes_referencia int, ano_referencia int, data_vencimento date,
+  valor numeric, status text, status_calculado text, data_pagamento date, observacao text,
+  comprovante_url text, comprovante_path text, url_boleto text, codigo_boleto text,
+  whatsapp text, mobile_number text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT b.id, b.student_id, s.first_name, s.last_name, s.modalidade,
+      b.mes_referencia, b.ano_referencia, b.data_vencimento,
+      b.valor, b.status,
+      CASE WHEN b.status='pago' THEN 'pago'
+           WHEN b.data_vencimento=CURRENT_DATE THEN 'vence_hoje'
+           WHEN b.data_vencimento<CURRENT_DATE THEN 'vencido'
+           ELSE 'pendente' END,
+      b.data_pagamento, b.observacao,
+      b.comprovante_url, b.comprovante_path, b.url_boleto, b.codigo_boleto,
+      s.whatsapp, s.mobile_number
+    FROM boletos b JOIN students s ON s.id=b.student_id
+    WHERE b.ano_referencia=p_ano
+      AND (p_mes IS NULL OR b.mes_referencia=p_mes)
+      AND (p_status IS NULL OR b.status=p_status)
+      AND (p_modalidade IS NULL OR s.modalidade=p_modalidade)
+      AND (p_nome IS NULL OR (s.first_name||' '||s.last_name) ILIKE '%'||p_nome||'%')
+    ORDER BY b.data_vencimento;
+END; $$;
+
+-- 7) Painel de Inadimplentes
+CREATE OR REPLACE FUNCTION get_inadimplentes()
+RETURNS TABLE(
+  id uuid, student_id uuid, first_name text, last_name text, modalidade text,
+  whatsapp text, mobile_number text, valor numeric, data_vencimento date, dias_atraso int
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT b.id, b.student_id, s.first_name, s.last_name, s.modalidade, s.whatsapp, s.mobile_number,
+      b.valor, b.data_vencimento, (CURRENT_DATE-b.data_vencimento)::int
+    FROM boletos b JOIN students s ON s.id=b.student_id
+    WHERE b.status='aberto' AND b.data_vencimento<CURRENT_DATE
+    ORDER BY (CURRENT_DATE-b.data_vencimento) DESC;
+END; $$;
+
+GRANT EXECUTE ON FUNCTION preview_importacao_caixa(jsonb,int,int) TO authenticated;
+GRANT EXECUTE ON FUNCTION confirmar_importacao_caixa(jsonb,int,int,text,uuid[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION listar_caixa_imports(int) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_boletos_caixa(int,int,text,text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_inadimplentes() TO authenticated;

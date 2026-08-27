@@ -516,6 +516,7 @@ let currentUser = null;
     <div class="sb-item no-professor no-captacao" data-page="students" onclick="nav('students')"><i class="fa fa-user-graduate"></i> Aluno</div>
     <div class="sb-item no-captacao" data-page="classes" onclick="nav('classes')"><i class="fa fa-layer-group"></i> Turmas</div>
     <div class="sb-item no-professor no-captacao" data-page="cobrancas" onclick="nav('cobrancas')"><i class="fa fa-calendar-check"></i> Cobranças</div>
+    <div class="sb-item no-professor no-captacao" data-page="inadimplentes" onclick="nav('inadimplentes')"><i class="fa fa-exclamation-triangle"></i> Inadimplentes</div>
     <div class="sb-item no-professor no-captacao" data-page="professores" onclick="nav('professores')"><i class="fa fa-user-clock"></i> Prof. — Horas</div>
     <div class="sb-item no-professor no-captacao" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
     <div class="sb-item no-professor no-captacao" data-page="importarCaixa" onclick="nav('importarCaixa')"><i class="fa fa-file-excel"></i> Importar Caixa</div>
@@ -692,7 +693,8 @@ function status_badge(s){return s?'<span class="badge badge-success">Ativo</span
 const NIVEIS=['STARTER','LEVEL 1','LEVEL 2','LEVEL 3','LEVEL 4','LEVEL 5','KIDS 4-5','KIDS 6-7','KIDS 8-9'];
 function nivelOptions(selected){return `<option value="">Selecione</option>`+NIVEIS.map(n=>`<option value="${n}" ${selected===n?'selected':''}>${n}</option>`).join('');}
 function level_badge(l){if(!l)return '—';const m={Básico:'badge-basico',Intermediário:'badge-intermediario',Avançado:'badge-avancado',STARTER:'badge-secondary','LEVEL 1':'badge-basico','LEVEL 2':'badge-basico','LEVEL 3':'badge-intermediario','LEVEL 4':'badge-intermediario','LEVEL 5':'badge-avancado','KIDS 4-5':'badge-purple','KIDS 6-7':'badge-purple','KIDS 8-9':'badge-purple'};return `<span class="badge ${m[l]||'badge-secondary'}">${l}</span>`;}
-function modalidade_badge(m){if(!m)return '—';const c={KIDS:'badge-purple',REGULAR:'badge-secondary',VIP:'badge-vip','REGULAR ONLINE':'badge-info',BOLSA:'badge-gold'};return `<span class="badge ${c[m]||'badge-secondary'}">${m}</span>`;}
+const MODALIDADES=['KIDS','REGULAR','VIP','REGULAR ONLINE','BOLSA','ONLINE','CONVERSAÇÃO'];
+function modalidade_badge(m){if(!m)return '—';const c={KIDS:'badge-purple',REGULAR:'badge-secondary',VIP:'badge-vip','REGULAR ONLINE':'badge-info',BOLSA:'badge-gold',ONLINE:'badge-info',CONVERSAÇÃO:'badge-purple'};return `<span class="badge ${c[m]||'badge-secondary'}">${m}</span>`;}
 function fdate(d){
   if(!d)return '—';
   if(typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d)){
@@ -829,7 +831,7 @@ pages.dashboard=async function(){
       <div class="stat-card c-brown"><i class="fa fa-layer-group stat-icon"></i><div><div class="stat-num">${cl.count??0}</div><div class="stat-label">Turmas ativas</div></div></div>
     </div>
     <div id="dash-aulas-hoje"></div>
-    ${(canManageBilling()||isAdmin())?`<div id="dash-aniversariantes"></div><div id="dash-risco-evasao"></div>`:''}
+    ${(canManageBilling()||isAdmin())?`<div id="dash-financeiro"></div><div id="dash-aniversariantes"></div><div id="dash-risco-evasao"></div>`:''}
     <div class="two-col">
       <div class="panel">
         <div class="panel-head"><span class="panel-title">Acesso rápido</span></div>
@@ -856,8 +858,42 @@ pages.dashboard=async function(){
     </div>
   `);
   carregarAulasHoje();
-  if(canManageBilling()||isAdmin()){carregarAniversariantesDash();carregarRiscoEvasaoDash();}
+  if(canManageBilling()||isAdmin()){carregarIndicadoresFinanceirosDash();carregarAniversariantesDash();carregarRiscoEvasaoDash();}
 };
+
+async function carregarIndicadoresFinanceirosDash(){
+  const el=$('dash-financeiro');
+  if(!el) return;
+  const[{data:vencidos=[]},{data:hoje=[]},{data:breve=[]},{data:inad=[]}]=await Promise.all([
+    sb.rpc('get_boletos_vencidos'),
+    sb.rpc('get_boletos_vencem_hoje'),
+    sb.rpc('get_boletos_vencem_em_breve',{p_dias:7}),
+    sb.rpc('get_inadimplentes'),
+  ]);
+  if(!$('dash-financeiro')) return;
+  const totalAberto=vencidos.reduce((s,b)=>s+parseFloat(b.valor||0),0);
+  const alunosEmDebito=new Set(inad.map(b=>b.student_id)).size;
+  el.innerHTML=`<div class="panel" style="margin-bottom:18px">
+    ${vencidos.length?`<div class="banner-vencidos">
+      <i class="fa fa-exclamation-circle banner-vencidos-icon"></i>
+      <div class="banner-vencidos-text">
+        <strong>⚠️ Existem ${vencidos.length} pagamento${vencidos.length>1?'s':''} vencido${vencidos.length>1?'s':''} de ${alunosEmDebito} aluno${alunosEmDebito>1?'s':''}</strong>
+        <span>Veja a lista completa em Inadimplentes.</span>
+      </div>
+      <div class="banner-vencidos-actions">
+        <button class="btn btn-danger btn-sm" onclick="nav('inadimplentes')"><i class="fa fa-list"></i> Ver inadimplentes</button>
+      </div>
+    </div>`:''}
+    <div class="panel-head"><span class="panel-title"><i class="fa fa-dollar-sign" style="color:var(--brand)"></i> Situação financeira</span></div>
+    <div class="stat-grid" style="grid-template-columns:repeat(5,1fr)">
+      <div class="stat-card c-dark" style="border-left:3px solid var(--danger)"><i class="fa fa-exclamation-triangle stat-icon" style="color:var(--danger)"></i><div><div class="stat-num">${vencidos.length}</div><div class="stat-label">Vencidos</div></div></div>
+      <div class="stat-card c-orange"><i class="fa fa-users stat-icon"></i><div><div class="stat-num">${alunosEmDebito}</div><div class="stat-label">Alunos com débito</div></div></div>
+      <div class="stat-card c-gold"><i class="fa fa-hand-holding-usd stat-icon"></i><div><div class="stat-num">${fmtBRL(totalAberto)}</div><div class="stat-label">Total em aberto</div></div></div>
+      <div class="stat-card c-brown"><i class="fa fa-clock stat-icon"></i><div><div class="stat-num">${hoje.length}</div><div class="stat-label">Vencem hoje</div></div></div>
+      <div class="stat-card c-gold"><i class="fa fa-bell stat-icon"></i><div><div class="stat-num">${breve.length}</div><div class="stat-label">Vencem em breve</div></div></div>
+    </div>
+  </div>`;
+}
 
 const ANIVERSARIO_MSG='Olá, {nome}! 🎉🎂\nA equipe da *Connect Inglês VIP* deseja um Feliz Aniversário! Que seu dia seja incrível e que este novo ano venha cheio de conquistas. 🎈\nUm abraço da nossa equipe!';
 const RETENCAO_MSG='Olá, {nome}! 😊\nFaz um tempo que não conversamos! Passando para saber como você está e se podemos ajudar em algo — seja dúvidas sobre horários, módulo atual ou plano. Estamos à disposição!';
@@ -1962,6 +1998,13 @@ function normalizarNomeCaixa(s){
   return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
 }
 
+// Corrige erros de digita\u00e7\u00e3o conhecidos na coluna Modalidade da planilha
+const MODALIDADE_CAIXA_FIX={CONEVERSA\u00c7\u00c3O:'CONVERSA\u00c7\u00c3O'};
+function normalizarModalidadeCaixa(s){
+  const m=(s||'').toString().trim().toUpperCase();
+  return MODALIDADE_CAIXA_FIX[m]||m||null;
+}
+
 function excelDateToISO(v){
   if(!v) return null;
   if(v instanceof Date) return v.toISOString().slice(0,10);
@@ -1996,10 +2039,11 @@ pages.importarCaixa=async function(){
         <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Planilha (.xlsx)</label><input id="caixa-file" type="file" accept=".xlsx,.xls" style="font-size:13px"></div>
         <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Mês</label><select id="caixa-mes">${meses.map((m,i)=>`<option value="${i+1}" ${i+1===hoje.getMonth()+1?'selected':''}>${m}</option>`).join('')}</select></div>
         <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Ano</label><input id="caixa-ano" type="number" value="${hoje.getFullYear()}" style="width:90px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px"></div>
+        <div id="caixa-senha-wrap" style="display:none"><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Senha da planilha</label><input id="caixa-senha" type="password" placeholder="Senha do arquivo" style="width:160px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px"></div>
         <button class="btn btn-primary" onclick="processarPlanilhaCaixa()"><i class="fa fa-upload"></i> Processar planilha</button>
       </div>
       <div class="panel-body" style="font-size:12px;color:var(--gray-500);padding-top:0">
-        A planilha precisa ter, nessa ordem de colunas: Nome, "OK" quando pago, Modalidade, Valor e (opcional) Data do pagamento — igual ao modelo que a escola já usa.
+        A planilha precisa ter, nessa ordem de colunas: Nome, "OK" quando pago, Modalidade, Valor e (opcional) Data do pagamento — igual ao modelo que a escola já usa. Se o arquivo for protegido por senha, informe a senha no campo que aparece após a primeira tentativa.
       </div>
     </div>
     <div id="caixa-preview"></div>
@@ -2029,13 +2073,44 @@ function buscarProvavelCaixa(nomePlanilha,alunos){
   return melhor;
 }
 
+function arrayBufferToBase64(buf){
+  let binary='';const bytes=new Uint8Array(buf);const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk) binary+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk));
+  return btoa(binary);
+}
+function base64ToArrayBuffer(b64){
+  const binary=atob(b64);const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
 async function processarPlanilhaCaixa(){
   const file=$('caixa-file').files[0];
   if(!file){showAlert('page-alert','Selecione o arquivo da planilha.','danger');return;}
   const mes=parseInt($('caixa-mes').value);
   const ano=parseInt($('caixa-ano').value);
-  const buf=await file.arrayBuffer();
-  const wb=XLSX.read(buf,{type:'array',cellDates:true});
+  let buf=await file.arrayBuffer();
+  let wb;
+  try{
+    wb=XLSX.read(buf,{type:'array',cellDates:true});
+  }catch(e){
+    if(!/password-protected/i.test(e.message||'')) throw e;
+    const senha=$('caixa-senha')?.value;
+    if(!senha){
+      $('caixa-senha-wrap').style.display='block';
+      showAlert('page-alert','Esta planilha é protegida por senha. Informe a senha e clique em "Processar planilha" novamente.','danger');
+      return;
+    }
+    showAlert('page-alert','Descriptografando planilha...','info');
+    try{
+      const resp=await callEdgeFn('caixa-decrypt-xlsx',{file_base64:arrayBufferToBase64(buf),senha});
+      buf=base64ToArrayBuffer(resp.file_base64);
+      wb=XLSX.read(buf,{type:'array',cellDates:true});
+    }catch(e2){
+      showAlert('page-alert','Não foi possível abrir a planilha: '+e2.message,'danger');
+      return;
+    }
+  }
   const sheetName=wb.SheetNames.find(n=>{
     const ws=wb.Sheets[n];
     const a1=ws&&ws['A1']?String(ws['A1'].v||'').toUpperCase():'';
@@ -2053,7 +2128,7 @@ async function processarPlanilhaCaixa(){
     const nome=row[0];
     if(!nome||typeof nome!=='string') return;
     const statusOk=(row[1]||'').toString().trim().toUpperCase()==='OK';
-    const modalidade=row[2]||null;
+    const modalidade=normalizarModalidadeCaixa(row[2]);
     const valorNum=typeof row[3]==='number'?row[3]:parseFloat(row[3]);
     if(!valorNum) return;
     const dataPlanilha=excelDateToISO(row[4]);
@@ -2127,18 +2202,18 @@ function renderPreviewCaixa(mes,ano){
     </div>`:''}
     <div class="panel">
       <div class="panel-footer">
-        <button class="btn btn-primary" ${exatos.length?'':'disabled'} onclick="confirmarImportacaoCaixa(${mes},${ano})"><i class="fa fa-check"></i> Confirmar importação</button>
+        <button class="btn btn-primary" ${exatos.length?'':'disabled'} onclick="preConfirmarImportacaoCaixa(${mes},${ano},'${esc($('caixa-file')?.files[0]?.name||'')}')"><i class="fa fa-search"></i> Conferir antes de gravar</button>
       </div>
     </div>
+    <div id="caixa-conferencia"></div>
   `;
 }
 
-async function confirmarImportacaoCaixa(mes,ano){
+async function montarLinhasCaixa(mes,ano){
   const linhas=_caixaParsed.filter(r=>r.studentId||(r.provavelId&&r.confirmado)).map(r=>({...r,studentIdFinal:r.studentId||r.provavelId}));
-  if(!linhas.length) return;
   const{data:alunosVenc=[]}=await sb.from('students').select('id,mensalidade_vencimento_dia').in('id',linhas.map(r=>r.studentIdFinal));
   const vencMap={};alunosVenc.forEach(a=>{vencMap[a.id]=a.mensalidade_vencimento_dia;});
-  const rows=linhas.map(r=>({
+  return linhas.map(r=>({
     student_id:r.studentIdFinal,
     mes_referencia:mes,
     ano_referencia:ano,
@@ -2147,12 +2222,113 @@ async function confirmarImportacaoCaixa(mes,ano){
     status:r.statusOk?'pago':'aberto',
     data_pagamento:r.statusOk?(r.dataPlanilha||calcularVencimentoCaixa(ano,mes,vencMap[r.studentIdFinal])):null,
   }));
-  const{error}=await sb.rpc('importar_caixa_mes',{p_rows:rows});
-  if(error){showAlert('page-alert','Erro ao importar: '+error.message,'danger');return;}
-  showAlert('page-alert',`${rows.length} lançamento(s) importado(s) com sucesso.`,'success');
-  $('caixa-preview').innerHTML='';
-  _caixaParsed=[];
 }
+
+let _caixaRowsPendentes=[];
+let _caixaNomeArquivo='';
+
+// 4. Conferência antes de gravar: nunca sobrescreve um boleto já pago
+// sem que a equipe marque explicitamente que quer isso (dado financeiro
+// sensível — ver preview_importacao_caixa/confirmar_importacao_caixa).
+async function preConfirmarImportacaoCaixa(mes,ano,nomeArquivo){
+  const rows=await montarLinhasCaixa(mes,ano);
+  if(!rows.length) return;
+  _caixaRowsPendentes=rows;
+  _caixaNomeArquivo=nomeArquivo;
+  const{data:diff=[],error}=await sb.rpc('preview_importacao_caixa',{p_rows:rows,p_mes:mes,p_ano:ano});
+  if(error){showAlert('page-alert','Erro ao conferir importação: '+error.message,'danger');return;}
+  const porId={};rows.forEach(r=>{porId[r.student_id]=r;});
+  const nomePorId={};_caixaParsed.forEach(r=>{const sid=r.studentId||r.provavelId;if(sid) nomePorId[sid]=r.provavelNome||r.nomePlanilha;});
+
+  const novos=diff.filter(d=>d.categoria==='novo');
+  const atualiza=diff.filter(d=>d.categoria==='atualiza_aberto');
+  const sobrescreve=diff.filter(d=>d.categoria==='sobrescreve_pago');
+  const semMudanca=diff.filter(d=>d.categoria==='sem_mudanca');
+
+  const linhaDiff=d=>`<tr>
+    <td>${esc(nomePorId[d.student_id]||'—')}</td>
+    <td>${d.valor_atual!=null?fmtBRL(d.valor_atual)+' → ':''}${fmtBRL(d.valor_planilha)}</td>
+    <td>${d.status_atual?d.status_atual+' → ':''}${d.status_planilha}</td>
+  </tr>`;
+
+  $('caixa-conferencia').innerHTML=`
+    <div class="panel" style="margin-bottom:18px;border-left:3px solid var(--success)">
+      <div class="panel-head"><span class="panel-title">Novos lançamentos</span><span style="font-size:12px;color:var(--gray-500)">${novos.length}</span></div>
+      <div class="panel-body"><div class="table-wrap"><table><thead><tr><th>Aluno</th><th>Valor</th><th>Status</th></tr></thead><tbody>${novos.length?novos.map(linhaDiff).join(''):'<tr><td colspan="3">Nenhum</td></tr>'}</tbody></table></div></div>
+    </div>
+    ${atualiza.length?`<div class="panel" style="margin-bottom:18px;border-left:3px solid var(--brand-orange)">
+      <div class="panel-head"><span class="panel-title">Atualiza lançamento em aberto</span><span style="font-size:12px;color:var(--gray-500)">${atualiza.length}</span></div>
+      <div class="panel-body"><div class="table-wrap"><table><thead><tr><th>Aluno</th><th>Valor (atual → novo)</th><th>Status (atual → novo)</th></tr></thead><tbody>${atualiza.map(linhaDiff).join('')}</tbody></table></div></div>
+    </div>`:''}
+    ${sobrescreve.length?`<div class="panel" style="margin-bottom:18px;border-left:3px solid var(--danger)">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-exclamation-triangle" style="color:var(--danger)"></i> Sobrescreve boleto JÁ PAGO — confirme um a um</span><span style="font-size:12px;color:var(--gray-500)">${sobrescreve.length}</span></div>
+      <div class="panel-body">
+        <div class="alert alert-danger" style="display:block;margin-bottom:14px">Esses alunos já têm pagamento registrado neste mês. Sem marcar a caixa, o valor/status atual NÃO será alterado.</div>
+        <div class="table-wrap"><table>
+          <thead><tr><th></th><th>Aluno</th><th>Valor (atual → novo)</th><th>Status (atual → novo)</th></tr></thead>
+          <tbody>${sobrescreve.map(d=>`<tr>
+            <td><input type="checkbox" data-caixa-confirma-pago="${d.student_id}"></td>
+            ${linhaDiff(d).replace('<tr>','').replace('</tr>','')}
+          </tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+    </div>`:''}
+    ${semMudanca.length?`<div class="panel" style="margin-bottom:18px"><div class="panel-body" style="font-size:12px;color:var(--gray-500)">${semMudanca.length} linha(s) idêntica(s) ao que já está gravado — não serão alteradas.</div></div>`:''}
+    <div class="panel">
+      <div class="panel-footer">
+        <button class="btn btn-primary" onclick="confirmarImportacaoCaixa(${mes},${ano})"><i class="fa fa-check"></i> Confirmar importação</button>
+      </div>
+    </div>
+  `;
+}
+
+async function confirmarImportacaoCaixa(mes,ano){
+  const rows=_caixaRowsPendentes;
+  if(!rows.length) return;
+  const confirmarPagosIds=Array.from(document.querySelectorAll('[data-caixa-confirma-pago]:checked')).map(el=>el.getAttribute('data-caixa-confirma-pago'));
+  const{data,error}=await sb.rpc('confirmar_importacao_caixa',{
+    p_rows:rows,p_mes:mes,p_ano:ano,p_nome_arquivo:_caixaNomeArquivo||null,p_confirmar_pagos_ids:confirmarPagosIds,
+  });
+  if(error){showAlert('page-alert','Erro ao importar: '+error.message,'danger');return;}
+  const r=(data&&data[0])||{total_novos:0,total_atualizados_aberto:0,total_atualizados_pago:0,pulados_protegidos:0};
+  showAlert('page-alert',`Importação concluída: ${r.total_novos} novo(s), ${r.total_atualizados_aberto} atualizado(s) em aberto, ${r.total_atualizados_pago} atualizado(s) já pago(s)${r.pulados_protegidos?`, ${r.pulados_protegidos} pulado(s) por estarem pagos e não confirmados`:''}.`,'success');
+  $('caixa-preview').innerHTML='';
+  $('caixa-conferencia').innerHTML='';
+  _caixaParsed=[];
+  _caixaRowsPendentes=[];
+}
+
+pages.caixaHistorico=async function(){
+  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const{data:imports=[],error}=await sb.rpc('listar_caixa_imports');
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  setContent(`
+    <div class="breadcrumb"><a onclick="nav('financeiro')">Caixa</a> › <span>Caixas anteriores</span></div>
+    <div class="page-title"><i class="fa fa-history"></i> Histórico de importações de caixa</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Importações registradas</span><span style="font-size:12px;color:var(--gray-500)">${imports.length}</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Período</th><th>Arquivo</th><th>Importado por</th><th>Data</th><th>Novos</th><th>Atualizados (aberto)</th><th>Atualizados (pago)</th><th>Protegidos (pulados)</th></tr></thead>
+          <tbody>${imports.length?imports.map(ci=>`<tr>
+            <td><strong>${meses[ci.mes_referencia-1]}/${ci.ano_referencia}</strong></td>
+            <td>${esc(ci.nome_arquivo)||'—'}</td>
+            <td>${esc(ci.imported_by_nome)||'—'}</td>
+            <td>${new Date(ci.imported_at).toLocaleString('pt-BR')}</td>
+            <td>${ci.total_novos}</td>
+            <td>${ci.total_atualizados_aberto}</td>
+            <td>${ci.total_atualizados_pago}</td>
+            <td>${ci.total_pulados_protegidos}</td>
+          </tr>`).join(''):`<tr><td colspan="8"><div class="empty-state"><i class="fa fa-history"></i>Nenhuma importação registrada ainda.</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+  if(error) showAlert('page-alert','Não foi possível carregar o histórico: '+error.message+' (pode ser necessário rodar a atualização mais recente do banco de dados)','danger');
+};
 
 // --- SCHOOLS ---
 pages.schools=async function({view,id}={}){
@@ -2591,7 +2767,7 @@ pages.students=async function({view,id}={}){
       <div class="panel-head"><span class="panel-title">Lista de alunos</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="8">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="${(canManageBilling()||isAdmin())?9:8}">Ações</th></tr></thead>
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
@@ -2603,6 +2779,7 @@ pages.students=async function({view,id}={}){
               <td>${status_badge(s.status)}</td>
               <td>${fdate(s.date_joining)}</td>
               <td><button class="btn-icon" onclick="nav('students',{view:'frequencia',id:'${s.id}'})" title="Histórico de frequência"><i class="fa fa-calendar-check"></i></button></td>
+              ${(canManageBilling()||isAdmin())?`<td><button class="btn-icon" onclick="nav('financeiro',{view:'aluno',studentId:'${s.id}'})" title="Financeiro do aluno"><i class="fa fa-file-invoice-dollar"></i></button></td>`:''}
               <td><button class="btn-icon" onclick="nav('students',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
               <td><button class="btn-icon" onclick="imprimirRelatorioAluno('${s.id}')" title="Imprimir relatório"><i class="fa fa-file-pdf"></i></button></td>
               <td><button class="btn-icon" onclick="imprimirContratoAluno('${s.id}')" title="Imprimir contrato"><i class="fa fa-file-contract"></i></button></td>
@@ -2675,7 +2852,6 @@ async function studentForm(id){
   if(id){const{data}=await sb.from('students').select('*').eq('id',id).single();s=data||{};}
   const classOpts=classes.map(c=>`<option value="${c.id}" ${s.class_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   const schoolOpts=schools.map(c=>`<option value="${c.id}" ${s.school_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
-  const MODALIDADES=['KIDS','REGULAR','VIP','REGULAR ONLINE','BOLSA'];
   const modalidadeOpts=MODALIDADES.map(m=>`<option value="${m}" ${s.modalidade===m?'selected':''}>${m}</option>`).join('');
   const comprovanteAtual=s.parent_comprovante_path?`<div class="field"><a href="#" onclick="abrirComprovante('${esc(s.parent_comprovante_path)}',${/^https?:\/\//.test(s.parent_comprovante_path)?"'url'":"'path'"});return false" class="comprovante-icon"><i class="fa fa-image"></i> Ver comprovante atual</a></div>`:'';
   setContent(`
@@ -2762,6 +2938,7 @@ async function studentForm(id){
         ${id?`
           <div class="help-text" style="margin-top:10px">Salve o cadastro com início, fim, valor e dia de vencimento preenchidos e depois clique abaixo — o sistema gera sozinho uma mensalidade por mês do período inteiro, sem sobrescrever nenhum mês que já esteja pago.</div>
           <button class="btn btn-default btn-sm" style="margin-top:8px" onclick="gerarRecorrenciaBoletos('${id}')"><i class="fa fa-repeat"></i> Gerar parcelas do contrato</button>
+          ${(canManageBilling()||isAdmin())?`<button class="btn btn-default btn-sm" style="margin-top:8px;margin-left:8px" onclick="nav('financeiro',{view:'aluno',studentId:'${id}'})"><i class="fa fa-file-invoice-dollar"></i> Ver histórico financeiro completo</button>`:''}
         `:''}
       </div>
       <div class="panel-footer">
@@ -3419,6 +3596,51 @@ pages.cobrancas=async function(){
   `);
 };
 
+pages.inadimplentes=async function(){
+  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const{data:lista=[],error}=await sb.rpc('get_inadimplentes');
+  const valorTotal=lista.reduce((s,b)=>s+parseFloat(b.valor||0),0);
+  const alunosUnicos=new Set(lista.map(b=>b.student_id)).size;
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Inadimplentes</span></div>
+    <div class="page-title"><i class="fa fa-exclamation-triangle"></i> Débitos em aberto / Inadimplentes</div>
+    <div id="page-alert" class="alert"></div>
+    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="stat-card c-dark" style="border-left:3px solid var(--danger)"><i class="fa fa-file-invoice stat-icon" style="color:var(--danger)"></i><div><div class="stat-num">${lista.length}</div><div class="stat-label">Pagamentos vencidos</div></div></div>
+      <div class="stat-card c-orange"><i class="fa fa-users stat-icon"></i><div><div class="stat-num">${alunosUnicos}</div><div class="stat-label">Alunos com débito</div></div></div>
+      <div class="stat-card c-gold"><i class="fa fa-hand-holding-usd stat-icon"></i><div><div class="stat-num">${fmtBRL(valorTotal)}</div><div class="stat-label">Valor total em aberto</div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Alunos inadimplentes</span><span style="font-size:12px;color:var(--gray-500)">${lista.length} registro(s)</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Aluno</th><th>Modalidade</th><th>Valor devido</th><th>Vencimento</th><th>Dias em atraso</th><th>Contato</th><th>Ações</th></tr></thead>
+          <tbody>${lista.length?lista.map(b=>{
+            const numero=(b.whatsapp||b.mobile_number||'').replace(/\D/g,'');
+            const numFmt=numero&&!numero.startsWith('55')?'55'+numero:numero;
+            return `<tr>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(b.first_name)}</div><strong>${esc(b.first_name)} ${esc(b.last_name)}</strong></div></td>
+              <td>${modalidade_badge(b.modalidade)}</td>
+              <td style="color:var(--danger);font-weight:600">${fmtBRL(b.valor)}</td>
+              <td>${fdate(b.data_vencimento)}</td>
+              <td><span class="badge badge-danger">${b.dias_atraso} dia${b.dias_atraso>1?'s':''}</span></td>
+              <td>${numFmt?`<a href="https://wa.me/${numFmt}" target="_blank" style="color:#25D366;font-weight:600"><i class="fab fa-whatsapp"></i> ${esc(b.whatsapp||b.mobile_number||'—')}</a>`:'—'}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-success btn-sm" onclick="abrirPgtoModal('${b.id}','aberto','${b.student_id}','${fdate(b.data_vencimento)}',{page:'inadimplentes',params:{}})" title="Marcar pago"><i class="fa fa-check"></i></button>
+                ${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarCobrancaWpp('${b.student_id}','${esc(b.first_name)}','${numFmt}','vencido','${fdate(b.data_vencimento)}','')" title="Cobrar WhatsApp"><i class="fab fa-whatsapp"></i></button>`:''}
+                <button class="btn btn-default btn-sm" onclick="nav('financeiro',{view:'aluno',studentId:'${b.student_id}'})" title="Ver histórico"><i class="fa fa-list"></i></button>
+              </td>
+            </tr>`}).join(''):`<tr><td colspan="7"><div class="empty-state"><i class="fa fa-check-circle" style="color:var(--success)"></i>Nenhum aluno inadimplente no momento.</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+  if(error) showAlert('page-alert','Não foi possível carregar os inadimplentes: '+error.message+' (pode ser necessário rodar a atualização mais recente do banco de dados)','danger');
+};
+
 function renderBoletoCobranca(b,modo){
   const numero=(b.whatsapp||b.mobile_number||'').replace(/\D/g,'');
   const numFmt=numero&&!numero.startsWith('55')?'55'+numero:numero;
@@ -3931,6 +4153,22 @@ async function profSalvarIndividual(teacherId,nome){
 // ============================
 function fmtBRL(v){return Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});}
 
+function computeStatusBoleto(b){
+  if(b.status==='pago') return 'pago';
+  if(!b.data_vencimento) return 'pendente';
+  const hoje=new Date();hoje.setHours(0,0,0,0);
+  const venc=new Date(b.data_vencimento+'T00:00:00');
+  if(venc.getTime()===hoje.getTime()) return 'vence_hoje';
+  if(venc<hoje) return 'vencido';
+  return 'pendente';
+}
+const STATUS_BOLETO_BADGE={
+  pago:'<span class="badge badge-success"><i class="fa fa-check"></i> Pago</span>',
+  pendente:'<span class="badge badge-secondary"><i class="fa fa-clock"></i> Pendente</span>',
+  vencido:'<span class="badge badge-danger"><i class="fa fa-exclamation-triangle"></i> Vencido</span>',
+  vence_hoje:'<span class="badge badge-warning"><i class="fa fa-bell"></i> Vence hoje</span>',
+};
+
 pages.financeiro=async function({view,studentId}={}){
   if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
   if(view==='lancar') return finLancarBoletos(studentId);
@@ -3951,35 +4189,37 @@ pages.financeiro=async function({view,studentId}={}){
   const fStatus=getFilter('fin-status');
   const fNome=getFilter('fin-nome')||'';
   const fAno=getFilter('fin-ano')||new Date().getFullYear().toString();
+  const fMes=getFilter('fin-mes');
+  const fModalidade=getFilter('fin-modalidade');
+  const fVencDe=getFilter('fin-venc-de');
+  const fVencAte=getFilter('fin-venc-ate');
 
-  let alunos=[];
+  let boletos=[];
   if(canSeeFinanceiroGlobal()){
-    const{data,error}=await sb.rpc('get_boletos_com_aluno',{p_ano:parseInt(fAno),p_status:fStatus||null});
+    const{data,error}=await sb.rpc('get_boletos_caixa',{
+      p_ano:parseInt(fAno), p_mes:fMes?parseInt(fMes):null,
+      p_status:fStatus||null, p_modalidade:fModalidade||null, p_nome:fNome||null,
+    });
     if(error) finErro=error.message;
-    const boletos=data||[];
-    const alunosMap={};
-    for(const b of boletos){
-      const sid=b.student_id;
-      if(!alunosMap[sid]) alunosMap[sid]={id:sid,first_name:b.first_name,last_name:b.last_name,totalPago:0,totalAberto:0};
-      if(b.status==='pago') alunosMap[sid].totalPago+=parseFloat(b.valor);
-      if(b.status==='aberto') alunosMap[sid].totalAberto+=parseFloat(b.valor);
-    }
-    alunos=Object.values(alunosMap);
+    boletos=data||[];
+    if(fVencDe) boletos=boletos.filter(b=>b.data_vencimento&&b.data_vencimento>=fVencDe);
+    if(fVencAte) boletos=boletos.filter(b=>b.data_vencimento&&b.data_vencimento<=fVencAte);
   } else {
     const{data,error}=await sb.rpc('get_alunos_com_boletos_status',{p_ano:parseInt(fAno)});
     if(error) finErro=error.message;
-    const lista=data||[];
-    alunos=lista.map(a=>({id:a.student_id,first_name:a.first_name,last_name:a.last_name,totalAberto:a.tem_aberto?1:0,totalPago:0}));
+    boletos=(data||[]).map(a=>({id:a.student_id,student_id:a.student_id,first_name:a.first_name,last_name:a.last_name,status:a.tem_aberto?'aberto':'pago'}));
   }
-  if(fNome){const termo=fNome.toLowerCase();alunos=alunos.filter(a=>(a.first_name+' '+a.last_name).toLowerCase().includes(termo));}
 
   const{data:todosAlunos=[]}=await sb.from('students').select('id,first_name,last_name').eq('status',true).order('first_name');
   _finAlunosBusca=todosAlunos;
   const anosOpts=[2024,2025,2026,2027].map(a=>`<option value="${a}" ${fAno==a?'selected':''}>${a}</option>`).join('');
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const mesesOpts=meses.map((m,i)=>`<option value="${i+1}" ${fMes==(i+1)?'selected':''}>${m}</option>`).join('');
+  const modalidadeOpts=MODALIDADES.map(m=>`<option value="${m}" ${fModalidade===m?'selected':''}>${m}</option>`).join('');
 
   setContent(`
-    <div class="breadcrumb"><span>Home</span> › <span>Financeiro</span></div>
-    <div class="page-title"><i class="fa fa-dollar-sign"></i> Controle Financeiro</div>
+    <div class="breadcrumb"><span>Home</span> › <span>Caixa</span></div>
+    <div class="page-title"><i class="fa fa-dollar-sign"></i> Caixa — Controle Financeiro</div>
     <div id="page-alert" class="alert"></div>
     ${canSeeFinanceiroGlobal()?`<div class="fin-summary-grid">
       <div class="fin-card c-gold"><i class="fa fa-check-circle fin-card-icon"></i><div><div class="fin-card-num">${fmtBRL(totalPago)}</div><div class="fin-card-label">Total Pago (arrecadado)</div></div></div>
@@ -3996,7 +4236,11 @@ pages.financeiro=async function({view,studentId}={}){
             <input type="hidden" id="fin-select-aluno">
             <div id="fin-aluno-list" class="aluno-suggest-list" style="display:none"></div>
           </div>
-          <div><button class="btn btn-primary" onclick="finGoLancar()"><i class="fa fa-file-invoice-dollar"></i> Lançar boletos do ano</button></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="finGoLancar()"><i class="fa fa-file-invoice-dollar"></i> Lançar boletos do ano</button>
+            <button class="btn btn-default" onclick="nav('importarCaixa')"><i class="fa fa-file-excel"></i> Importar planilha</button>
+            <button class="btn btn-default" onclick="nav('caixaHistorico')"><i class="fa fa-history"></i> Caixas anteriores</button>
+          </div>
         </div>
       </div>
     </div>
@@ -4005,25 +4249,37 @@ pages.financeiro=async function({view,studentId}={}){
       <div class="panel-body">
         <div class="fin-filter-bar">
           <div class="form-col"><label>Nome do aluno</label><input id="fin-nome" value="${esc(fNome)}" placeholder="Buscar por nome…"></div>
-          <div class="form-col" style="max-width:160px"><label>Status</label><select id="fin-status"><option value="">Todos</option><option value="aberto" ${fStatus==='aberto'?'selected':''}>Em aberto</option><option value="pago" ${fStatus==='pago'?'selected':''}>Pago</option></select></div>
+          <div class="form-col" style="max-width:160px"><label>Modalidade</label><select id="fin-modalidade"><option value="">Todas</option>${modalidadeOpts}</select></div>
+          <div class="form-col" style="max-width:110px"><label>Mês</label><select id="fin-mes"><option value="">Todos</option>${mesesOpts}</select></div>
           <div class="form-col" style="max-width:120px"><label>Ano</label><select id="fin-ano">${anosOpts}</select></div>
-          <div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="saveFilters(['fin-nome','fin-status','fin-ano']);nav('financeiro')"><i class="fa fa-search"></i> Filtrar</button><button class="btn btn-danger" onclick="clearFilters(['fin-nome','fin-status','fin-ano']);nav('financeiro')">Limpar</button></div>
+          <div class="form-col" style="max-width:160px"><label>Status</label><select id="fin-status"><option value="">Todos</option><option value="aberto" ${fStatus==='aberto'?'selected':''}>Em aberto</option><option value="pago" ${fStatus==='pago'?'selected':''}>Pago</option></select></div>
+          <div class="form-col" style="max-width:150px"><label>Vencimento de</label><input type="date" id="fin-venc-de" value="${esc(fVencDe)}"></div>
+          <div class="form-col" style="max-width:150px"><label>até</label><input type="date" id="fin-venc-ate" value="${esc(fVencAte)}"></div>
+          <div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="saveFilters(['fin-nome','fin-status','fin-ano','fin-mes','fin-modalidade','fin-venc-de','fin-venc-ate']);nav('financeiro')"><i class="fa fa-search"></i> Filtrar</button><button class="btn btn-danger" onclick="clearFilters(['fin-nome','fin-status','fin-ano','fin-mes','fin-modalidade','fin-venc-de','fin-venc-ate']);nav('financeiro')">Limpar</button></div>
         </div>
       </div>
     </div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">Boletos por aluno — ${fAno}</span><span style="font-size:12px;color:var(--gray-500)">${alunos.length} aluno(s)</span></div>
+      <div class="panel-head"><span class="panel-title">Boletos — ${fAno}</span><span style="font-size:12px;color:var(--gray-500)">${boletos.length} lançamento(s)</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Aluno</th>${canSeeFinanceiroGlobal()?'<th>Pago</th><th>Em aberto</th>':''}<th>Situação</th><th>Ações</th></tr></thead>
-          <tbody>${alunos.length?alunos.map(a=>`
+          <thead><tr><th>Aluno</th><th>Modalidade</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data pagamento</th><th>Ações</th></tr></thead>
+          <tbody>${boletos.length?boletos.map(b=>{
+            const situacao=canSeeFinanceiroGlobal()?computeStatusBoleto(b):(b.status==='pago'?'pago':'pendente');
+            return `
             <tr>
-              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(a.first_name)}</div><strong>${esc(a.first_name)} ${esc(a.last_name)}</strong></div></td>
-              ${canSeeFinanceiroGlobal()?`<td style="color:#1a6b3a;font-weight:600">${fmtBRL(a.totalPago)}</td>
-              <td style="color:#8a5c00;font-weight:600">${fmtBRL(a.totalAberto)}</td>`:''}
-              <td>${a.totalAberto>0?'<span class="badge badge-warning"><i class="fa fa-exclamation-triangle"></i> Em aberto</span>':'<span class="badge badge-success"><i class="fa fa-check"></i> Em dia</span>'}</td>
-              <td><button class="btn btn-primary btn-sm" onclick="nav('financeiro',{view:'aluno',studentId:'${a.id}'})"><i class="fa fa-list"></i> Ver boletos</button></td>
-            </tr>`).join(''):`<tr><td colspan="${canSeeFinanceiroGlobal()?5:3}"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto encontrado com os filtros selecionados.</div></td></tr>`}
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(b.first_name)}</div><strong>${esc(b.first_name)} ${esc(b.last_name)}</strong></div></td>
+              <td>${modalidade_badge(b.modalidade)}</td>
+              <td>${b.data_vencimento?fdate(b.data_vencimento):'—'}</td>
+              <td>${b.valor!=null?fmtBRL(b.valor):'—'}</td>
+              <td>${STATUS_BOLETO_BADGE[situacao]||'—'}</td>
+              <td>${b.data_pagamento?fdate(b.data_pagamento):'—'}</td>
+              <td style="white-space:nowrap;display:flex;gap:4px">
+                ${b.id&&canSeeFinanceiroGlobal()?`<button class="btn btn-icon" title="Registrar pagamento / desfazer" onclick="abrirPgtoModal('${b.id}','${b.status}','${b.student_id}','${meses[b.mes_referencia-1]}/${b.ano_referencia}',{page:'financeiro',params:{}})"><i class="fa fa-hand-holding-usd"></i></button>`:''}
+                ${b.id&&canSeeFinanceiroGlobal()?`<button class="btn btn-icon" title="Editar valor/vencimento" onclick="abrirEditarBoletoModal('${b.id}','${b.student_id}',${b.mes_referencia},${b.ano_referencia},${b.valor},'${b.data_vencimento||''}','${esc(b.url_boleto||'')}','${esc(b.codigo_boleto||'')}')"><i class="fa fa-pen"></i></button>`:''}
+                <button class="btn btn-primary btn-sm" onclick="nav('financeiro',{view:'aluno',studentId:'${b.student_id}'})"><i class="fa fa-list"></i> Histórico</button>
+              </td>
+            </tr>`}).join(''):`<tr><td colspan="7"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto encontrado com os filtros selecionados.</div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -4031,6 +4287,33 @@ pages.financeiro=async function({view,studentId}={}){
   `);
   if(finErro) showAlert('page-alert','Não foi possível carregar todos os dados financeiros: '+finErro+' (pode ser necessário rodar a atualização mais recente do banco de dados)','danger');
 };
+
+function abrirEditarBoletoModal(boletoId,studentId,mes,ano,valor,vencimento,urlBoleto,codigoBoleto){
+  const html=`
+    <div class="pgto-overlay" id="edit-boleto-overlay" style="display:flex" onclick="if(event.target===this)this.remove()">
+      <div class="pgto-box">
+        <div class="pgto-header"><h4><i class="fa fa-pen"></i> Editar lançamento</h4><button class="pgto-close" onclick="document.getElementById('edit-boleto-overlay').remove()">&#x2715;</button></div>
+        <div class="pgto-body">
+          <div class="pgto-field"><label>Valor (R$)</label><input type="number" id="edit-boleto-valor" step="0.01" min="0.01" value="${valor||''}"></div>
+          <div class="pgto-field"><label>Data de vencimento</label><input type="date" id="edit-boleto-venc" value="${vencimento||''}"></div>
+        </div>
+        <div class="pgto-footer">
+          <button class="btn btn-default" onclick="document.getElementById('edit-boleto-overlay').remove()">Cancelar</button>
+          <button class="btn btn-primary" onclick="salvarEdicaoBoleto('${studentId}',${mes},${ano},'${esc(urlBoleto)}','${esc(codigoBoleto)}')"><i class="fa fa-save"></i> Salvar</button>
+        </div>
+      </div>
+    </div>`;
+  const div=document.createElement('div');div.innerHTML=html;document.body.appendChild(div.firstElementChild);
+}
+async function salvarEdicaoBoleto(studentId,mes,ano,urlBoleto,codigoBoleto){
+  const valor=parseFloat($('edit-boleto-valor').value);
+  const venc=$('edit-boleto-venc').value;
+  if(!valor||!venc){alert('Informe valor e data de vencimento.');return;}
+  const{error}=await sb.rpc('lancar_boletos_aluno',{p_rows:[{student_id:studentId,mes_referencia:mes,ano_referencia:ano,data_vencimento:venc,valor,url_boleto:urlBoleto||null,codigo_boleto:codigoBoleto||null}]});
+  const overlay=document.getElementById('edit-boleto-overlay');if(overlay) overlay.remove();
+  if(error){alert('Erro ao salvar: '+error.message);return;}
+  nav('financeiro');
+}
 
 async function finAluno(studentId){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
@@ -4223,11 +4506,11 @@ async function deletarBoleto(boletoId, studentId){
 // Estado do modal de pagamento
 let _pgtoCtx={};
 
-function abrirPgtoModal(boletoId, statusAtual, studentId, mesTxt){
+function abrirPgtoModal(boletoId, statusAtual, studentId, mesTxt, returnTo){
   // Se já está pago, pede confirmação antes de desfazer
   if(statusAtual==='pago'){
     showConfirm(()=>{
-      _pgtoCtx={boletoId,novoStatus:'aberto',studentId};
+      _pgtoCtx={boletoId,novoStatus:'aberto',studentId,returnTo};
       confirmarPagamentoModal();
     });
     const box=document.querySelector('.confirm-box');
@@ -4239,7 +4522,7 @@ function abrirPgtoModal(boletoId, statusAtual, studentId, mesTxt){
     }
     return;
   }
-  _pgtoCtx={boletoId,novoStatus:'pago',studentId};
+  _pgtoCtx={boletoId,novoStatus:'pago',studentId,returnTo};
   $('pgto-titulo').textContent='Confirmar pagamento — '+mesTxt;
   $('pgto-data').value=new Date().toISOString().split('T')[0];
   $('pgto-link').value='';
@@ -4277,7 +4560,7 @@ function pgtoArquivoSelecionado(input){
 }
 
 async function confirmarPagamentoModal(){
-  const{boletoId,novoStatus,studentId}=_pgtoCtx;
+  const{boletoId,novoStatus,studentId,returnTo}=_pgtoCtx;
   if(!boletoId) return;
 
   const btn=$('pgto-confirmar');
@@ -4320,7 +4603,7 @@ async function confirmarPagamentoModal(){
   if(error){alert('Erro ao salvar: '+error.message);return;}
 
   closePgtoModal();
-  nav('financeiro',{view:'aluno',studentId});
+  if(returnTo) nav(returnTo.page,returnTo.params); else nav('financeiro',{view:'aluno',studentId});
 }
 
 async function marcarVencidosComoPago(studentId, idsStr){
