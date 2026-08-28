@@ -519,7 +519,7 @@ let currentUser = null;
     <div class="sb-item no-professor no-captacao" data-page="inadimplentes" onclick="nav('inadimplentes')"><i class="fa fa-exclamation-triangle"></i> Inadimplentes</div>
     <div class="sb-item no-professor no-captacao" data-page="professores" onclick="nav('professores')"><i class="fa fa-user-clock"></i> Prof. — Horas</div>
     <div class="sb-item no-professor no-captacao" data-page="financeiro" onclick="nav('financeiro')"><i class="fa fa-dollar-sign"></i> Financeiro</div>
-    <div class="sb-item no-professor no-captacao" data-page="importarCaixa" onclick="nav('importarCaixa')"><i class="fa fa-file-excel"></i> Importar Caixa</div>
+    <div class="sb-item no-professor" data-page="importarCaixa" onclick="nav('importarCaixa')"><i class="fa fa-file-excel"></i> Importar Caixa</div>
     <div class="sb-item no-professor no-captacao" data-page="vip" onclick="nav('vip')"><i class="fa fa-star"></i> VIP Online</div>
     <div class="sb-item no-professor no-captacao" data-page="documentos" onclick="nav('documentos')"><i class="fa fa-file-signature"></i> Documentos</div>
     <div class="sb-item no-professor no-captacao" data-page="nps" onclick="nav('nps')"><i class="fa fa-smile"></i> Pesquisa NPS</div>
@@ -688,6 +688,7 @@ function canManageBilling(){return isFinanceiro()||isSecretaria();}
 function canSeeFinanceiroGlobal(){return canManageBilling();}
 function canAccessVipFollowup(){return isAdmin()||isFinanceiro()||isSecretaria();}
 function canAccessCaptacao(){return isAdmin()||currentUser?.role==='captacao';}
+function canImportCaixa(){return canManageBilling()||isAdmin()||currentUser?.role==='captacao';}
 function requireRole(allowed,msg){if(!allowed){showAlert('page-alert',msg||'Sem permissão para esta ação.','danger');return false;}return true;}
 function status_badge(s){return s?'<span class="badge badge-success">Ativo</span>':'<span class="badge badge-warning">Inativo</span>';}
 const NIVEIS=['STARTER','LEVEL 1','LEVEL 2','LEVEL 3','LEVEL 4','LEVEL 5','KIDS 4-5','KIDS 6-7','KIDS 8-9'];
@@ -716,7 +717,7 @@ function setActive(page){
   if(el)el.classList.add('active');
 }
 function nav(page, params={}){
-  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='inativos'&&page!=='debitosLanche'&&page!=='avisarFalta'&&page!=='students'){page='captacao';params={};}
+  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='inativos'&&page!=='debitosLanche'&&page!=='avisarFalta'&&page!=='students'&&page!=='importarCaixa'){page='captacao';params={};}
   setActive(page);
   pages[page]&&pages[page](params);
   closeSidebar();
@@ -2027,7 +2028,7 @@ function calcularVencimentoCaixa(ano,mes,diaVenc){
 }
 
 pages.importarCaixa=async function(){
-  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
+  if(!canImportCaixa()){nav('dashboard');return;}
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   _caixaParsed=[];
   const hoje=new Date();

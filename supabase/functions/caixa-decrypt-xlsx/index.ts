@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
       .eq("id", caller.id)
       .single();
 
-    const allowedRoles = ["super_admin", "direcao", "financeiro", "secretaria"];
+    const allowedRoles = ["super_admin", "direcao", "financeiro", "secretaria", "captacao"];
     if (!callerProfile || !callerProfile.status || !allowedRoles.includes(callerProfile.role)) {
       return json({ error: "Sem permissão para importar caixa." }, 403);
     }

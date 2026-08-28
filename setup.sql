@@ -3090,7 +3090,7 @@ RETURNS TABLE(
 AS $$
 DECLARE r jsonb; v_existing boletos%ROWTYPE; v_idx int := 0;
 BEGIN
-  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
   FOR r IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
     v_idx := v_idx + 1;
     SELECT * INTO v_existing FROM boletos
@@ -3130,7 +3130,7 @@ AS $$
 DECLARE r jsonb; v_existing boletos%ROWTYPE; v_import_id uuid;
   v_novos int:=0; v_upd_aberto int:=0; v_upd_pago int:=0; v_pulados int:=0;
 BEGIN
-  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
   INSERT INTO caixa_imports (mes_referencia,ano_referencia,nome_arquivo,imported_by,total_linhas)
     VALUES (p_mes,p_ano,p_nome_arquivo,auth.uid(),jsonb_array_length(p_rows)) RETURNING id INTO v_import_id;
   FOR r IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
@@ -3166,7 +3166,7 @@ RETURNS TABLE(
   total_atualizados_pago int, total_pulados_protegidos int
 ) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
-  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
   RETURN QUERY
     SELECT ci.id, ci.mes_referencia, ci.ano_referencia, ci.nome_arquivo,
       p.name, ci.imported_at, ci.total_linhas, ci.total_novos,
