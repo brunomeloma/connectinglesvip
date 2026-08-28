@@ -513,7 +513,7 @@ let currentUser = null;
     <div class="sb-item no-captacao" data-page="schools" onclick="nav('schools')"><i class="fa fa-building"></i> Escola</div>
     <div class="sb-item admin-only no-captacao" data-page="admins" onclick="nav('admins')"><i class="fa fa-user-tie"></i> Administrador</div>
     <div class="sb-item no-captacao" data-page="teachers" onclick="nav('teachers')"><i class="fa fa-chalkboard-teacher"></i> Professor</div>
-    <div class="sb-item no-professor no-captacao" data-page="students" onclick="nav('students')"><i class="fa fa-user-graduate"></i> Aluno</div>
+    <div class="sb-item no-professor" data-page="students" onclick="nav('students')"><i class="fa fa-user-graduate"></i> Aluno</div>
     <div class="sb-item no-captacao" data-page="classes" onclick="nav('classes')"><i class="fa fa-layer-group"></i> Turmas</div>
     <div class="sb-item no-professor no-captacao" data-page="cobrancas" onclick="nav('cobrancas')"><i class="fa fa-calendar-check"></i> Cobranças</div>
     <div class="sb-item no-professor no-captacao" data-page="inadimplentes" onclick="nav('inadimplentes')"><i class="fa fa-exclamation-triangle"></i> Inadimplentes</div>
@@ -716,7 +716,7 @@ function setActive(page){
   if(el)el.classList.add('active');
 }
 function nav(page, params={}){
-  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='inativos'&&page!=='debitosLanche'&&page!=='avisarFalta'){page='captacao';params={};}
+  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='inativos'&&page!=='debitosLanche'&&page!=='avisarFalta'&&page!=='students'){page='captacao';params={};}
   setActive(page);
   pages[page]&&pages[page](params);
   closeSidebar();

@@ -3230,3 +3230,22 @@ GRANT EXECUTE ON FUNCTION confirmar_importacao_caixa(jsonb,int,int,text,uuid[]) 
 GRANT EXECUTE ON FUNCTION listar_caixa_imports(int) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_boletos_caixa(int,int,text,text,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_inadimplentes() TO authenticated;
+
+-- #####################################################################
+-- LIBERA ALUNO PARA O PERFIL CAPTAÇÃO (ver/cadastrar/editar, sem excluir)
+-- #####################################################################
+-- Captação ganhou a tela "Aluno" no front-end (menu + guarda de nav em
+-- nav()). Sem isto, RLS bloqueava select/insert/update de students pra
+-- esse papel. Delete continua só para is_admin() — captação não apaga
+-- aluno.
+DROP POLICY IF EXISTS "students_select" ON students;
+CREATE POLICY "students_select" ON students FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+
+DROP POLICY IF EXISTS "students_insert" ON students;
+CREATE POLICY "students_insert" ON students FOR INSERT
+  WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+
+DROP POLICY IF EXISTS "students_update" ON students;
+CREATE POLICY "students_update" ON students FOR UPDATE
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
