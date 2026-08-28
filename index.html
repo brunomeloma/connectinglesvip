@@ -3049,7 +3049,7 @@ async function saveStudent(id){
     }
     await sb.from('students').update({parent_comprovante_path:comprovantePath}).eq('id',studentId);
   }
-  nav('students');
+  nav('financeiro',{view:'aluno',studentId});
 }
 
 // Gera todas as mensalidades do contrato de uma vez (mesma tabela boletos
