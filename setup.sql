@@ -3249,3 +3249,128 @@ CREATE POLICY "students_insert" ON students FOR INSERT
 DROP POLICY IF EXISTS "students_update" ON students;
 CREATE POLICY "students_update" ON students FOR UPDATE
   USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+
+-- #####################################################################
+-- LIBERA LANÇAMENTO DE BOLETOS PARA O PERFIL CAPTAÇÃO (finalizar matrícula)
+-- #####################################################################
+-- Captação passou a concluir a matrícula lançando os boletos do aluno
+-- direto na tela Financeiro (front-end redireciona para lá depois de
+-- salvar o cadastro). As RPCs de boletos são SECURITY DEFINER e checam
+-- o papel no corpo da função — sem isto, has_role() barrava captação
+-- mesmo com a tela liberada no front-end. A tabela `boletos` continua
+-- SEM policy de RLS para captação (mesmo padrão já usado para
+-- secretaria: acesso só via estas funções, nunca direto na tabela).
+-- Exclusão de boleto (deletar_boleto) continua fora da lista — captação
+-- não apaga boleto, só lança/edita/marca pagamento, igual secretaria.
+
+CREATE OR REPLACE FUNCTION get_boletos_aluno_secretaria(p_student_id uuid, p_ano int)
+RETURNS TABLE(
+  id uuid, mes_referencia int, ano_referencia int,
+  data_vencimento date, valor numeric, status text, data_pagamento date,
+  observacao text, url_boleto text, codigo_boleto text,
+  comprovante_path text, comprovante_url text, tem_comprovante boolean
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT b.id, b.mes_referencia, b.ano_referencia,
+      b.data_vencimento, b.valor, b.status, b.data_pagamento,
+      b.observacao, b.url_boleto, b.codigo_boleto,
+      b.comprovante_path, b.comprovante_url,
+      (b.comprovante_path IS NOT NULL OR b.comprovante_url IS NOT NULL)
+    FROM boletos b WHERE b.student_id=p_student_id AND b.ano_referencia=p_ano
+    ORDER BY b.mes_referencia;
+END; $$;
+
+CREATE OR REPLACE FUNCTION get_alunos_com_boletos_status(p_ano int)
+RETURNS TABLE(
+  student_id uuid, first_name text, last_name text,
+  tem_aberto boolean, total_boletos bigint
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN
+    RAISE EXCEPTION 'Permissão negada';
+  END IF;
+  RETURN QUERY
+    SELECT b.student_id, s.first_name, s.last_name,
+      bool_or(b.status='aberto'),
+      count(*)::bigint
+    FROM boletos b JOIN students s ON s.id=b.student_id
+    WHERE b.ano_referencia=p_ano
+    GROUP BY b.student_id, s.first_name, s.last_name
+    ORDER BY s.first_name;
+END; $$;
+
+CREATE OR REPLACE FUNCTION lancar_boletos_aluno(p_rows jsonb)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE r jsonb; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  FOR r IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
+    INSERT INTO boletos (student_id,mes_referencia,ano_referencia,data_vencimento,valor,url_boleto,codigo_boleto)
+    VALUES ((r->>'student_id')::uuid,(r->>'mes_referencia')::int,(r->>'ano_referencia')::int,(r->>'data_vencimento')::date,(r->>'valor')::numeric,r->>'url_boleto',r->>'codigo_boleto')
+    ON CONFLICT (student_id,mes_referencia,ano_referencia) DO UPDATE SET
+      data_vencimento=EXCLUDED.data_vencimento, valor=EXCLUDED.valor, url_boleto=EXCLUDED.url_boleto, codigo_boleto=EXCLUDED.codigo_boleto;
+  END LOOP;
+END; $$;
+
+CREATE OR REPLACE FUNCTION marcar_pagamento_boleto(
+  p_boleto_id uuid, p_status text,
+  p_data_pagamento date DEFAULT NULL, p_observacao text DEFAULT NULL,
+  p_comprovante_path text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF p_status NOT IN ('pago','aberto') THEN RAISE EXCEPTION 'Status inválido'; END IF;
+  IF p_status='pago' THEN
+    UPDATE boletos SET status='pago',
+      data_pagamento=COALESCE(p_data_pagamento,CURRENT_DATE),
+      observacao=p_observacao,
+      comprovante_path=CASE WHEN p_comprovante_path IS NOT NULL AND NOT p_comprovante_path LIKE 'http%' THEN p_comprovante_path ELSE comprovante_path END,
+      comprovante_url=CASE WHEN p_comprovante_path IS NOT NULL AND p_comprovante_path LIKE 'http%' THEN p_comprovante_path ELSE comprovante_url END
+    WHERE id=p_boleto_id;
+  ELSE
+    UPDATE boletos SET status='aberto', data_pagamento=NULL, observacao=NULL, comprovante_path=NULL, comprovante_url=NULL WHERE id=p_boleto_id;
+  END IF;
+END; $$;
+
+CREATE OR REPLACE FUNCTION marcar_vencidos_pago(p_boleto_ids uuid[])
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  UPDATE boletos SET status='pago', data_pagamento=CURRENT_DATE WHERE id=ANY(p_boleto_ids);
+END; $$;
+
+CREATE OR REPLACE FUNCTION gerar_recorrencia_boletos(p_student_id uuid)
+RETURNS int LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_inicio date; v_fim date; v_dia int; v_valor numeric;
+  v_cursor date; v_ultimo_dia int; v_dia_final int; v_count int := 0;
+BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  SELECT contrato_inicio, contrato_fim, mensalidade_vencimento_dia, mensalidade_valor
+    INTO v_inicio, v_fim, v_dia, v_valor
+    FROM students WHERE id = p_student_id;
+  IF v_inicio IS NULL OR v_fim IS NULL THEN RAISE EXCEPTION 'Informe início e fim do contrato antes de gerar as parcelas.'; END IF;
+  IF v_fim < v_inicio THEN RAISE EXCEPTION 'Fim do contrato não pode ser antes do início.'; END IF;
+  IF v_valor IS NULL OR v_valor <= 0 THEN RAISE EXCEPTION 'Informe o valor da mensalidade antes de gerar as parcelas.'; END IF;
+  v_dia := COALESCE(v_dia, 10);
+  v_cursor := date_trunc('month', v_inicio)::date;
+  WHILE v_cursor <= v_fim LOOP
+    v_ultimo_dia := EXTRACT(DAY FROM (date_trunc('month', v_cursor) + interval '1 month - 1 day'))::int;
+    v_dia_final := LEAST(v_dia, v_ultimo_dia);
+    INSERT INTO boletos (student_id, mes_referencia, ano_referencia, data_vencimento, valor)
+    VALUES (
+      p_student_id, EXTRACT(MONTH FROM v_cursor)::int, EXTRACT(YEAR FROM v_cursor)::int,
+      make_date(EXTRACT(YEAR FROM v_cursor)::int, EXTRACT(MONTH FROM v_cursor)::int, v_dia_final),
+      v_valor
+    )
+    ON CONFLICT (student_id, mes_referencia, ano_referencia) DO UPDATE SET
+      data_vencimento = EXCLUDED.data_vencimento,
+      valor = EXCLUDED.valor
+      WHERE boletos.status <> 'pago';
+    v_count := v_count + 1;
+    v_cursor := v_cursor + interval '1 month';
+  END LOOP;
+  RETURN v_count;
+END; $$;

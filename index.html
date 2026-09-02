@@ -682,6 +682,10 @@ function role_badge(role){
 function isAdmin(){return ['super_admin','direcao'].includes(currentUser?.role);}
 function isFinanceiro(){return isAdmin()||currentUser?.role==='financeiro';}
 function isSecretaria(){return currentUser?.role==='secretaria';}
+function isCaptacao(){return currentUser?.role==='captacao';}
+// Captação finaliza a matrícula lançando os boletos do aluno, mas sem o
+// acesso financeiro amplo (caixa/resumo global) que financeiro/secretaria têm.
+function isSecretariaOuCaptacao(){return isSecretaria()||isCaptacao();}
 function canManageUsers(){return isAdmin();}
 function canManageBilling(){return isFinanceiro()||isSecretaria();}
 // Secretaria faz caixa/cobrança: vê os mesmos valores e totais que financeiro/direção.
@@ -717,7 +721,7 @@ function setActive(page){
   if(el)el.classList.add('active');
 }
 function nav(page, params={}){
-  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='inativos'&&page!=='debitosLanche'&&page!=='avisarFalta'&&page!=='students'&&page!=='importarCaixa'){page='captacao';params={};}
+  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='inativos'&&page!=='debitosLanche'&&page!=='avisarFalta'&&page!=='students'&&page!=='importarCaixa'&&page!=='financeiro'){page='captacao';params={};}
   setActive(page);
   pages[page]&&pages[page](params);
   closeSidebar();
@@ -4174,7 +4178,7 @@ const STATUS_BOLETO_BADGE={
 };
 
 pages.financeiro=async function({view,studentId}={}){
-  if(!canManageBilling()&&!isAdmin()){nav('dashboard');return;}
+  if(!canManageBilling()&&!isAdmin()&&!isCaptacao()){nav('dashboard');return;}
   if(view==='lancar') return finLancarBoletos(studentId);
   if(view==='aluno')  return finAluno(studentId);
 
@@ -4322,7 +4326,7 @@ async function salvarEdicaoBoleto(studentId,mes,ano,urlBoleto,codigoBoleto){
 async function finAluno(studentId){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const fAno=getFilter('fin-ano')||new Date().getFullYear().toString();
-  const rpcName=isSecretaria()?'get_boletos_aluno_secretaria':'get_boletos_aluno';
+  const rpcName=isSecretariaOuCaptacao()?'get_boletos_aluno_secretaria':'get_boletos_aluno';
   const[{data:student},{data:boletosData,error:boletosErro}]=await Promise.all([
     sb.from('students').select('id,first_name,last_name').eq('id',studentId).single(),
     sb.rpc(rpcName,{p_student_id:studentId,p_ano:parseInt(fAno)}),
@@ -4367,7 +4371,7 @@ async function finAluno(studentId){
       <div class="panel-head"><span class="panel-title">Boletos ${fAno}</span><button class="btn btn-primary btn-sm" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar / Reeditar boletos</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pgto.</th><th>Observação</th><th>Boleto</th>${!isSecretaria()?'<th></th>':''}</tr></thead>
+          <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Data Pgto.</th><th>Observação</th><th>Boleto</th>${!isSecretariaOuCaptacao()?'<th></th>':''}</tr></thead>
           <tbody>${boletos.length?boletos.map(b=>{
             const vencido=b.status!=='pago'&&b.data_vencimento&&new Date(b.data_vencimento+'T00:00:00')<hojeInicio;
             return `<tr id="row-${b.id}" data-vencimento="${b.data_vencimento||''}" style="${vencido?'background:#fff5f5;border-left:3px solid var(--danger)':''}">
@@ -4383,8 +4387,8 @@ async function finAluno(studentId){
                 ${b.codigo_boleto?`<button class="btn btn-default btn-sm" onclick="copiarCodigo('${b.id}','${esc(b.codigo_boleto)}')" title="Copiar código"><i class="fa fa-copy"></i> <span id="copy-label-${b.id}">Copiar código</span></button>`:''}
                 ${!b.comprovante_url&&!b.comprovante_path&&!b.tem_comprovante&&!b.url_boleto&&!b.codigo_boleto?'<span style="color:var(--gray-500);font-size:12px">—</span>':''}
               </td>
-              ${!isSecretaria()?`<td><button class="btn btn-icon" title="Excluir boleto" onclick="deletarBoleto('${b.id}','${student.id}')"><i class="fa fa-trash" style="color:var(--danger)"></i></button></td>`:''}
-            </tr>`}).join(''):`<tr><td colspan="${isSecretaria()?7:8}"><div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto lançado para ${fAno}.<br><br><button class="btn btn-primary" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar boletos agora</button></div></td></tr>`}
+              ${!isSecretariaOuCaptacao()?`<td><button class="btn btn-icon" title="Excluir boleto" onclick="deletarBoleto('${b.id}','${student.id}')"><i class="fa fa-trash" style="color:var(--danger)"></i></button></td>`:''}
+            </tr>`}).join(''):`<tr><td colspan="${isSecretariaOuCaptacao()?7:8}"<div class="empty-state"><i class="fa fa-file-invoice"></i>Nenhum boleto lançado para ${fAno}.<br><br><button class="btn btn-primary" onclick="nav('financeiro',{view:'lancar',studentId:'${student.id}'})"><i class="fa fa-plus"></i> Lançar boletos agora</button></div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -4399,7 +4403,7 @@ async function finLancarBoletos(studentId){
 
   const ano=new Date().getFullYear();
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const rpcLancar=isSecretaria()?'get_boletos_aluno_secretaria':'get_boletos_aluno';
+  const rpcLancar=isSecretariaOuCaptacao()?'get_boletos_aluno_secretaria':'get_boletos_aluno';
   const{data:existentesData,error:existentesErro}=await sb.rpc(rpcLancar,{p_student_id:studentId,p_ano:ano});
   const existentes=existentesData||[];
   const existMap={};
