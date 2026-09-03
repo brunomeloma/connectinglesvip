@@ -3919,7 +3919,11 @@ async function profHistorico(tabBar){
     <div class="panel">
       <div class="panel-head">
         <span class="panel-title">Histórico de aulas — ${meses[mes-1]}/${ano}</span>
-        <button class="btn btn-primary btn-sm" onclick="nav('professores',{tab:'lancar'})"><i class="fa fa-plus"></i> Lançar aula</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-default btn-sm" ${aulas.length?'':'disabled'} onclick="imprimirRelatorioProfessor(${mes},${ano},'${teacherFil}')" title="Só o mês/professor filtrado acima"><i class="fa fa-print"></i> Imprimir relatório do mês</button>
+          <button class="btn btn-default btn-sm" onclick="imprimirRelatorioProfessorCompleto('${teacherFil}')" title="Todo o histórico do professor filtrado acima (ou de todos, se nenhum estiver selecionado)"><i class="fa fa-file-lines"></i> Imprimir relatório completo</button>
+          <button class="btn btn-primary btn-sm" onclick="nav('professores',{tab:'lancar'})"><i class="fa fa-plus"></i> Lançar aula</button>
+        </div>
       </div>
       ${aulas.length?`<div class="table-wrap"><table>
         <thead><tr><th>Data</th><th>Turma</th><th>Prof. Responsável</th><th>Prof. que realizou</th><th>Tipo</th><th>Status</th><th>Horas</th><th>Pagamento</th>${!isSecretaria()?'<th>Valor/h</th>':''}<th>Pago?</th><th>Ações</th></tr></thead>
@@ -6253,6 +6257,138 @@ function buildRelatorioAlunoHtml(s,boletos){
     ${secao('Observações',esc(s.note))}
 
     <div class="rel-footer">Connect Inglês VIP — Relatório gerado pelo sistema de gestão escolar</div>
+    <div class="rel-noprint" style="text-align:center;margin-top:16px">
+      <button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">Imprimir / Salvar PDF</button>
+    </div>
+  </body></html>`;
+}
+
+// Relatório de horas e pagamento do professor (histórico de aulas do mês
+// filtrado, já lançado em teacher_lessons — não gera nenhum dado novo, só
+// formata pra impressão/PDF). Segue o mesmo padrão dos demais relatórios:
+// abre a janela, escreve o HTML e chama print(). Financeiro/valor por hora
+// só aparece pra quem já enxerga essa coluna na tela (secretaria não vê).
+async function imprimirRelatorioProfessor(mes,ano,teacherId){
+  const win=window.open('','_blank');
+  if(!win){alert('Não foi possível abrir a janela de impressão. Verifique se o navegador está bloqueando pop-ups.');return;}
+  win.document.write('<p style="font-family:sans-serif;padding:40px">Gerando relatório...</p>');
+
+  const mostrarValores=!isSecretaria();
+  const[{data:aulas=[],error:e1},{data:teacher}]=await Promise.all([
+    mostrarValores
+      ? sb.rpc('get_aulas_mes',{p_mes:mes,p_ano:ano,...(teacherId?{p_teacher_id:teacherId}:{})})
+      : sb.rpc('get_aulas_mes_secretaria',{p_mes:mes,p_ano:ano,...(teacherId?{p_teacher_id:teacherId}:{})}),
+    teacherId?sb.from('teachers').select('first_name,last_name').eq('id',teacherId).single().then(r=>r.data):Promise.resolve(null),
+  ]);
+  if(e1){win.close();alert('Erro ao carregar o relatório: '+e1.message);return;}
+
+  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const html=buildRelatorioProfessorHtml(aulas,teacher,`${meses[mes-1]}/${ano}`,mostrarValores);
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(),300);
+}
+
+// Igual ao relatório mensal, mas sem filtro de mês/ano — traz o histórico
+// inteiro já lançado em teacher_lessons pro professor filtrado (ou de
+// todos, se nenhum estiver selecionado).
+async function imprimirRelatorioProfessorCompleto(teacherId){
+  const win=window.open('','_blank');
+  if(!win){alert('Não foi possível abrir a janela de impressão. Verifique se o navegador está bloqueando pop-ups.');return;}
+  win.document.write('<p style="font-family:sans-serif;padding:40px">Gerando relatório completo...</p>');
+
+  const mostrarValores=!isSecretaria();
+  const[{data:aulas=[],error:e1},{data:teacher}]=await Promise.all([
+    mostrarValores
+      ? sb.rpc('get_aulas_professor_completo',teacherId?{p_teacher_id:teacherId}:{})
+      : sb.rpc('get_aulas_professor_completo_secretaria',teacherId?{p_teacher_id:teacherId}:{}),
+    teacherId?sb.from('teachers').select('first_name,last_name').eq('id',teacherId).single().then(r=>r.data):Promise.resolve(null),
+  ]);
+  if(e1){win.close();alert('Erro ao carregar o relatório: '+e1.message);return;}
+  if(!aulas.length){win.close();alert('Nenhuma aula lançada ainda para gerar o relatório.');return;}
+
+  const html=buildRelatorioProfessorHtml(aulas,teacher,'Histórico completo',mostrarValores);
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(),300);
+}
+
+function buildRelatorioProfessorHtml(aulas,teacher,periodoLabel,mostrarValores){
+  const nomeProfessor=teacher?`${esc(teacher.first_name)} ${esc(teacher.last_name)}`:'Todos os professores';
+  const ordenadas=[...aulas].sort((a,b)=>a.lesson_date.localeCompare(b.lesson_date));
+
+  const totalHorasPagas=aulas.filter(a=>a.counts_for_payment).reduce((s,a)=>s+parseFloat(a.hours||0),0);
+  const totalHorasRegistradas=aulas.reduce((s,a)=>s+parseFloat(a.hours||0),0);
+  const totalValor=mostrarValores?aulas.filter(a=>a.counts_for_payment).reduce((s,a)=>s+parseFloat(a.hours||0)*parseFloat(a.valor_hora||0),0):0;
+
+  const linhas=ordenadas.map(a=>`<tr>
+    <td>${fdate(a.lesson_date)}</td>
+    <td>${esc(a.class_name)||'—'}</td>
+    ${teacher?'':`<td>${esc(a.actual_teacher_name)||'—'}</td>`}
+    <td>${LESSON_STATUS_LABELS[a.status]||esc(a.status)}</td>
+    <td style="text-align:right">${parseFloat(a.hours||0).toFixed(1)}h</td>
+    ${mostrarValores?`<td style="text-align:right">${fmtBRL(a.valor_hora)}</td><td style="text-align:right">${a.counts_for_payment?fmtBRL(parseFloat(a.hours||0)*parseFloat(a.valor_hora||0)):'—'}</td>`:''}
+    <td style="text-align:center">${a.counts_for_payment?'Sim':'Não'}</td>
+  </tr>`).join('');
+
+  const colspanAntesTotais=3+(teacher?0:1);
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Pagamento — ${esc(nomeProfessor)}</title>
+  <style>
+    @page{size:A4;margin:16mm 14mm}
+    body{font-family:Arial,Helvetica,sans-serif;color:#222;font-size:12px;line-height:1.5;margin:0}
+    .rel-header{text-align:center;border-bottom:3px solid #D4A017;padding-bottom:12px;margin-bottom:16px}
+    .rel-header h1{font-size:16px;margin:0 0 2px;color:#111}
+    .rel-header p{margin:2px 0;font-size:11px;color:#555}
+    .rel-titulo{font-size:15px;font-weight:bold;text-align:center;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.5px}
+    .rel-subtitulo{text-align:center;font-size:12px;color:#555;margin-bottom:4px}
+    .rel-emissao{text-align:right;font-size:10px;color:#777;margin-bottom:10px}
+    .rel-table{width:100%;border-collapse:collapse;margin-top:10px}
+    .rel-table th,.rel-table td{border:1px solid #ddd;padding:5px 8px;text-align:left;font-size:11px}
+    .rel-table th{background:#f4f4f4}
+    .rel-table tfoot td{font-weight:bold;background:#faf6ec;border-top:2px solid #D4A017}
+    .rel-empty{margin:16px 0;color:#777;font-style:italic;text-align:center}
+    .rel-footer{margin-top:24px;text-align:center;font-size:10px;color:#999;border-top:1px solid #ddd;padding-top:8px}
+    @media print{.rel-noprint{display:none}}
+  </style></head>
+  <body>
+    <div class="rel-header">
+      <h1>CONNECT INGLÊS VIP</h1>
+      <p>Rua Pernambuco, nº 978, Nova Imperatriz, Imperatriz – MA — Tel. (99) 99116-2110 / (99) 99184-5500</p>
+    </div>
+    <div class="rel-titulo">Relatório de Horas e Pagamento</div>
+    <div class="rel-subtitulo"><strong>Professor:</strong> ${nomeProfessor} &nbsp;|&nbsp; <strong>Período:</strong> ${esc(periodoLabel)}</div>
+    <div class="rel-emissao">Emitido em ${new Date().toLocaleString('pt-BR')}</div>
+
+    ${aulas.length?`
+    <table class="rel-table">
+      <thead><tr>
+        <th>Data</th><th>Turma</th>${teacher?'':'<th>Professor</th>'}<th>Status</th><th style="text-align:right">Horas</th>
+        ${mostrarValores?'<th style="text-align:right">Valor/h</th><th style="text-align:right">Pagamento</th>':''}
+        <th style="text-align:center">Conta p/ pagamento?</th>
+      </tr></thead>
+      <tbody>${linhas}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="${colspanAntesTotais}">TOTAIS DO PERÍODO</td>
+          <td style="text-align:right">${totalHorasPagas.toFixed(1)}h</td>
+          ${mostrarValores?`<td></td><td style="text-align:right">${fmtBRL(totalValor)}</td>`:''}
+          <td></td>
+        </tr>
+        <tr>
+          <td colspan="${colspanAntesTotais}" style="font-weight:normal;font-size:10px;color:#666">Horas registradas no período (incluindo as que não contam para pagamento)</td>
+          <td style="text-align:right;font-weight:normal;font-size:10px;color:#666">${totalHorasRegistradas.toFixed(1)}h</td>
+          ${mostrarValores?'<td></td><td></td>':''}
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>`:'<div class="rel-empty">Nenhuma aula lançada para este professor no período selecionado.</div>'}
+
+    <div class="rel-footer">Connect Inglês VIP — Relatório gerado pelo sistema de gestão escolar a partir dos lançamentos já registrados</div>
     <div class="rel-noprint" style="text-align:center;margin-top:16px">
       <button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">Imprimir / Salvar PDF</button>
     </div>

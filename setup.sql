@@ -3572,3 +3572,64 @@ BEGIN
     status = EXCLUDED.status, hours = EXCLUDED.hours, counts_for_payment = EXCLUDED.counts_for_payment
   WHERE teacher_lessons.paid IS NOT TRUE;
 END; $$;
+
+
+-- #####################################################################
+-- 41. RELATÓRIO COMPLETO DE HORAS/PAGAMENTO DO PROFESSOR (sem filtro de mês)
+-- #####################################################################
+-- Mesma consulta de get_aulas_mes/get_aulas_mes_secretaria, mas sem a
+-- restrição de mês/ano — usada pelo botão "Imprimir relatório completo"
+-- no Controle de Professores, pra emitir o histórico inteiro (ou de um
+-- professor específico) de uma vez, em vez de mês a mês.
+
+CREATE OR REPLACE FUNCTION get_aulas_professor_completo(p_teacher_id uuid DEFAULT NULL)
+RETURNS TABLE(
+  id uuid, class_id uuid, class_name text,
+  teacher_id uuid, teacher_name text,
+  actual_teacher_id uuid, actual_teacher_name text,
+  lesson_date date, lesson_type text, status text,
+  hours numeric, valor_hora numeric, notes text,
+  counts_for_payment boolean, paid boolean, paid_at date, created_at timestamptz
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT tl.id,
+      tl.class_id, c.name::text,
+      tl.teacher_id, (tr.first_name||' '||tr.last_name)::text,
+      tl.actual_teacher_id, (at2.first_name||' '||at2.last_name)::text,
+      tl.lesson_date, tl.lesson_type, tl.status,
+      tl.hours, COALESCE(at2.valor_hora, 0)::numeric, tl.notes,
+      tl.counts_for_payment, tl.paid, tl.paid_at, tl.created_at
+    FROM teacher_lessons tl
+    LEFT JOIN classes c ON c.id = tl.class_id
+    LEFT JOIN teachers tr ON tr.id = tl.teacher_id
+    LEFT JOIN teachers at2 ON at2.id = tl.actual_teacher_id
+    WHERE (p_teacher_id IS NULL OR tl.actual_teacher_id = p_teacher_id)
+    ORDER BY tl.lesson_date DESC;
+END; $$;
+
+CREATE OR REPLACE FUNCTION get_aulas_professor_completo_secretaria(p_teacher_id uuid DEFAULT NULL)
+RETURNS TABLE(
+  id uuid, class_id uuid, class_name text,
+  teacher_id uuid, teacher_name text,
+  actual_teacher_id uuid, actual_teacher_name text,
+  lesson_date date, lesson_type text, status text,
+  hours numeric, notes text, counts_for_payment boolean, paid boolean, created_at timestamptz
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT tl.id,
+      tl.class_id, c.name::text,
+      tl.teacher_id, (tr.first_name||' '||tr.last_name)::text,
+      tl.actual_teacher_id, (at2.first_name||' '||at2.last_name)::text,
+      tl.lesson_date, tl.lesson_type, tl.status,
+      tl.hours, tl.notes, tl.counts_for_payment, tl.paid, tl.created_at
+    FROM teacher_lessons tl
+    LEFT JOIN classes c ON c.id = tl.class_id
+    LEFT JOIN teachers tr ON tr.id = tl.teacher_id
+    LEFT JOIN teachers at2 ON at2.id = tl.actual_teacher_id
+    WHERE (p_teacher_id IS NULL OR tl.actual_teacher_id = p_teacher_id)
+    ORDER BY tl.lesson_date DESC;
+END; $$;
