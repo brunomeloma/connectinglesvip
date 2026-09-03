@@ -324,6 +324,7 @@ tr:hover td{background:#fdf9f0}
 .status-badge-falta{background:#fef3d0;color:#8a5c00}
 .status-badge-justificada{background:#d5ebf8;color:#0f4f7a}
 .status-badge-remarcada{background:#ede0fd;color:#4a1f8a}
+.status-badge-reposicao{background:#cfe8ff;color:#0a4d8c}
 .status-badge-presente{background:#d4f0e0;color:#1a6b3a}
 .status-badge-ausente{background:#fde0de;color:#8b1a1a}
 .status-badge-pendente{background:#ebebeb;color:#444}
@@ -3310,7 +3311,7 @@ async function classDetail(classId,tab='info',date){
   `);
 }
 
-const LESSON_STATUS_UI={realizada:'Realizada',cancelada:'Cancelada',remarcada:'Remarcada'};
+const LESSON_STATUS_UI={realizada:'Realizada',cancelada:'Cancelada',remarcada:'Remarcada',reposicao:'Reposição'};
 
 async function classTabAula(c,alunos,classId,date,header,totalEncontros=0){
   const selDate=date||new Date().toISOString().split('T')[0];
@@ -3346,9 +3347,13 @@ async function classTabAula(c,alunos,classId,date,header,totalEncontros=0){
             ${lesson?'<div class="help-text">Alterar a data aqui e salvar move esta mesma aula para a nova data. Use a lupa só para ver/lançar a aula de outro dia sem mexer nesta.</div>':''}
           </div>
           <div class="form-col"><label>Professor que ministrou</label><select id="aula-teacher"><option value="">Não definido</option>${tOpts}</select></div>
-          <div class="form-col"><label>Status da aula</label><select id="aula-status">
+          <div class="form-col"><label>Status da aula</label><select id="aula-status" onchange="toggleReposicaoHoras('aula')">
             ${Object.entries(LESSON_STATUS_UI).map(([k,l])=>`<option value="${k}" ${statusAula===k?'selected':''}>${l}</option>`).join('')}
           </select></div>
+        </div>
+        <div class="field" id="aula-reposicao-wrap" style="display:${statusAula==='reposicao'?'':'none'}">
+          <label>Horas de aula <span class="required">*</span></label>
+          <input id="aula-reposicao-horas" type="number" min="0.5" max="24" step="0.5" value="${lesson?.reposicao_hours??''}" placeholder="Ex: 1.5">
         </div>
         <div class="field"><label>Conteúdo ministrado</label><textarea id="aula-content" placeholder="Ex: Present Simple — afirmativa e negativa">${esc(lesson?.content)}</textarea></div>
         <div class="field"><label>Observações</label><textarea id="aula-notes">${esc(lesson?.notes)}</textarea></div>
@@ -3380,13 +3385,23 @@ async function classTabAula(c,alunos,classId,date,header,totalEncontros=0){
   `);
 }
 
+// Mostra/esconde o campo de horas quando o status da aula é "Reposição".
+// prefix diferencia o formulário admin/secretaria ('aula') do portal do professor ('prof-aula').
+function toggleReposicaoHoras(prefix){
+  const status=$(`${prefix}-status`).value;
+  const wrap=$(`${prefix}-reposicao-wrap`);
+  if(wrap)wrap.style.display=status==='reposicao'?'':'none';
+}
+
 async function salvarAulaEFrequencia(classId,lessonId){
   const date=$('aula-date').value;
   const teacherId=$('aula-teacher').value||null;
   const status=$('aula-status').value;
   const content=$('aula-content').value.trim();
   const notes=$('aula-notes').value.trim();
-  const{data:newLessonId,error:e1}=await sb.rpc('registrar_aula_turma',{p_class_id:classId,p_lesson_date:date,p_teacher_id:teacherId,p_status:status,p_content:content||null,p_notes:notes||null,p_lesson_id:lessonId||null});
+  const reposicaoHoras=status==='reposicao'?parseFloat($('aula-reposicao-horas').value):null;
+  if(status==='reposicao'&&(!reposicaoHoras||reposicaoHoras<=0)){showAlert('page-alert','Informe o número de horas da reposição.','danger');return;}
+  const{data:newLessonId,error:e1}=await sb.rpc('registrar_aula_turma',{p_class_id:classId,p_lesson_date:date,p_teacher_id:teacherId,p_status:status,p_content:content||null,p_notes:notes||null,p_lesson_id:lessonId||null,p_reposicao_hours:reposicaoHoras});
   if(e1){showAlert('page-alert','Erro ao salvar aula: '+e1.message,'danger');return;}
   const rows=[...document.querySelectorAll('.aula-presenca-select')].map(sel=>({student_id:sel.dataset.student,status:sel.value}));
   if(rows.length){
@@ -3407,29 +3422,50 @@ async function excluirAulaTurma(classId,lessonId,date){
 
 async function classTabHistorico(classId,header){
   const{data:aulas=[]}=await sb.rpc('get_aulas_turma',{p_class_id:classId});
-  setContent(header+`
+  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  // Agrupa as aulas por mês/ano (chave "AAAA-MM"), preservando a ordem
+  // cronológica reversa que já vem do backend (ORDER BY lesson_date DESC).
+  const grupos=new Map();
+  for(const l of aulas){
+    const[ano,mes]=l.lesson_date.split('-');
+    const chave=`${ano}-${mes}`;
+    if(!grupos.has(chave))grupos.set(chave,{ano:Number(ano),mes:Number(mes),aulas:[]});
+    grupos.get(chave).aulas.push(l);
+  }
+  const blocos=[...grupos.values()].sort((a,b)=>b.ano-a.ano||b.mes-a.mes);
+
+  const renderTabela=aulasDoMes=>`
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Data</th><th>Professor</th><th>Status</th><th>Conteúdo</th><th>Presença</th><th>Ações</th></tr></thead>
+        <tbody>${aulasDoMes.map(l=>`
+          <tr>
+            <td>${fdate(l.lesson_date)}</td>
+            <td>${esc(l.teacher_name)||'—'}</td>
+            <td><span class="badge status-badge-${l.status}">${LESSON_STATUS_UI[l.status]||esc(l.status)}</span>${l.status==='reposicao'&&l.reposicao_hours?` <span style="color:var(--gray-500);font-size:12px">(${parseFloat(l.reposicao_hours).toFixed(1)}h)</span>`:''}</td>
+            <td style="max-width:280px;white-space:normal">${esc(l.content)||'—'}</td>
+            <td style="white-space:nowrap">✅ ${l.total_presentes} &nbsp;❌ ${l.total_ausentes} &nbsp;📋 ${l.total_justificados} <span style="color:var(--gray-500)">/ ${l.total_alunos}</span></td>
+            <td style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-default btn-sm" onclick="nav('classes',{view:'detail',id:'${classId}',tab:'aula',date:'${l.lesson_date}'})"><i class="fa fa-pencil-alt"></i> Ver/Editar</button>
+              ${(isAdmin()||isSecretaria())?`<button class="btn btn-danger btn-sm" onclick="excluirAulaTurma('${classId}','${l.id}','${l.lesson_date}')"><i class="fa fa-trash"></i></button>`:''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  setContent(header+(blocos.length?blocos.map(b=>`
+    <div class="panel" style="margin-bottom:16px">
+      <div class="panel-head"><span class="panel-title">${meses[b.mes-1]} de ${b.ano}</span></div>
+      ${renderTabela(b.aulas)}
+    </div>
+  `).join(''):`
     <div class="panel">
       <div class="panel-head"><span class="panel-title">Histórico de aulas</span></div>
-      <div class="table-wrap">
-        ${aulas.length?`<table>
-          <thead><tr><th>Data</th><th>Professor</th><th>Status</th><th>Conteúdo</th><th>Presença</th><th>Ações</th></tr></thead>
-          <tbody>${aulas.map(l=>`
-            <tr>
-              <td>${fdate(l.lesson_date)}</td>
-              <td>${esc(l.teacher_name)||'—'}</td>
-              <td><span class="badge status-badge-${l.status}">${LESSON_STATUS_UI[l.status]||esc(l.status)}</span></td>
-              <td style="max-width:280px;white-space:normal">${esc(l.content)||'—'}</td>
-              <td style="white-space:nowrap">✅ ${l.total_presentes} &nbsp;❌ ${l.total_ausentes} &nbsp;📋 ${l.total_justificados} <span style="color:var(--gray-500)">/ ${l.total_alunos}</span></td>
-              <td style="display:flex;gap:6px;flex-wrap:wrap">
-                <button class="btn btn-default btn-sm" onclick="nav('classes',{view:'detail',id:'${classId}',tab:'aula',date:'${l.lesson_date}'})"><i class="fa fa-pencil-alt"></i> Ver/Editar</button>
-                ${(isAdmin()||isSecretaria())?`<button class="btn btn-danger btn-sm" onclick="excluirAulaTurma('${classId}','${l.id}','${l.lesson_date}')"><i class="fa fa-trash"></i></button>`:''}
-              </td>
-            </tr>`).join('')}
-          </tbody>
-        </table>`:`<div class="empty-state"><i class="fa fa-history"></i>Nenhuma aula registrada ainda.</div>`}
-      </div>
+      <div class="empty-state"><i class="fa fa-history"></i>Nenhuma aula registrada ainda.</div>
     </div>
-  `);
+  `));
 }
 
 // --- ADICIONAR ALUNO À TURMA (busca rápida + atalho de cadastro) ---
@@ -3688,7 +3724,7 @@ function enviarCobrancaWpp(studentId,nome,numero,tipo,dataVenc,boletoInfo){
 // CONTROLE DE PROFESSORES
 // ============================
 
-const LESSON_STATUS_LABELS={realizada:'Realizada',nao_realizada:'Não realizada',cancelada:'Cancelada',falta:'Falta',justificada:'Justificada',remarcada:'Remarcada - Aguardando Reposição'};
+const LESSON_STATUS_LABELS={realizada:'Realizada',nao_realizada:'Não realizada',cancelada:'Cancelada',falta:'Falta',justificada:'Justificada',remarcada:'Remarcada - Aguardando Reposição',reposicao:'Reposição'};
 const LESSON_TYPE_LABELS={aula_normal:'Aula normal',substituicao:'Substituição',reuniao:'Reunião',evento:'Evento',treinamento:'Treinamento',outro:'Outro'};
 
 let _profTab='lancar';
@@ -5708,9 +5744,13 @@ async function profAbrirTurma(classId,className,date){
       <div style="padding:18px 22px">
         <div class="form-row">
           <div class="form-col"><label>Data da aula</label><input id="prof-aula-date" type="date" value="${selDate}" onchange="profAbrirTurma('${classId}','${esc(className)}',this.value)"></div>
-          <div class="form-col"><label>Status</label><select id="prof-aula-status">
+          <div class="form-col"><label>Status</label><select id="prof-aula-status" onchange="toggleReposicaoHoras('prof-aula')">
             ${Object.entries(LESSON_STATUS_UI).map(([k,l])=>`<option value="${k}" ${(info?.status||'realizada')===k?'selected':''}>${l}</option>`).join('')}
           </select></div>
+        </div>
+        <div class="field" id="prof-aula-reposicao-wrap" style="display:${(info?.status)==='reposicao'?'':'none'}">
+          <label>Horas de aula</label>
+          <input id="prof-aula-reposicao-horas" type="number" min="0.5" max="24" step="0.5" value="${info?.reposicao_hours??''}" placeholder="Ex: 1.5">
         </div>
         <div class="field"><label>Conteúdo ministrado</label><textarea id="prof-aula-content" placeholder="Ex: Present Simple — afirmativa e negativa">${esc(info?.content)}</textarea></div>
         <div class="field"><label>Observações</label><textarea id="prof-aula-notes">${esc(info?.notes)}</textarea></div>
@@ -5778,9 +5818,11 @@ async function profSalvarAula(classId,className){
   const status=$('prof-aula-status').value;
   const content=$('prof-aula-content').value.trim();
   const notes=$('prof-aula-notes').value.trim();
+  const reposicaoHoras=status==='reposicao'?parseFloat($('prof-aula-reposicao-horas').value):null;
+  if(status==='reposicao'&&(!reposicaoHoras||reposicaoHoras<=0)){showAlert('prof-content-alert','Informe o número de horas da reposição.','danger');return;}
   const presencas=[...document.querySelectorAll('.prof-presenca-select')].map(sel=>({student_id:sel.dataset.student,status:sel.value}));
   const{teacherId,token}=_profState;
-  const{error}=await sb.rpc('professor_registrar_aula',{p_teacher_id:teacherId,p_token:token,p_class_id:classId,p_lesson_date:date,p_status:status,p_content:content||null,p_notes:notes||null,p_presencas:presencas});
+  const{error}=await sb.rpc('professor_registrar_aula',{p_teacher_id:teacherId,p_token:token,p_class_id:classId,p_lesson_date:date,p_status:status,p_content:content||null,p_notes:notes||null,p_presencas:presencas,p_reposicao_hours:reposicaoHoras});
   if(error){showAlert('prof-content-alert',error.message||'Erro ao salvar aula.','danger');return;}
   showAlert('prof-content-alert','Aula e frequência salvas com sucesso!','success');
   setTimeout(()=>profAbrirTurma(classId,className,date),900);

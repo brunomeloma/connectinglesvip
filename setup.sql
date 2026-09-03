@@ -3374,3 +3374,201 @@ BEGIN
   END LOOP;
   RETURN v_count;
 END; $$;
+
+
+-- #####################################################################
+-- 40. AULA DE REPOSIÇÃO (status próprio + horas manuais no banco de horas)
+-- #####################################################################
+-- 'reposicao' é um novo status de class_lessons, ao lado de realizada/
+-- cancelada/remarcada. Diferente dos demais, o número de horas não é
+-- calculado a partir do horário da turma (start_time/end_time) — o
+-- usuário digita livremente (ex: 0.5, 1, 2h) porque uma reposição pode
+-- ter duração diferente do encontro normal da turma. Esse valor fica em
+-- class_lessons.reposicao_hours e sync_pagamento_aula usa ele no lugar
+-- da duração da turma ao gerar o lançamento em teacher_lessons — que
+-- entra no banco de horas / relatório de pagamento do professor
+-- normalmente (counts_for_payment=true), igual a uma aula realizada.
+
+ALTER TABLE class_lessons ADD COLUMN IF NOT EXISTS reposicao_hours numeric(4,2);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='cl_reposicao_hours_check') THEN
+    ALTER TABLE class_lessons ADD CONSTRAINT cl_reposicao_hours_check CHECK (reposicao_hours IS NULL OR (reposicao_hours > 0 AND reposicao_hours <= 24));
+  END IF;
+END $$;
+
+ALTER TABLE class_lessons DROP CONSTRAINT IF EXISTS cl_status_check;
+ALTER TABLE class_lessons ADD CONSTRAINT cl_status_check CHECK (status IN ('realizada','cancelada','remarcada','reposicao'));
+
+ALTER TABLE teacher_lessons DROP CONSTRAINT IF EXISTS tl_status_check;
+ALTER TABLE teacher_lessons ADD CONSTRAINT tl_status_check
+  CHECK (status IN ('realizada','nao_realizada','cancelada','falta','justificada','remarcada','reposicao'));
+
+-- Essas duas funções ganham a coluna reposicao_hours no retorno, o que
+-- muda o tipo de linha (OUT params) — Postgres não deixa fazer isso com
+-- CREATE OR REPLACE, então precisa dropar antes de recriar.
+DROP FUNCTION IF EXISTS professor_turma_aula(uuid,text,uuid,date);
+DROP FUNCTION IF EXISTS get_aulas_turma(uuid);
+
+CREATE OR REPLACE FUNCTION registrar_aula_turma(
+  p_class_id uuid, p_lesson_date date, p_teacher_id uuid DEFAULT NULL,
+  p_status text DEFAULT 'realizada', p_content text DEFAULT NULL, p_notes text DEFAULT NULL,
+  p_lesson_id uuid DEFAULT NULL, p_reposicao_hours numeric DEFAULT NULL
+) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_id uuid; v_conflict uuid; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria','professor']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF p_status NOT IN ('realizada','cancelada','remarcada','reposicao') THEN RAISE EXCEPTION 'Status de aula inválido'; END IF;
+  IF p_status = 'reposicao' AND (p_reposicao_hours IS NULL OR p_reposicao_hours <= 0) THEN
+    RAISE EXCEPTION 'Informe o número de horas da reposição.';
+  END IF;
+
+  IF p_lesson_id IS NOT NULL THEN
+    SELECT id INTO v_conflict FROM class_lessons WHERE class_id=p_class_id AND lesson_date=p_lesson_date AND id<>p_lesson_id;
+    IF v_conflict IS NOT NULL THEN
+      RAISE EXCEPTION 'Já existe uma aula registrada nesta data para esta turma. Edite aquela aula ou escolha outra data.';
+    END IF;
+    UPDATE class_lessons SET
+      lesson_date=p_lesson_date, teacher_id=p_teacher_id, status=p_status,
+      content=p_content, notes=p_notes,
+      reposicao_hours=CASE WHEN p_status='reposicao' THEN p_reposicao_hours ELSE NULL END,
+      updated_at=now()
+    WHERE id=p_lesson_id
+    RETURNING id INTO v_id;
+    IF v_id IS NULL THEN RAISE EXCEPTION 'Aula não encontrada'; END IF;
+    DELETE FROM attendance WHERE lesson_id=p_lesson_id AND date<>p_lesson_date;
+  ELSE
+    INSERT INTO class_lessons (class_id, lesson_date, teacher_id, status, content, notes, reposicao_hours, created_by)
+    VALUES (p_class_id, p_lesson_date, p_teacher_id, p_status, p_content, p_notes, CASE WHEN p_status='reposicao' THEN p_reposicao_hours ELSE NULL END, auth.uid())
+    ON CONFLICT (class_id, lesson_date) DO UPDATE SET
+      teacher_id=EXCLUDED.teacher_id, status=EXCLUDED.status, content=EXCLUDED.content,
+      notes=EXCLUDED.notes, reposicao_hours=EXCLUDED.reposicao_hours, updated_at=now()
+    RETURNING id INTO v_id;
+  END IF;
+
+  PERFORM sync_pagamento_aula(v_id);
+  RETURN v_id;
+END; $$;
+
+CREATE OR REPLACE FUNCTION professor_registrar_aula(
+  p_teacher_id uuid, p_token text, p_class_id uuid, p_lesson_date date,
+  p_status text DEFAULT 'realizada', p_content text DEFAULT NULL, p_notes text DEFAULT NULL,
+  p_presencas jsonb DEFAULT '[]'::jsonb, p_reposicao_hours numeric DEFAULT NULL
+) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_id uuid; r jsonb; BEGIN
+  IF NOT _professor_sessao_valida(p_teacher_id, p_token) THEN RAISE EXCEPTION 'Sessão inválida. Volte e faça login novamente.'; END IF;
+  IF p_status NOT IN ('realizada','cancelada','remarcada','reposicao') THEN RAISE EXCEPTION 'Status de aula inválido'; END IF;
+  IF p_status = 'reposicao' AND (p_reposicao_hours IS NULL OR p_reposicao_hours <= 0) THEN
+    RAISE EXCEPTION 'Informe o número de horas da reposição.';
+  END IF;
+
+  INSERT INTO class_lessons (class_id, lesson_date, teacher_id, status, content, notes, reposicao_hours)
+  VALUES (p_class_id, p_lesson_date, p_teacher_id, p_status, p_content, p_notes, CASE WHEN p_status='reposicao' THEN p_reposicao_hours ELSE NULL END)
+  ON CONFLICT (class_id, lesson_date) DO UPDATE SET
+    teacher_id = p_teacher_id, status = EXCLUDED.status, content = EXCLUDED.content,
+    notes = EXCLUDED.notes, reposicao_hours = EXCLUDED.reposicao_hours, updated_at = now()
+  RETURNING id INTO v_id;
+
+  FOR r IN SELECT * FROM jsonb_array_elements(p_presencas) LOOP
+    INSERT INTO attendance (class_id, student_id, date, status, lesson_id, confirmed)
+    VALUES (p_class_id, (r->>'student_id')::uuid, p_lesson_date, r->>'status', v_id, true)
+    ON CONFLICT (class_id, student_id, date) DO UPDATE SET
+      status = EXCLUDED.status, lesson_id = EXCLUDED.lesson_id, confirmed = true;
+  END LOOP;
+
+  PERFORM sync_pagamento_aula(v_id);
+  RETURN v_id;
+END; $$;
+
+CREATE OR REPLACE FUNCTION professor_turma_aula(p_teacher_id uuid, p_token text, p_class_id uuid, p_lesson_date date)
+RETURNS TABLE(lesson_id uuid, teacher_id uuid, status text, content text, notes text, reposicao_hours numeric, alunos jsonb)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_lesson class_lessons%ROWTYPE; BEGIN
+  IF NOT _professor_sessao_valida(p_teacher_id, p_token) THEN RAISE EXCEPTION 'Sessão inválida. Volte e faça login novamente.'; END IF;
+  SELECT * INTO v_lesson FROM class_lessons WHERE class_id=p_class_id AND lesson_date=p_lesson_date;
+  RETURN QUERY
+    SELECT v_lesson.id, v_lesson.teacher_id, COALESCE(v_lesson.status,'realizada'), v_lesson.content, v_lesson.notes, v_lesson.reposicao_hours,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object(
+          'id', s.id, 'first_name', s.first_name, 'last_name', s.last_name,
+          'status', COALESCE(a.status, 'presente')
+        ) ORDER BY s.first_name)
+        FROM students s
+        JOIN class_enrollments ce ON ce.student_id = s.id AND ce.class_id = p_class_id AND ce.status = 'ativa'
+        LEFT JOIN attendance a ON a.student_id = s.id AND a.class_id = p_class_id AND a.date = p_lesson_date
+        WHERE s.status = true), '[]'::jsonb);
+END; $$;
+
+CREATE OR REPLACE FUNCTION get_aulas_turma(p_class_id uuid)
+RETURNS TABLE(
+  id uuid, lesson_date date, teacher_id uuid, teacher_name text,
+  status text, content text, notes text, reposicao_hours numeric,
+  total_presentes bigint, total_ausentes bigint, total_justificados bigint, total_alunos bigint
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Não autenticado'; END IF;
+  RETURN QUERY
+    SELECT cl.id, cl.lesson_date, cl.teacher_id, (t.first_name||' '||t.last_name)::text,
+      cl.status, cl.content, cl.notes, cl.reposicao_hours,
+      COUNT(a.id) FILTER (WHERE a.status='presente'),
+      COUNT(a.id) FILTER (WHERE a.status='ausente'),
+      COUNT(a.id) FILTER (WHERE a.status='justificado'),
+      COUNT(a.id)
+    FROM class_lessons cl
+    LEFT JOIN teachers t ON t.id = cl.teacher_id
+    LEFT JOIN attendance a ON a.lesson_id = cl.id
+    WHERE cl.class_id = p_class_id
+    GROUP BY cl.id, cl.lesson_date, cl.teacher_id, t.first_name, t.last_name, cl.status, cl.content, cl.notes, cl.reposicao_hours
+    ORDER BY cl.lesson_date DESC;
+END; $$;
+
+-- sync_pagamento_aula: para status='reposicao', usa as horas digitadas
+-- manualmente (reposicao_hours) em vez da duração da turma, e conta para
+-- pagamento igual a uma aula realizada.
+CREATE OR REPLACE FUNCTION sync_pagamento_aula(p_lesson_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_lesson class_lessons%ROWTYPE;
+  v_class classes%ROWTYPE;
+  v_existing teacher_lessons%ROWTYPE;
+  v_hours numeric(4,2);
+  v_lesson_type text;
+  v_tl_status text;
+  v_counts boolean;
+BEGIN
+  SELECT * INTO v_lesson FROM class_lessons WHERE id = p_lesson_id;
+  IF v_lesson IS NULL OR v_lesson.teacher_id IS NULL THEN RETURN; END IF;
+
+  SELECT * INTO v_class FROM classes WHERE id = v_lesson.class_id;
+  IF v_class IS NULL THEN RETURN; END IF;
+
+  SELECT * INTO v_existing FROM teacher_lessons WHERE class_lesson_id = p_lesson_id;
+  IF v_existing.paid IS TRUE THEN RETURN; END IF;
+
+  BEGIN
+    v_hours := GREATEST(0.5, ROUND(EXTRACT(EPOCH FROM (v_class.end_time::time - v_class.start_time::time)) / 3600.0, 2));
+  EXCEPTION WHEN OTHERS THEN
+    v_hours := NULL;
+  END;
+  IF v_hours IS NULL OR v_hours <= 0 THEN v_hours := 1; END IF;
+
+  v_lesson_type := CASE WHEN v_lesson.teacher_id IS DISTINCT FROM v_class.teacher_id THEN 'substituicao' ELSE 'aula_normal' END;
+
+  IF v_lesson.status = 'realizada' THEN
+    v_tl_status := 'realizada'; v_counts := true;
+  ELSIF v_lesson.status = 'reposicao' THEN
+    v_tl_status := 'reposicao'; v_counts := true;
+    v_hours := COALESCE(v_lesson.reposicao_hours, v_hours);
+  ELSIF v_lesson.status = 'remarcada' THEN
+    v_tl_status := 'remarcada'; v_counts := false;
+  ELSE
+    v_tl_status := 'cancelada'; v_counts := false;
+  END IF;
+
+  INSERT INTO teacher_lessons (class_id, teacher_id, actual_teacher_id, lesson_date, lesson_type, status, hours, counts_for_payment, class_lesson_id)
+  VALUES (v_lesson.class_id, v_lesson.teacher_id, v_lesson.teacher_id, v_lesson.lesson_date, v_lesson_type, v_tl_status, v_hours, v_counts, p_lesson_id)
+  ON CONFLICT (class_lesson_id) WHERE class_lesson_id IS NOT NULL DO UPDATE SET
+    teacher_id = EXCLUDED.teacher_id, actual_teacher_id = EXCLUDED.actual_teacher_id,
+    lesson_date = EXCLUDED.lesson_date, lesson_type = EXCLUDED.lesson_type,
+    status = EXCLUDED.status, hours = EXCLUDED.hours, counts_for_payment = EXCLUDED.counts_for_payment
+  WHERE teacher_lessons.paid IS NOT TRUE;
+END; $$;
