@@ -3920,8 +3920,8 @@ async function profHistorico(tabBar){
       <div class="panel-head">
         <span class="panel-title">Histórico de aulas — ${meses[mes-1]}/${ano}</span>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-default btn-sm" ${aulas.length?'':'disabled'} onclick="imprimirRelatorioProfessor(${mes},${ano},'${teacherFil}')" title="Só o mês/professor filtrado acima"><i class="fa fa-print"></i> Imprimir relatório do mês</button>
-          <button class="btn btn-default btn-sm" onclick="imprimirRelatorioProfessorCompleto('${teacherFil}')" title="Todo o histórico do professor filtrado acima (ou de todos, se nenhum estiver selecionado)"><i class="fa fa-file-lines"></i> Imprimir relatório completo</button>
+          <button class="btn btn-default btn-sm" onclick="imprimirRelatorioProfessor(parseInt($('ph-mes').value),parseInt($('ph-ano').value),$('ph-teacher').value)" title="Usa o mês/ano/professor selecionados acima, mesmo sem clicar em Filtrar"><i class="fa fa-print"></i> Imprimir relatório do mês</button>
+          <button class="btn btn-default btn-sm" onclick="imprimirRelatorioProfessorCompleto($('ph-teacher').value)" title="Todo o histórico do professor selecionado acima (ou de todos, se nenhum estiver selecionado) — mesmo sem clicar em Filtrar"><i class="fa fa-file-lines"></i> Imprimir relatório completo</button>
           <button class="btn btn-primary btn-sm" onclick="nav('professores',{tab:'lancar'})"><i class="fa fa-plus"></i> Lançar aula</button>
         </div>
       </div>
