@@ -6268,22 +6268,34 @@ function buildRelatorioAlunoHtml(s,boletos){
 // formata pra impressão/PDF). Segue o mesmo padrão dos demais relatórios:
 // abre a janela, escreve o HTML e chama print(). Financeiro/valor por hora
 // só aparece pra quem já enxerga essa coluna na tela (secretaria não vê).
+// Descobre o nome do professor filtrado a partir das próprias aulas já
+// carregadas (todas com o mesmo actual_teacher_id, garantido pelo filtro
+// da RPC) — evita uma segunda consulta separada à tabela teachers, que
+// já causou o relatório sair como "Todos os professores" quando falhava
+// silenciosamente. Só cai pra uma consulta direta se não houver nenhuma
+// aula no período (não tem de onde tirar o nome das linhas).
+async function nomeDoProfessorFiltrado(teacherId,aulas){
+  if(!teacherId)return null;
+  const daAula=aulas.find(a=>a.actual_teacher_id===teacherId)?.actual_teacher_name;
+  if(daAula)return daAula;
+  const{data:t}=await sb.from('teachers').select('first_name,last_name').eq('id',teacherId).maybeSingle();
+  return t?`${t.first_name} ${t.last_name}`:null;
+}
+
 async function imprimirRelatorioProfessor(mes,ano,teacherId){
   const win=window.open('','_blank');
   if(!win){alert('Não foi possível abrir a janela de impressão. Verifique se o navegador está bloqueando pop-ups.');return;}
   win.document.write('<p style="font-family:sans-serif;padding:40px">Gerando relatório...</p>');
 
   const mostrarValores=!isSecretaria();
-  const[{data:aulas=[],error:e1},{data:teacher}]=await Promise.all([
-    mostrarValores
-      ? sb.rpc('get_aulas_mes',{p_mes:mes,p_ano:ano,...(teacherId?{p_teacher_id:teacherId}:{})})
-      : sb.rpc('get_aulas_mes_secretaria',{p_mes:mes,p_ano:ano,...(teacherId?{p_teacher_id:teacherId}:{})}),
-    teacherId?sb.from('teachers').select('first_name,last_name').eq('id',teacherId).single().then(r=>r.data):Promise.resolve(null),
-  ]);
+  const{data:aulas=[],error:e1}=mostrarValores
+    ? await sb.rpc('get_aulas_mes',{p_mes:mes,p_ano:ano,...(teacherId?{p_teacher_id:teacherId}:{})})
+    : await sb.rpc('get_aulas_mes_secretaria',{p_mes:mes,p_ano:ano,...(teacherId?{p_teacher_id:teacherId}:{})});
   if(e1){win.close();alert('Erro ao carregar o relatório: '+e1.message);return;}
+  const nomeProfessor=await nomeDoProfessorFiltrado(teacherId,aulas);
 
   const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const html=buildRelatorioProfessorHtml(aulas,teacher,`${meses[mes-1]}/${ano}`,mostrarValores);
+  const html=buildRelatorioProfessorHtml(aulas,nomeProfessor,`${meses[mes-1]}/${ano}`,mostrarValores);
   win.document.open();
   win.document.write(html);
   win.document.close();
@@ -6300,16 +6312,14 @@ async function imprimirRelatorioProfessorCompleto(teacherId){
   win.document.write('<p style="font-family:sans-serif;padding:40px">Gerando relatório completo...</p>');
 
   const mostrarValores=!isSecretaria();
-  const[{data:aulas=[],error:e1},{data:teacher}]=await Promise.all([
-    mostrarValores
-      ? sb.rpc('get_aulas_professor_completo',teacherId?{p_teacher_id:teacherId}:{})
-      : sb.rpc('get_aulas_professor_completo_secretaria',teacherId?{p_teacher_id:teacherId}:{}),
-    teacherId?sb.from('teachers').select('first_name,last_name').eq('id',teacherId).single().then(r=>r.data):Promise.resolve(null),
-  ]);
+  const{data:aulas=[],error:e1}=mostrarValores
+    ? await sb.rpc('get_aulas_professor_completo',teacherId?{p_teacher_id:teacherId}:{})
+    : await sb.rpc('get_aulas_professor_completo_secretaria',teacherId?{p_teacher_id:teacherId}:{});
   if(e1){win.close();alert('Erro ao carregar o relatório: '+e1.message);return;}
   if(!aulas.length){win.close();alert('Nenhuma aula lançada ainda para gerar o relatório.');return;}
+  const nomeProfessor=await nomeDoProfessorFiltrado(teacherId,aulas);
 
-  const html=buildRelatorioProfessorHtml(aulas,teacher,'Histórico completo',mostrarValores);
+  const html=buildRelatorioProfessorHtml(aulas,nomeProfessor,'Histórico completo',mostrarValores);
   win.document.open();
   win.document.write(html);
   win.document.close();
@@ -6317,8 +6327,9 @@ async function imprimirRelatorioProfessorCompleto(teacherId){
   setTimeout(()=>win.print(),300);
 }
 
-function buildRelatorioProfessorHtml(aulas,teacher,periodoLabel,mostrarValores){
-  const nomeProfessor=teacher?`${esc(teacher.first_name)} ${esc(teacher.last_name)}`:'Todos os professores';
+function buildRelatorioProfessorHtml(aulas,nomeProfessor,periodoLabel,mostrarValores){
+  const teacher=!!nomeProfessor;
+  nomeProfessor=nomeProfessor?esc(nomeProfessor):'Todos os professores';
   const ordenadas=[...aulas].sort((a,b)=>a.lesson_date.localeCompare(b.lesson_date));
 
   const totalHorasPagas=aulas.filter(a=>a.counts_for_payment).reduce((s,a)=>s+parseFloat(a.hours||0),0);
@@ -6337,7 +6348,7 @@ function buildRelatorioProfessorHtml(aulas,teacher,periodoLabel,mostrarValores){
 
   const colspanAntesTotais=3+(teacher?0:1);
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Pagamento — ${esc(nomeProfessor)}</title>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Pagamento — ${nomeProfessor}</title>
   <style>
     @page{size:A4;margin:16mm 14mm}
     body{font-family:Arial,Helvetica,sans-serif;color:#222;font-size:12px;line-height:1.5;margin:0}
