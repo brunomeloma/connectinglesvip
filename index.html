@@ -1896,19 +1896,68 @@ pages.debitosLanche=async function({status}={}){
 // ============================
 const FALTA_MSG='Olá, bom dia😊❤️\nEspero que você esteja bem! Notamos a ausência de {nome} na aula de {dia} e sentimos muito a sua falta.😊\nQueremos garantir que você não perca o conteúdo que foi abordado em sala de aula, para que você consiga acompanhar o que foi ensinado, aqui estão as atividades que realizamos: *Atividade trabalhada em sala- pág. {pagina_sala}{atividade_extra_txt}* \n*atividade de casa: pág. {pagina_casa}*';
 
-let _faltaAnexos={pdfUrl:null,audioUrl:null};
+let _faltaAnexos={pdfs:[],audioUrl:null};
+
+function renderFaltaPdfList(){
+  const el=$('falta-pdf-status');
+  if(!el) return;
+  el.innerHTML=_faltaAnexos.pdfs.map((p,i)=>`
+    <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+      <i class="fa fa-check-circle" style="color:var(--success)"></i>
+      <a href="${esc(p.url)}" target="_blank" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</a>
+      <button onclick="removeFaltaPdf(${i})" title="Remover" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:13px" type="button"><i class="fa fa-times"></i></button>
+    </div>`).join('');
+}
+
+function removeFaltaPdf(idx){
+  _faltaAnexos.pdfs.splice(idx,1);
+  renderFaltaPdfList();
+}
+
+function addFaltaAtividadeExtra(){
+  const list=$('falta-ativ-extra-list');
+  if(!list) return;
+  const row=document.createElement('div');
+  row.className='falta-ativ-extra-row';
+  row.style.cssText='display:flex;gap:4px;margin-bottom:4px';
+  row.innerHTML=`<input class="falta-ativ-extra-input" placeholder="Ex: ficha de vocabulário" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:190px"><button class="btn btn-default btn-sm" onclick="removerFaltaAtividadeExtra(this)" title="Remover" type="button" style="padding:4px 8px"><i class="fa fa-times"></i></button>`;
+  list.appendChild(row);
+}
+
+function removerFaltaAtividadeExtra(btn){
+  const list=$('falta-ativ-extra-list');
+  const row=btn.closest('.falta-ativ-extra-row');
+  if(!list||!row) return;
+  if(list.children.length<=1){row.querySelector('input').value='';return;}
+  row.remove();
+}
 
 async function uploadFaltaAnexo(tipo){
   const input=$(tipo==='pdf'?'falta-pdf-file':'falta-audio-file');
-  const file=input?.files[0];
-  if(!file){showAlert('page-alert','Selecione um arquivo primeiro.','danger');return;}
+  const files=input?.files;
+  if(!files||!files.length){showAlert('page-alert','Selecione um arquivo primeiro.','danger');return;}
+  if(tipo==='pdf'){
+    for(const file of files){
+      const ext=file.name.split('.').pop();
+      const path='pdf-'+Date.now()+'-'+Math.random().toString(36).slice(2)+'.'+ext;
+      const{error}=await sb.storage.from('aula-conteudo').upload(path,file,{upsert:true});
+      if(error){showAlert('page-alert','Erro ao enviar '+file.name+': '+error.message,'danger');continue;}
+      const{data}=sb.storage.from('aula-conteudo').getPublicUrl(path);
+      _faltaAnexos.pdfs.push({name:file.name,url:data.publicUrl});
+    }
+    input.value='';
+    renderFaltaPdfList();
+    showAlert('page-alert','Arquivo(s) salvos no sistema.','success');
+    return;
+  }
+  const file=files[0];
   const ext=file.name.split('.').pop();
-  const path=tipo+'-'+Date.now()+'.'+ext;
+  const path='audio-'+Date.now()+'.'+ext;
   const{error}=await sb.storage.from('aula-conteudo').upload(path,file,{upsert:true});
   if(error){showAlert('page-alert','Erro ao enviar arquivo: '+error.message,'danger');return;}
   const{data}=sb.storage.from('aula-conteudo').getPublicUrl(path);
-  if(tipo==='pdf') _faltaAnexos.pdfUrl=data.publicUrl; else _faltaAnexos.audioUrl=data.publicUrl;
-  const status=$(tipo==='pdf'?'falta-pdf-status':'falta-audio-status');
+  _faltaAnexos.audioUrl=data.publicUrl;
+  const status=$('falta-audio-status');
   if(status) status.innerHTML=`<i class="fa fa-check-circle" style="color:var(--success)"></i> Anexado — <a href="${data.publicUrl}" target="_blank">ver arquivo</a>`;
   showAlert('page-alert','Arquivo salvo no sistema.','success');
 }
@@ -1919,7 +1968,8 @@ async function uploadFaltaAnexo(tipo){
 function enviarAvisoFalta(nome,numero,modalidade){
   const dia=$('falta-dia').value.trim()||'hoje';
   const paginaSala=$('falta-pag-sala').value.trim()||'—';
-  const atividadeExtra=$('falta-ativ-extra').value.trim();
+  const atividadesExtra=[...document.querySelectorAll('.falta-ativ-extra-input')].map(el=>el.value.trim()).filter(Boolean);
+  const atividadeExtra=atividadesExtra.join(', ');
   const paginaCasa=$('falta-pag-casa').value.trim()||'—';
   let texto=FALTA_MSG
     .replace(/\{nome\}/g,nome)
@@ -1928,7 +1978,10 @@ function enviarAvisoFalta(nome,numero,modalidade){
     .replace(/\{atividade_extra_txt\}/g,atividadeExtra?' e atividade extra: '+atividadeExtra:'')
     .replace(/\{pagina_casa\}/g,paginaCasa);
   const ehInfantil=modalidade==='KIDS';
-  if(ehInfantil&&_faltaAnexos.pdfUrl) texto+='\n\n📎 Atividade em PDF: '+_faltaAnexos.pdfUrl;
+  if(ehInfantil&&_faltaAnexos.pdfs.length){
+    texto+='\n\n📎 Atividades em PDF:';
+    _faltaAnexos.pdfs.forEach(p=>{texto+='\n'+p.url;});
+  }
   if(_faltaAnexos.audioUrl) texto+='\n🎧 Áudio explicativo: '+_faltaAnexos.audioUrl;
   window.open('https://wa.me/'+numero+'?text='+encodeURIComponent(texto),'_blank');
 }
@@ -1939,7 +1992,7 @@ pages.avisarFalta=async function(){
   const search=getFilter('falta-search').toLowerCase();
   const diasSemana=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
   const diaHoje=diasSemana[new Date().getDay()];
-  _faltaAnexos={pdfUrl:null,audioUrl:null};
+  _faltaAnexos={pdfs:[],audioUrl:null};
 
   const{data:alunos=[]}=await sb.rpc('get_alunos_ativos_basico');
   const filtrados=alunos.filter(a=>{
@@ -1956,13 +2009,22 @@ pages.avisarFalta=async function(){
       <div class="panel-body" style="display:flex;gap:10px;flex-wrap:wrap">
         <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Dia da aula</label><input id="falta-dia" value="${esc(diaHoje)}" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:160px"></div>
         <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Página trabalhada em sala</label><input id="falta-pag-sala" placeholder="Ex: 38" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:140px"></div>
-        <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Atividade extra (opcional)</label><input id="falta-ativ-extra" placeholder="Ex: ficha de vocabulário" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:220px"></div>
+        <div style="min-width:220px">
+          <label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Atividade extra (opcional)</label>
+          <div id="falta-ativ-extra-list">
+            <div class="falta-ativ-extra-row" style="display:flex;gap:4px;margin-bottom:4px">
+              <input class="falta-ativ-extra-input" placeholder="Ex: ficha de vocabulário" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:190px">
+              <button class="btn btn-default btn-sm" onclick="removerFaltaAtividadeExtra(this)" title="Remover" type="button" style="padding:4px 8px"><i class="fa fa-times"></i></button>
+            </div>
+          </div>
+          <button class="btn btn-default btn-sm" onclick="addFaltaAtividadeExtra()" type="button"><i class="fa fa-plus"></i> Adicionar atividade</button>
+        </div>
         <div><label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Página de casa</label><input id="falta-pag-casa" placeholder="Ex: 39" style="padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;width:140px"></div>
       </div>
       <div class="panel-body" style="display:flex;gap:20px;flex-wrap:wrap;border-top:1px solid var(--gray-200)">
         <div>
           <label style="font-size:12px;color:var(--gray-500);display:block;margin-bottom:4px">Anexar PDF da atividade</label>
-          <input id="falta-pdf-file" type="file" accept="application/pdf" style="font-size:12px">
+          <input id="falta-pdf-file" type="file" accept="application/pdf" multiple style="font-size:12px">
           <button class="btn btn-default btn-sm" onclick="uploadFaltaAnexo('pdf')" style="margin-left:6px"><i class="fa fa-upload"></i> Enviar</button>
           <div id="falta-pdf-status" style="font-size:12px;margin-top:4px;color:var(--gray-500)"></div>
         </div>
