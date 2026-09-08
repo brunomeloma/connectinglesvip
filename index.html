@@ -4475,10 +4475,17 @@ async function finLancarBoletos(studentId){
     <div class="panel">
       <div class="panel-head">
         <span class="panel-title">Parcelas mensais ${ano}</span>
-        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--gray-700)">
-          Aplicar mesmo valor a todos:
-          <input type="number" id="valor-global" placeholder="Ex: 350,00" min="0" step="0.01" style="width:110px;padding:4px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px">
-          <button class="btn btn-default btn-sm" onclick="aplicarValorGlobal()">Aplicar</button>
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--gray-700)">
+            Aplicar mesmo dia de vencimento a todos:
+            <input type="number" id="dia-global" placeholder="Ex: 10" min="1" max="31" style="width:70px;padding:4px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px">
+            <button class="btn btn-default btn-sm" onclick="aplicarDiaGlobal(${ano})">Aplicar</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--gray-700)">
+            Aplicar mesmo valor a todos:
+            <input type="number" id="valor-global" placeholder="Ex: 350,00" min="0" step="0.01" style="width:110px;padding:4px 8px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:12px">
+            <button class="btn btn-default btn-sm" onclick="aplicarValorGlobal()">Aplicar</button>
+          </div>
         </div>
       </div>
       <div class="panel-body" style="padding:0">
@@ -4525,6 +4532,18 @@ function aplicarValorGlobal(){
   const v=$('valor-global')?.value;
   if(!v) return;
   for(let m=1;m<=12;m++){const el=$(`valor-${m}`);if(el)el.value=v;}
+}
+
+function aplicarDiaGlobal(ano){
+  const dia=parseInt($('dia-global')?.value,10);
+  if(!dia||dia<1||dia>31) return;
+  for(let m=1;m<=12;m++){
+    const el=$(`venc-${m}`);
+    if(!el) continue;
+    const diasNoMes=new Date(ano,m,0).getDate();
+    const diaAjustado=Math.min(dia,diasNoMes);
+    el.value=`${ano}-${String(m).padStart(2,'0')}-${String(diaAjustado).padStart(2,'0')}`;
+  }
 }
 
 async function salvarBoletos(studentId){
