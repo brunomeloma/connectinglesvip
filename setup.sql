@@ -3633,3 +3633,21 @@ AS $$ BEGIN
     WHERE (p_teacher_id IS NULL OR tl.actual_teacher_id = p_teacher_id)
     ORDER BY tl.lesson_date DESC;
 END; $$;
+
+-- ============================================================
+-- Lançamento em lote não altera boletos já pagos.
+-- A edição individual (lápis no Financeiro) envia permitir_pago=true
+-- para continuar podendo corrigir um boleto quitado.
+-- ============================================================
+CREATE OR REPLACE FUNCTION lancar_boletos_aluno(p_rows jsonb)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE r jsonb; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  FOR r IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
+    INSERT INTO boletos (student_id,mes_referencia,ano_referencia,data_vencimento,valor,url_boleto,codigo_boleto)
+    VALUES ((r->>'student_id')::uuid,(r->>'mes_referencia')::int,(r->>'ano_referencia')::int,(r->>'data_vencimento')::date,(r->>'valor')::numeric,r->>'url_boleto',r->>'codigo_boleto')
+    ON CONFLICT (student_id,mes_referencia,ano_referencia) DO UPDATE SET
+      data_vencimento=EXCLUDED.data_vencimento, valor=EXCLUDED.valor, url_boleto=EXCLUDED.url_boleto, codigo_boleto=EXCLUDED.codigo_boleto
+      WHERE boletos.status<>'pago' OR COALESCE((r->>'permitir_pago')::boolean,false);
+  END LOOP;
+END; $$;
