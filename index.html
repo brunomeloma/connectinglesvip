@@ -1472,6 +1472,35 @@ async function salvarNascimentoInativo(id,valor){
   showAlert('page-alert','Data de nascimento salva.','success');
 }
 
+const INATIVO_MESES=['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+
+function toggleNovoInativo(){
+  const el=$('inat-novo');
+  if(!el) return;
+  el.style.display=el.style.display==='none'?'block':'none';
+  if(el.style.display==='block') $('inat-nome').focus();
+}
+
+// Grava em maiúsculas pra ficar no mesmo padrão da lista importada.
+async function salvarNovoInativo(ano){
+  const nome=$('inat-nome').value.trim().toUpperCase();
+  if(!nome){showAlert('page-alert','Informe o nome do aluno.','danger');return;}
+  const up=id=>$(id).value.trim().toUpperCase()||null;
+  const{error}=await sb.from('inactive_students').insert({
+    name:nome,
+    course_level:up('inat-curso'),
+    class_day:up('inat-dia'),
+    cancel_month:$('inat-mes').value||null,
+    cancel_year:ano,
+    phone:$('inat-tel').value.trim()||null,
+    date_birth:$('inat-nasc').value||null,
+  });
+  if(error){showAlert('page-alert','Erro ao cadastrar inativo: '+error.message,'danger');return;}
+  // Já estamos na aba do ano; re-renderiza direto pra poder aguardar antes do alerta.
+  await pages.inativos({ano});
+  showAlert('page-alert',nome+' cadastrado em Inativos '+ano+'.','success');
+}
+
 pages.inativos=async function({ano}={}){
   if(!canManageBilling()&&!isAdmin()&&currentUser?.role!=='captacao'){nav('dashboard');return;}
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
@@ -1483,9 +1512,12 @@ pages.inativos=async function({ano}={}){
     sb.rpc('get_aniversariantes_inativos'),
   ]);
 
-  const anos=[...new Set(todos.map(i=>i.cancel_year))].sort((a,b)=>b-a);
+  // Ano corrente sempre tem aba, mesmo antes do primeiro cancelamento do ano.
+  const anos=[...new Set([...todos.map(i=>i.cancel_year),new Date().getFullYear()])].sort((a,b)=>b-a);
   const tabBar=`<div class="tab-bar">${anos.map(a=>`<button class="tab-btn${anoAtivo===a?' active':''}" onclick="clearFilters(['inat-search']);nav('inativos',{ano:${a}})"><i class="fa fa-user-slash"></i> Inativos ${a}</button>`).join('')}</div>`;
 
+  // captacao vê a lista, mas a RLS de insert não inclui esse papel.
+  const podeCadastrar=canManageBilling()||isAdmin();
   const doAno=todos.filter(i=>i.cancel_year===anoAtivo);
   const filtrados=doAno.filter(i=>{
     if(!search) return true;
@@ -1516,7 +1548,23 @@ pages.inativos=async function({ano}={}){
     ${painelAniversario}
     ${tabBar}
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">Inativos ${anoAtivo}</span><div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--gray-500)">${filtrados.length} de ${doAno.length}</span><button class="btn btn-default btn-sm" onclick="copiarPromoInativo()" title="Copia a mensagem promocional de reativação pra colar onde quiser"><i class="fa fa-copy"></i> Copiar promoção</button></div></div>
+      <div class="panel-head"><span class="panel-title">Inativos ${anoAtivo}</span><div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--gray-500)">${filtrados.length} de ${doAno.length}</span><button class="btn btn-default btn-sm" onclick="copiarPromoInativo()" title="Copia a mensagem promocional de reativação pra colar onde quiser"><i class="fa fa-copy"></i> Copiar promoção</button>${podeCadastrar?`<button class="btn btn-primary btn-sm" onclick="toggleNovoInativo()"><i class="fa fa-plus"></i> Novo inativo</button>`:''}</div></div>
+      ${podeCadastrar?`<div id="inat-novo" class="panel-body" style="display:none;border-bottom:1px solid var(--gray-200)">
+        <div class="form-row">
+          <div class="form-col" style="min-width:220px"><label>Nome *</label><input id="inat-nome" placeholder="Nome do aluno"></div>
+          <div class="form-col"><label>Curso/Nível</label><input id="inat-curso" placeholder="Ex: LEVEL-1, KIDS 04 E 05"></div>
+          <div class="form-col"><label>Turma/Dia</label><input id="inat-dia" placeholder="Ex: QUINTA-FEIRA"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-col"><label>Mês cancelamento</label><select id="inat-mes"><option value="">—</option>${INATIVO_MESES.map((m,idx)=>`<option value="${m}"${anoAtivo===new Date().getFullYear()&&idx===new Date().getMonth()?' selected':''}>${m}</option>`).join('')}</select></div>
+          <div class="form-col"><label>Telefone</label><input id="inat-tel" placeholder="(99) 99999-9999"></div>
+          <div class="form-col"><label>Nascimento</label><input id="inat-nasc" type="date"></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-default" onclick="toggleNovoInativo()">Cancelar</button>
+          <button class="btn btn-primary" onclick="salvarNovoInativo(${anoAtivo})"><i class="fa fa-save"></i> Salvar em Inativos ${anoAtivo}</button>
+        </div>
+      </div>`:''}
       <div class="panel-body" style="padding-bottom:0">
         <input id="inat-search" placeholder="Buscar por nome, curso, turma ou telefone…" value="${esc(getFilter('inat-search'))}" oninput="saveFilters(['inat-search']);nav('inativos',{ano:${anoAtivo}})" style="width:100%;max-width:360px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;margin-bottom:14px">
       </div>
