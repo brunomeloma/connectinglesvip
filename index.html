@@ -1507,10 +1507,25 @@ pages.inativos=async function({ano}={}){
   const anoAtivo=ano?parseInt(ano):2025;
   const search=getFilter('inat-search').toLowerCase();
 
-  const[{data:todos=[]},{data:aniversariantes=[]}]=await Promise.all([
+  // Além da lista antiga (inactive_students), entram os alunos inativados pelo
+  // sistema (students.status=false) no ano de data_inativacao — direto da tabela
+  // students, sem copiar nada. captacao não lê students: a consulta volta vazia.
+  const[{data:legado=[]},{data:aniversariantes=[]},{data:alunosInativos}]=await Promise.all([
     sb.from('inactive_students').select('*').order('name'),
     sb.rpc('get_aniversariantes_inativos'),
+    sb.from('students').select('id,first_name,last_name,level,mobile_number,whatsapp,date_birth,data_inativacao,class:classes(name)').eq('status',false).not('data_inativacao','is',null),
   ]);
+  const todos=[
+    ...(alunosInativos||[]).map(s=>({
+      id:s.id,sistema:true,
+      name:(s.first_name+' '+s.last_name).toUpperCase(),
+      course_level:s.level,class_day:s.class?.name,
+      cancel_year:parseInt(s.data_inativacao.slice(0,4)),
+      data_inativacao:s.data_inativacao,
+      phone:s.whatsapp||s.mobile_number,date_birth:s.date_birth,
+    })).sort((a,b)=>b.data_inativacao.localeCompare(a.data_inativacao)),
+    ...legado,
+  ];
 
   // Ano corrente sempre tem aba, mesmo antes do primeiro cancelamento do ano.
   const anos=[...new Set([...todos.map(i=>i.cancel_year),new Date().getFullYear()])].sort((a,b)=>b-a);
@@ -1569,17 +1584,17 @@ pages.inativos=async function({ano}={}){
         <input id="inat-search" placeholder="Buscar por nome, curso, turma ou telefone…" value="${esc(getFilter('inat-search'))}" oninput="saveFilters(['inat-search']);nav('inativos',{ano:${anoAtivo}})" style="width:100%;max-width:360px;padding:8px 10px;border:1px solid var(--gray-300);border-radius:var(--radius);font-size:13px;margin-bottom:14px">
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Nome</th><th>Curso/Nível</th><th>Turma/Dia</th><th>Mês cancelamento</th><th>Nascimento</th><th>Telefone</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Nome</th><th>Curso/Nível</th><th>Turma/Dia</th><th>Cancelamento / Inativação</th><th>Nascimento</th><th>Telefone</th><th>Ações</th></tr></thead>
         <tbody>${filtrados.length?filtrados.map(i=>{
           const numFmt=inativoWppNumero(i.phone||'');
           return `<tr>
-            <td><strong>${esc(i.name)}</strong></td>
+            <td><strong>${esc(i.name)}</strong>${i.sistema?' <span class="badge badge-info" title="Inativado pelo cadastro de alunos">Cadastro</span>':''}</td>
             <td>${esc(i.course_level)||'—'}</td>
             <td>${esc(i.class_day)||'—'}</td>
-            <td>${esc(i.cancel_month)||'—'}</td>
-            <td><input type="date" value="${i.date_birth||''}" style="padding:4px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px" onchange="salvarNascimentoInativo('${i.id}',this.value)"></td>
+            <td>${i.sistema?`<span class="badge badge-warning">Inativado em ${fdate(i.data_inativacao)}</span>`:(esc(i.cancel_month)||'—')}</td>
+            <td>${i.sistema?fdate(i.date_birth):`<input type="date" value="${i.date_birth||''}" style="padding:4px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px" onchange="salvarNascimentoInativo('${i.id}',this.value)">`}</td>
             <td>${numFmt?`<a href="https://wa.me/${numFmt}" target="_blank" style="color:#25D366;font-weight:600"><i class="fab fa-whatsapp"></i> ${esc(i.phone)}</a>`:(esc(i.phone)||'Sem telefone')}</td>
-            <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarReengajamentoInativo('${esc(i.name)}','${numFmt}')" title="Tentar reengajar"><i class="fab fa-whatsapp"></i> Reengajar</button> <button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarPromoInativo('${numFmt}')" title="Enviar promoção de matrícula"><i class="fa fa-bullhorn"></i> Promoção</button>`:'—'}</td>
+            <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarReengajamentoInativo('${esc(i.name)}','${numFmt}')" title="Tentar reengajar"><i class="fab fa-whatsapp"></i> Reengajar</button> <button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarPromoInativo('${numFmt}')" title="Enviar promoção de matrícula"><i class="fa fa-bullhorn"></i> Promoção</button>`:''}${i.sistema&&podeCadastrar?` <button class="btn btn-default btn-sm" style="color:var(--success)" data-nome="${esc(i.name)}" onclick="alterarStatusAluno('${i.id}',this.dataset.nome,true,${anoAtivo})" title="Reativar matrícula"><i class="fa fa-user-check"></i> Reativar</button>`:''}${!numFmt&&!(i.sistema&&podeCadastrar)?'—':''}</td>
           </tr>`;
         }).join(''):'<tr><td colspan="7"><div class="empty-state"><i class="fa fa-user-slash"></i>Nenhum inativo encontrado</div></td></tr>'}
         </tbody>
@@ -2847,14 +2862,26 @@ async function saveTeacher(id){
 }
 
 // --- STUDENTS ---
-pages.students=async function({view,id}={}){
+// Inativar/reativar é só a flag status (sem exclusão). A data de inativação
+// é gravada pelo trigger trg_students_data_inativacao no banco.
+// anoInativos: chamado da página Inativos — re-renderiza ela em vez da lista de alunos.
+async function alterarStatusAluno(id,nome,ativar,anoInativos){
+  if(!confirm(ativar?`Reativar ${nome}? O cadastro volta para a aba Ativos.`:`Inativar ${nome}? A data de hoje será registrada e o cadastro vai para a aba Inativos.`)) return;
+  const{error}=await sb.from('students').update({status:ativar}).eq('id',id);
+  if(error){showAlert('page-alert','Erro ao alterar status: '+error.message,'danger');return;}
+  if(anoInativos) await pages.inativos({ano:anoInativos});
+  else await pages.students({aba:ativar?'ativos':'inativos'});
+  showAlert('page-alert',`${nome} ${ativar?'reativado(a) e movido(a) para Ativos':'inativado(a) e movido(a) para Inativos'}.`,'success');
+}
+
+pages.students=async function({view,id,aba}={}){
   if(currentUser?.role==='professor'){nav('dashboard');return;}
   if(view==='form') return studentForm(id);
   if(view==='frequencia') return studentFrequencia(id);
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const name=getFilter('st-name')||'';
   const classId=getFilter('st-class')||'';
-  const status=getFilter('st-status');
+  const abaInativos=aba==='inativos';
   const[{data:classes=[]},{data:schools=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true)]);
   let q=sb.from('students').select('*,class:classes(name)').order('created_at',{ascending:false});
   if(name) q=q.or(`first_name.ilike.%${name}%,last_name.ilike.%${name}%`);
@@ -2864,9 +2891,12 @@ pages.students=async function({view,id}={}){
     const{data:matriculados=[]}=await sb.rpc('get_turma_alunos',{p_class_id:classId});
     q=q.in('id',matriculados.map(a=>a.id).length?matriculados.map(a=>a.id):['00000000-0000-0000-0000-000000000000']);
   }
-  if(status==='1') q=q.eq('status',true);
-  if(status==='0') q=q.eq('status',false);
-  const{data=[]}=await q;
+  const{data:todos=[]}=await q;
+  const ativos=todos.filter(s=>s.status!==false);
+  const inativos=todos.filter(s=>s.status===false)
+    .sort((a,b)=>(b.data_inativacao||'').localeCompare(a.data_inativacao||''));
+  const data=abaInativos?inativos:ativos;
+  const abaParam=abaInativos?'inativos':'ativos';
   setContent(`
     <div class="breadcrumb"><span>Home</span> › <span>Aluno</span></div>
     <div class="page-title"><i class="fa fa-user-graduate"></i> Aluno</div>
@@ -2877,16 +2907,19 @@ pages.students=async function({view,id}={}){
         <div class="form-row">
           <div class="form-col"><label>Nome</label><input id="st-name" placeholder="Nome" value="${esc(name)}"></div>
           <div class="form-col"><label>Turma</label><select id="st-class"><option value="">Todas</option>${classes.map(c=>`<option value="${c.id}" ${classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
-          <div class="form-col"><label>Status</label><select id="st-status"><option value="">Todos</option><option value="1" ${status==='1'?'selected':''}>Ativo</option><option value="0" ${status==='0'?'selected':''}>Inativo</option></select></div>
         </div>
-        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="saveFilters(['st-name','st-class','st-status']);nav('students')"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['st-name','st-class','st-status']);nav('students')">Limpa</button></div>
+        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="saveFilters(['st-name','st-class']);nav('students',{aba:'${abaParam}'})"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['st-name','st-class']);nav('students',{aba:'${abaParam}'})">Limpa</button></div>
       </div>
     </div>
+    <div class="tab-bar">
+      <button class="tab-btn${abaInativos?'':' active'}" onclick="nav('students',{aba:'ativos'})"><i class="fa fa-user-check"></i> Ativos (${ativos.length})</button>
+      <button class="tab-btn${abaInativos?' active':''}" onclick="nav('students',{aba:'inativos'})"><i class="fa fa-user-slash"></i> Inativos (${inativos.length})</button>
+    </div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">Lista de alunos</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
+      <div class="panel-head"><span class="panel-title">${abaInativos?'Alunos inativos':'Alunos ativos'}</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>Status</th><th>Matrícula</th><th colspan="${(canManageBilling()||isAdmin())?9:8}">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>${abaInativos?'Inativado em':'Status'}</th><th>Matrícula</th><th colspan="${(canManageBilling()||isAdmin())?10:9}">Ações</th></tr></thead>
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
@@ -2895,7 +2928,7 @@ pages.students=async function({view,id}={}){
               <td>${esc(s.mobile_number)||'—'}</td>
               <td>${esc(s.class?.name)||'—'}</td>
               <td>${level_badge(s.level)}</td>
-              <td>${status_badge(s.status)}</td>
+              <td>${abaInativos?`<span class="badge badge-warning">${s.data_inativacao?fdate(s.data_inativacao):'Data não registrada'}</span>`:status_badge(s.status)}</td>
               <td>${fdate(s.date_joining)}</td>
               <td><button class="btn-icon" onclick="nav('students',{view:'frequencia',id:'${s.id}'})" title="Histórico de frequência"><i class="fa fa-calendar-check"></i></button></td>
               ${(canManageBilling()||isAdmin())?`<td><button class="btn-icon" onclick="nav('financeiro',{view:'aluno',studentId:'${s.id}'})" title="Financeiro do aluno"><i class="fa fa-file-invoice-dollar"></i></button></td>`:''}
@@ -2905,8 +2938,11 @@ pages.students=async function({view,id}={}){
               <td><button class="btn-icon" onclick="imprimirFichaCadastro('${s.id}')" title="Imprimir ficha de cadastro"><i class="fa fa-id-card"></i></button></td>
               <td><button class="btn-icon" onclick="imprimirCapaDossie('${s.id}')" title="Imprimir capa do dossiê"><i class="fa fa-folder-open"></i></button></td>
               <td><button class="btn-icon" style="color:var(--brand)" onclick="gerarLinkPortal('${s.id}')" title="Link do portal do responsável"><i class="fa fa-user-shield"></i></button></td>
+              <td>${s.status===false
+                ?`<button class="btn-icon" style="color:var(--success)" data-nome="${esc(s.first_name+' '+s.last_name)}" onclick="alterarStatusAluno('${s.id}',this.dataset.nome,true)" title="Reativar aluno"><i class="fa fa-user-check"></i></button>`
+                :`<button class="btn-icon" style="color:var(--warning)" data-nome="${esc(s.first_name+' '+s.last_name)}" onclick="alterarStatusAluno('${s.id}',this.dataset.nome,false)" title="Inativar aluno"><i class="fa fa-user-slash"></i></button>`}</td>
               <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('students','${s.id}','students')"><i class="fa fa-trash"></i></button></td>
-            </tr>`).join(''):`<tr><td colspan="13"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno cadastrado</div></td></tr>`}
+            </tr>`).join(''):`<tr><td colspan="18"><div class="empty-state"><i class="fa fa-user-graduate"></i>${abaInativos?'Nenhum aluno inativo':'Nenhum aluno ativo'}</div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -2965,6 +3001,44 @@ async function studentFrequencia(id){
   `);
 }
 
+const ESTADOS_CIVIS=['Solteiro(a)','Casado(a)','União estável','Divorciado(a)','Separado(a)','Viúvo(a)'];
+function estadoCivilOptions(selected){return `<option value="">Selecione</option>`+ESTADOS_CIVIS.map(e=>`<option value="${e}" ${selected===e?'selected':''}>${e}</option>`).join('');}
+
+// Número do endereço é texto: aceita 120, 120A, 120-B e S/N (sn, s.n., s/n viram "S/N").
+// Mesma regra do CHECK students_numero_check no banco.
+const NUMERO_ENDERECO_RE=/^([0-9]{1,6}(-[A-Z0-9]{1,3}|[A-Z]{1,2})?|S\/N)$/;
+function normalizaNumeroEndereco(v){
+  const n=(v||'').trim().toUpperCase().replace(/\s+/g,'');
+  if(!n) return null;
+  return /^S\.?\/?N\.?$/.test(n)?'S/N':n;
+}
+function montaEndereco(rua,numero,bairro){
+  return [rua?(rua+(numero?', '+numero:'')):'',bairro].filter(Boolean).join(' — ');
+}
+// Rua/Número/Bairro do aluno (prefix 'f') ou do responsável ('f-parent'). Cadastros antigos
+// só têm o endereço em texto livre: mostra pra secretaria redigitar nos campos novos.
+function enderecoFields(prefix,rua,numero,bairro,enderecoAntigo){
+  const antigo=!rua&&!numero&&!bairro&&enderecoAntigo?`<div class="help-text" style="margin-top:-6px;margin-bottom:10px">Endereço registrado antes: <strong>${esc(enderecoAntigo)}</strong></div>`:'';
+  return `
+    <div class="field"><label>Rua / Logradouro</label><input id="${prefix}-logradouro" maxlength="120" placeholder="Ex: Rua Benedito Leite" value="${esc(rua)}"></div>
+    <div class="form-row" style="gap:10px">
+      <div class="field" style="flex:0 0 120px"><label>Número</label><input id="${prefix}-numero" maxlength="10" placeholder="120 ou S/N" value="${esc(numero)}" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="field" style="flex:1"><label>Bairro</label><input id="${prefix}-bairro" maxlength="80" value="${esc(bairro)}"></div>
+    </div>
+    ${antigo}`;
+}
+// Lê os campos de endereço e valida o número; retorna null (com alerta) se inválido.
+function lerEndereco(prefix,rotulo){
+  const rua=$(prefix+'-logradouro').value.trim()||null;
+  const numero=normalizaNumeroEndereco($(prefix+'-numero').value);
+  const bairro=$(prefix+'-bairro').value.trim()||null;
+  if(numero&&!NUMERO_ENDERECO_RE.test(numero)){
+    showAlert('page-alert',`Número do endereço ${rotulo} inválido: use só o número (ex: 120, 120-A) ou S/N.`,'danger');
+    return null;
+  }
+  return{rua,numero,bairro,texto:montaEndereco(rua,numero,bairro)};
+}
+
 async function studentForm(id){
   const[{data:classes=[]},{data:schools=[]},{data:teachers=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true),sb.from('teachers').select('id,first_name,last_name').eq('status',true)]);
   let s={};
@@ -2986,15 +3060,18 @@ async function studentForm(id){
             <div class="field"><label>Sobrenome <span class="required">*</span></label><input id="f-ln" value="${esc(s.last_name)}"></div>
             <div class="field"><label>Gênero</label><select id="f-gender"><option value="">Selecione</option><option value="male" ${s.gender==='male'?'selected':''}>Masculino</option><option value="female" ${s.gender==='female'?'selected':''}>Feminino</option></select></div>
             <div class="field"><label>Data de nascimento</label><input id="f-dob" type="date" value="${s.date_birth||''}"></div>
+            <div class="field"><label>Naturalidade</label><input id="f-naturalidade" maxlength="60" placeholder="Cidade/UF — ex: Imperatriz/MA" value="${esc(s.naturalidade)}"></div>
             <div class="field"><label>CPF do aluno</label><input id="f-cpf" value="${esc(s.cpf)}"></div>
             <div class="field"><label>RG do aluno</label><input id="f-rg" value="${esc(s.rg)}"></div>
             <div class="field"><label>Telefone <span class="required">*</span></label><input id="f-mobile" value="${esc(s.mobile_number)}"></div>
             <div class="field"><label>E-mail do aluno</label><input id="f-email" type="email" value="${esc(s.email)}"></div>
+            <div class="field"><label>Estado civil</label><select id="f-estado-civil">${estadoCivilOptions(s.estado_civil)}</select></div>
+            <div class="field"><label>Profissão</label><input id="f-profissao" maxlength="60" placeholder="Ex: Estudante" value="${esc(s.profissao)}"></div>
           </div>
           <div>
             <div class="field"><label>Pessoa para recado (nome)</label><input id="f-recado-nome" value="${esc(s.contato_recado_nome)}"></div>
             <div class="field"><label>Telefone para recado</label><input id="f-recado-tel" value="${esc(s.contato_recado_telefone)}"></div>
-            <div class="field"><label>Endereço</label><textarea id="f-address">${esc(s.address)}</textarea></div>
+            ${enderecoFields('f',s.logradouro,s.numero,s.bairro,s.address)}
             <div class="field"><label>CEP</label><input id="f-cep" value="${esc(s.cep)}"></div>
             <div class="field"><label>Observação</label><textarea id="f-note">${esc(s.note)}</textarea></div>
           </div>
@@ -3010,10 +3087,13 @@ async function studentForm(id){
             <div class="field"><label>CPF do responsável</label><input id="f-parent-cpf" value="${esc(s.parent_cpf)}"></div>
             <div class="field"><label>RG do responsável</label><input id="f-parent-rg" value="${esc(s.parent_rg)}"></div>
             <div class="field"><label>Telefone / WhatsApp do responsável</label><input id="f-parent-mobile" value="${esc(s.parent_mobile)}"></div>
+            <div class="field"><label>Naturalidade do responsável</label><input id="f-parent-naturalidade" maxlength="60" placeholder="Cidade/UF — ex: Imperatriz/MA" value="${esc(s.parent_naturalidade)}"></div>
+            <div class="field"><label>Estado civil do responsável</label><select id="f-parent-estado-civil">${estadoCivilOptions(s.parent_estado_civil)}</select></div>
+            <div class="field"><label>Profissão do responsável</label><input id="f-parent-profissao" maxlength="60" value="${esc(s.parent_profissao)}"></div>
           </div>
           <div>
             <div class="field"><label>E-mail do responsável</label><input id="f-parent-email" type="email" value="${esc(s.parent_email)}"></div>
-            <div class="field"><label>Endereço do responsável</label><textarea id="f-parent-address">${esc(s.parent_address)}</textarea></div>
+            ${enderecoFields('f-parent',s.parent_logradouro,s.parent_numero,s.parent_bairro,s.parent_address)}
             <div class="field"><label>Comprovante de residência</label><input id="f-parent-comprovante" type="file" accept="image/*,.pdf">
               <input id="f-parent-comprovante-link" placeholder="Ou cole um link do comprovante (opcional)" style="margin-top:6px">
             </div>
@@ -3034,7 +3114,9 @@ async function studentForm(id){
           <div>
             <div class="field"><label>Modalidade</label><select id="f-modalidade"><option value="">Selecione</option>${modalidadeOpts}</select></div>
             <div class="field"><label>Nível</label><select id="f-level">${nivelOptions(s.level)}</select></div>
-            <div class="field"><label>Status</label><select id="f-status"><option value="true" ${s.status!==false?'selected':''}>Ativo</option><option value="false" ${s.status===false?'selected':''}>Inativo</option></select></div>
+            <div class="field"><label>Status</label><select id="f-status"><option value="true" ${s.status!==false?'selected':''}>Ativo</option><option value="false" ${s.status===false?'selected':''}>Inativo</option></select>
+              <div class="help-text">${s.status===false?(s.data_inativacao?'Inativado em '+fdate(s.data_inativacao)+'. ':'')+'Mudar para Ativo devolve o aluno à aba Ativos.':'Ao marcar Inativo, a data de hoje é registrada e o aluno vai para a aba Inativos.'}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -3091,6 +3173,10 @@ async function saveStudent(id){
       return;
     }
   }
+  const endAluno=lerEndereco('f','do aluno');
+  if(!endAluno) return;
+  const endResp=lerEndereco('f-parent','do responsável');
+  if(!endResp) return;
   const novaTurmaId=$('f-class').value||null;
   let turmaAnteriorId=null;
   if(id){
@@ -3103,7 +3189,13 @@ async function saveStudent(id){
     date_birth:$('f-dob').value||null,
     date_joining:doj,
     mobile_number:mobile,
-    address:$('f-address').value,
+    // Endereço em texto continua sendo gravado (ficha/contrato usam). Se os campos
+    // novos estão vazios, não mexe no texto antigo do cadastro.
+    ...(endAluno.texto?{address:endAluno.texto}:{}),
+    logradouro:endAluno.rua,numero:endAluno.numero,bairro:endAluno.bairro,
+    naturalidade:$('f-naturalidade').value.trim()||null,
+    profissao:$('f-profissao').value.trim()||null,
+    estado_civil:$('f-estado-civil').value||null,
     school_id:$('f-school').value||null,
     modalidade:$('f-modalidade').value||null,
     level:$('f-level').value||null,
@@ -3114,7 +3206,11 @@ async function saveStudent(id){
     parent_rg:$('f-parent-rg').value||null,
     parent_mobile:$('f-parent-mobile').value,
     parent_email:$('f-parent-email').value||null,
-    parent_address:$('f-parent-address').value||null,
+    ...(endResp.texto?{parent_address:endResp.texto}:{}),
+    parent_logradouro:endResp.rua,parent_numero:endResp.numero,parent_bairro:endResp.bairro,
+    parent_naturalidade:$('f-parent-naturalidade').value.trim()||null,
+    parent_profissao:$('f-parent-profissao').value.trim()||null,
+    parent_estado_civil:$('f-parent-estado-civil').value||null,
     parent_notes:$('f-parent-notes').value||null,
     cpf:$('f-cpf').value||null,
     rg:$('f-rg').value||null,
@@ -6233,6 +6329,8 @@ function buildFichaCadastroHtml(s){
       <tr><td colspan="2" class="secao-titulo">Aluno</td></tr>
       ${rowPair('NOME',esc(s.first_name)+' '+esc(s.last_name),'DATA NASC',s.date_birth?new Date(s.date_birth+'T00:00:00').toLocaleDateString('pt-BR'):'')}
       ${rowPair('CPF',s.cpf,'RG',s.rg)}
+      ${rowPair('NATURALIDADE',s.naturalidade,'ESTADO CIVIL',s.estado_civil)}
+      ${rowFull('PROFISSÃO',s.profissao)}
       ${rowFull('ENDEREÇO',s.address)}
       ${rowPair('CEP',s.cep,'TURMA',s.class?.name)}
       ${rowPair('TELEFONE',s.mobile_number,'E-MAIL',s.email)}
@@ -6242,6 +6340,8 @@ function buildFichaCadastroHtml(s){
       <tr><td colspan="2" class="secao-titulo">Responsável</td></tr>
       ${rowFull('NOME',s.parent_name)}
       ${rowPair('CPF',s.parent_cpf,'RG',s.parent_rg)}
+      ${rowPair('NATURALIDADE',s.parent_naturalidade,'ESTADO CIVIL',s.parent_estado_civil)}
+      ${rowFull('PROFISSÃO',s.parent_profissao)}
       ${rowFull('ENDEREÇO',s.parent_address)}
       ${rowPair('TELEFONE',s.parent_mobile,'E-MAIL',s.parent_email)}
     </table>
@@ -6359,7 +6459,10 @@ function buildRelatorioAlunoHtml(s,boletos){
       row('Idade',idade!=null?idade+' anos':null)+
       row('Sexo',generoTxt)+
       row('CPF',esc(s.cpf))+
-      row('RG',esc(s.rg))
+      row('RG',esc(s.rg))+
+      row('Naturalidade',esc(s.naturalidade))+
+      row('Estado civil',esc(s.estado_civil))+
+      row('Profissão',esc(s.profissao))
     )}
 
     ${secao('Contato',
@@ -6376,6 +6479,9 @@ function buildRelatorioAlunoHtml(s,boletos){
       row('Nome do responsável',esc(s.parent_name))+
       row('CPF do responsável',esc(s.parent_cpf))+
       row('RG do responsável',esc(s.parent_rg))+
+      row('Naturalidade',esc(s.parent_naturalidade))+
+      row('Estado civil',esc(s.parent_estado_civil))+
+      row('Profissão',esc(s.parent_profissao))+
       row('Telefone / WhatsApp',esc(s.parent_mobile))+
       row('E-mail',esc(s.parent_email))+
       row('Endereço do responsável',esc(s.parent_address))
@@ -6387,7 +6493,7 @@ function buildRelatorioAlunoHtml(s,boletos){
       row('Modalidade',esc(s.modalidade))+
       row('Nível',esc(s.level))+
       row('Data de matrícula',s.date_joining?new Date(s.date_joining+'T00:00:00').toLocaleDateString('pt-BR'):null)+
-      row('Status da matrícula',s.status!==false?'Ativo':'Inativo')+
+      row('Status da matrícula',s.status!==false?'Ativo':'Inativo'+(s.data_inativacao?' desde '+new Date(s.data_inativacao+'T00:00:00').toLocaleDateString('pt-BR'):''))+
       row('Professor responsável',s.class?.teacher?esc(s.class.teacher.first_name)+' '+esc(s.class.teacher.last_name):null)+
       row('Dias de aula',diasTxt)+
       row('Horário das aulas',horario)+

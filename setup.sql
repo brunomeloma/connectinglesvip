@@ -3651,3 +3651,63 @@ AS $$ DECLARE r jsonb; BEGIN
       WHERE boletos.status<>'pago' OR COALESCE((r->>'permitir_pago')::boolean,false);
   END LOOP;
 END; $$;
+
+-- #####################################################################
+-- 45. CADASTRO: NATURALIDADE / ENDEREÇO DETALHADO / PROFISSÃO / ESTADO
+--     CIVIL (aluno e responsável) + DATA DE INATIVAÇÃO AUTOMÁTICA
+-- #####################################################################
+-- Endereço passa a ter rua, número e bairro em colunas próprias. A coluna
+-- antiga (address / parent_address) continua existindo e é preenchida pela
+-- tela com o texto montado, pra ficha, relatório e contrato seguirem
+-- funcionando sem mudança. "numero" é texto pra aceitar "S/N" e "120-A".
+--
+-- Inativação é só a flag students.status (nunca exclusão física). O trigger
+-- grava data_inativacao quando o aluno passa de ativo pra inativo e limpa
+-- quando é reativado — vale pra qualquer caminho de update, não só a tela.
+
+ALTER TABLE students ADD COLUMN IF NOT EXISTS naturalidade text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS logradouro text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS numero text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS bairro text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS profissao text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS estado_civil text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_naturalidade text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_logradouro text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_numero text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_bairro text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_profissao text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_estado_civil text;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS data_inativacao date;
+
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_estado_civil_check;
+ALTER TABLE students ADD CONSTRAINT students_estado_civil_check CHECK (
+  estado_civil IS NULL OR estado_civil IN ('Solteiro(a)','Casado(a)','União estável','Divorciado(a)','Separado(a)','Viúvo(a)'));
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_parent_estado_civil_check;
+ALTER TABLE students ADD CONSTRAINT students_parent_estado_civil_check CHECK (
+  parent_estado_civil IS NULL OR parent_estado_civil IN ('Solteiro(a)','Casado(a)','União estável','Divorciado(a)','Separado(a)','Viúvo(a)'));
+
+-- Número: dígitos com complemento opcional (120, 120A, 120-B) ou S/N.
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_numero_check;
+ALTER TABLE students ADD CONSTRAINT students_numero_check CHECK (
+  numero IS NULL OR numero ~ '^([0-9]{1,6}(-[A-Z0-9]{1,3}|[A-Z]{1,2})?|S/N)$');
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_parent_numero_check;
+ALTER TABLE students ADD CONSTRAINT students_parent_numero_check CHECK (
+  parent_numero IS NULL OR parent_numero ~ '^([0-9]{1,6}(-[A-Z0-9]{1,3}|[A-Z]{1,2})?|S/N)$');
+
+CREATE OR REPLACE FUNCTION students_set_data_inativacao()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public
+AS $$ BEGIN
+  IF NEW.status IS DISTINCT FROM false THEN
+    NEW.data_inativacao := NULL;
+  ELSIF TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM false THEN
+    NEW.data_inativacao := COALESCE(NEW.data_inativacao, (now() AT TIME ZONE 'America/Sao_Paulo')::date);
+  END IF;
+  RETURN NEW;
+END; $$;
+
+DROP TRIGGER IF EXISTS trg_students_data_inativacao ON students;
+CREATE TRIGGER trg_students_data_inativacao
+  BEFORE INSERT OR UPDATE OF status ON students
+  FOR EACH ROW EXECUTE FUNCTION students_set_data_inativacao();
+
+CREATE INDEX IF NOT EXISTS idx_students_data_inativacao ON students(data_inativacao) WHERE status = false;
