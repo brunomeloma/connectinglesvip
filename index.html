@@ -2864,6 +2864,14 @@ async function saveTeacher(id){
 // --- STUDENTS ---
 // Inativar/reativar é só a flag status (sem exclusão). A data de inativação
 // é gravada pelo trigger trg_students_data_inativacao no banco.
+// Corrige/preenche a data de alunos já inativos (os inativados antes do trigger
+// não têm data). Update sem status não dispara o trigger.
+async function salvarDataInativacao(id,valor){
+  const{error}=await sb.from('students').update({data_inativacao:valor||null}).eq('id',id);
+  if(error){showAlert('page-alert','Erro ao salvar data de inativação: '+error.message,'danger');return;}
+  showAlert('page-alert',valor?'Data de inativação salva — o aluno aparece em Inativos '+valor.slice(0,4)+'.':'Data de inativação removida.','success');
+}
+
 // anoInativos: chamado da página Inativos — re-renderiza ela em vez da lista de alunos.
 async function alterarStatusAluno(id,nome,ativar,anoInativos){
   if(!confirm(ativar?`Reativar ${nome}? O cadastro volta para a aba Ativos.`:`Inativar ${nome}? A data de hoje será registrada e o cadastro vai para a aba Inativos.`)) return;
@@ -2928,7 +2936,7 @@ pages.students=async function({view,id,aba}={}){
               <td>${esc(s.mobile_number)||'—'}</td>
               <td>${esc(s.class?.name)||'—'}</td>
               <td>${level_badge(s.level)}</td>
-              <td>${abaInativos?`<span class="badge badge-warning">${s.data_inativacao?fdate(s.data_inativacao):'Data não registrada'}</span>`:status_badge(s.status)}</td>
+              <td>${abaInativos?`<input type="date" value="${s.data_inativacao||''}" max="${new Date().toISOString().slice(0,10)}" title="Data de inativação" style="padding:4px 6px;border:1px solid ${s.data_inativacao?'var(--gray-300)':'var(--warning)'};border-radius:4px;font-size:12px" onchange="salvarDataInativacao('${s.id}',this.value)">`:status_badge(s.status)}</td>
               <td>${fdate(s.date_joining)}</td>
               <td><button class="btn-icon" onclick="nav('students',{view:'frequencia',id:'${s.id}'})" title="Histórico de frequência"><i class="fa fa-calendar-check"></i></button></td>
               ${(canManageBilling()||isAdmin())?`<td><button class="btn-icon" onclick="nav('financeiro',{view:'aluno',studentId:'${s.id}'})" title="Financeiro do aluno"><i class="fa fa-file-invoice-dollar"></i></button></td>`:''}
@@ -3114,8 +3122,11 @@ async function studentForm(id){
           <div>
             <div class="field"><label>Modalidade</label><select id="f-modalidade"><option value="">Selecione</option>${modalidadeOpts}</select></div>
             <div class="field"><label>Nível</label><select id="f-level">${nivelOptions(s.level)}</select></div>
-            <div class="field"><label>Status</label><select id="f-status"><option value="true" ${s.status!==false?'selected':''}>Ativo</option><option value="false" ${s.status===false?'selected':''}>Inativo</option></select>
-              <div class="help-text">${s.status===false?(s.data_inativacao?'Inativado em '+fdate(s.data_inativacao)+'. ':'')+'Mudar para Ativo devolve o aluno à aba Ativos.':'Ao marcar Inativo, a data de hoje é registrada e o aluno vai para a aba Inativos.'}</div>
+            <div class="field"><label>Status</label><select id="f-status" onchange="$('f-inativacao-wrap').style.display=this.value==='false'?'':'none'"><option value="true" ${s.status!==false?'selected':''}>Ativo</option><option value="false" ${s.status===false?'selected':''}>Inativo</option></select>
+              <div class="help-text">${s.status===false?'Mudar para Ativo devolve o aluno à aba Ativos.':'Ao marcar Inativo, o aluno vai para a aba Inativos com a data abaixo (vazia = hoje).'}</div>
+            </div>
+            <div class="field" id="f-inativacao-wrap" style="${s.status===false?'':'display:none'}"><label>Data de inativação</label><input id="f-inativacao" type="date" max="${new Date().toISOString().slice(0,10)}" value="${s.data_inativacao||''}">
+              <div class="help-text">Define em qual aba de ano (Inativos 2026, 2025…) o aluno aparece.</div>
             </div>
           </div>
         </div>
@@ -3201,6 +3212,8 @@ async function saveStudent(id){
     level:$('f-level').value||null,
     note:$('f-note').value,
     status:$('f-status').value==='true',
+    // Vazio ao inativar: o trigger grava hoje. Ao reativar o trigger limpa.
+    ...($('f-status').value==='false'?{data_inativacao:$('f-inativacao').value||null}:{}),
     parent_name:$('f-parent-name').value,
     parent_cpf:$('f-parent-cpf').value||null,
     parent_rg:$('f-parent-rg').value||null,
