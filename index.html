@@ -1504,7 +1504,7 @@ async function salvarNovoInativo(ano){
 pages.inativos=async function({ano}={}){
   if(!canManageBilling()&&!isAdmin()&&currentUser?.role!=='captacao'){nav('dashboard');return;}
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const anoAtivo=ano?parseInt(ano):2025;
+  const anoAtivo=ano?parseInt(ano):new Date().getFullYear();
   const search=getFilter('inat-search').toLowerCase();
 
   // Além da lista antiga (inactive_students), entram os alunos inativados pelo
@@ -1513,17 +1513,20 @@ pages.inativos=async function({ano}={}){
   const[{data:legado=[]},{data:aniversariantes=[]},{data:alunosInativos}]=await Promise.all([
     sb.from('inactive_students').select('*').order('name'),
     sb.rpc('get_aniversariantes_inativos'),
-    sb.from('students').select('id,first_name,last_name,level,mobile_number,whatsapp,date_birth,data_inativacao,class:classes(name)').eq('status',false).not('data_inativacao','is',null),
+    sb.from('students').select('id,first_name,last_name,level,mobile_number,whatsapp,date_birth,data_inativacao,class:classes(name)').eq('status',false),
   ]);
+  // Inativos sem data (inativados antes da data existir) entram na aba do ano
+  // corrente com o campo de data em aberto, pra não sumirem da lista.
+  const anoCorrente=new Date().getFullYear();
   const todos=[
     ...(alunosInativos||[]).map(s=>({
       id:s.id,sistema:true,
       name:(s.first_name+' '+s.last_name).toUpperCase(),
       course_level:s.level,class_day:s.class?.name,
-      cancel_year:parseInt(s.data_inativacao.slice(0,4)),
+      cancel_year:s.data_inativacao?parseInt(s.data_inativacao.slice(0,4)):anoCorrente,
       data_inativacao:s.data_inativacao,
       phone:s.whatsapp||s.mobile_number,date_birth:s.date_birth,
-    })).sort((a,b)=>b.data_inativacao.localeCompare(a.data_inativacao)),
+    })).sort((a,b)=>(b.data_inativacao||'9').localeCompare(a.data_inativacao||'9')),
     ...legado,
   ];
 
@@ -1591,7 +1594,7 @@ pages.inativos=async function({ano}={}){
             <td><strong>${esc(i.name)}</strong>${i.sistema?' <span class="badge badge-info" title="Inativado pelo cadastro de alunos">Cadastro</span>':''}</td>
             <td>${esc(i.course_level)||'—'}</td>
             <td>${esc(i.class_day)||'—'}</td>
-            <td>${i.sistema?`<span class="badge badge-warning">Inativado em ${fdate(i.data_inativacao)}</span>`:(esc(i.cancel_month)||'—')}</td>
+            <td>${i.sistema?(i.data_inativacao?`<span class="badge badge-warning">Inativado em ${fdate(i.data_inativacao)}</span>`:`<div style="font-size:11px;color:var(--warning);margin-bottom:2px">Sem data — informe:</div>${podeCadastrar?`<input type="date" max="${new Date().toISOString().slice(0,10)}" style="padding:4px 6px;border:1px solid var(--warning);border-radius:4px;font-size:12px" onchange="salvarDataInativacao('${i.id}',this.value,true)">`:''}`):(esc(i.cancel_month)||'—')}</td>
             <td>${i.sistema?fdate(i.date_birth):`<input type="date" value="${i.date_birth||''}" style="padding:4px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px" onchange="salvarNascimentoInativo('${i.id}',this.value)">`}</td>
             <td>${numFmt?`<a href="https://wa.me/${numFmt}" target="_blank" style="color:#25D366;font-weight:600"><i class="fab fa-whatsapp"></i> ${esc(i.phone)}</a>`:(esc(i.phone)||'Sem telefone')}</td>
             <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarReengajamentoInativo('${esc(i.name)}','${numFmt}')" title="Tentar reengajar"><i class="fab fa-whatsapp"></i> Reengajar</button> <button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarPromoInativo('${numFmt}')" title="Enviar promoção de matrícula"><i class="fa fa-bullhorn"></i> Promoção</button>`:''}${i.sistema&&podeCadastrar?` <button class="btn btn-default btn-sm" style="color:var(--success)" data-nome="${esc(i.name)}" onclick="alterarStatusAluno('${i.id}',this.dataset.nome,true,${anoAtivo})" title="Reativar matrícula"><i class="fa fa-user-check"></i> Reativar</button>`:''}${!numFmt&&!(i.sistema&&podeCadastrar)?'—':''}</td>
@@ -2866,9 +2869,10 @@ async function saveTeacher(id){
 // é gravada pelo trigger trg_students_data_inativacao no banco.
 // Corrige/preenche a data de alunos já inativos (os inativados antes do trigger
 // não têm data). Update sem status não dispara o trigger.
-async function salvarDataInativacao(id,valor){
+async function salvarDataInativacao(id,valor,naPaginaInativos){
   const{error}=await sb.from('students').update({data_inativacao:valor||null}).eq('id',id);
   if(error){showAlert('page-alert','Erro ao salvar data de inativação: '+error.message,'danger');return;}
+  if(naPaginaInativos&&valor) await pages.inativos({ano:parseInt(valor.slice(0,4))});
   showAlert('page-alert',valor?'Data de inativação salva — o aluno aparece em Inativos '+valor.slice(0,4)+'.':'Data de inativação removida.','success');
 }
 
@@ -3189,10 +3193,11 @@ async function saveStudent(id){
   const endResp=lerEndereco('f-parent','do responsável');
   if(!endResp) return;
   const novaTurmaId=$('f-class').value||null;
-  let turmaAnteriorId=null;
+  let turmaAnteriorId=null,statusAnterior=null;
   if(id){
-    const{data:atual}=await sb.from('students').select('class_id').eq('id',id).single();
+    const{data:atual}=await sb.from('students').select('class_id,status').eq('id',id).single();
     turmaAnteriorId=atual?.class_id||null;
+    statusAnterior=atual?.status;
   }
   const payload={
     first_name:fn,last_name:ln,
@@ -3276,6 +3281,22 @@ async function saveStudent(id){
       comprovantePath=link;
     }
     await sb.from('students').update({parent_comprovante_path:comprovantePath}).eq('id',studentId);
+  }
+  // Mudou de status: leva direto pra aba onde o aluno passou a ficar, pra
+  // secretaria ver na hora que ele saiu de Ativos (ou voltou).
+  const statusNovo=payload.status;
+  if(statusNovo===false&&statusAnterior!==false){
+    const{data:salvo}=await sb.from('students').select('data_inativacao').eq('id',studentId).single();
+    setActive('students');
+    await pages.students({aba:'inativos'});
+    showAlert('page-alert',`${fn} ${ln} foi inativado(a)${salvo?.data_inativacao?' em '+fdate(salvo.data_inativacao):''} e movido(a) para Inativos.`,'success');
+    return;
+  }
+  if(statusNovo===true&&statusAnterior===false){
+    setActive('students');
+    await pages.students({aba:'ativos'});
+    showAlert('page-alert',`${fn} ${ln} foi reativado(a) e voltou para Ativos.`,'success');
+    return;
   }
   nav('financeiro',{view:'aluno',studentId});
 }
