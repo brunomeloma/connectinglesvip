@@ -3711,3 +3711,24 @@ CREATE TRIGGER trg_students_data_inativacao
   FOR EACH ROW EXECUTE FUNCTION students_set_data_inativacao();
 
 CREATE INDEX IF NOT EXISTS idx_students_data_inativacao ON students(data_inativacao) WHERE status = false;
+
+-- ============================================================
+-- Momento exato (data + hora) em que o aluno foi marcado como inativo.
+-- data_inativacao continua editável e agrupa a aba Inativos por ano.
+-- ============================================================
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS inativado_em timestamptz;
+
+CREATE OR REPLACE FUNCTION public.students_set_data_inativacao()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$ BEGIN
+  IF NEW.status IS DISTINCT FROM false THEN
+    NEW.data_inativacao := NULL;
+    NEW.inativado_em := NULL;
+  ELSIF TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM false THEN
+    NEW.data_inativacao := COALESCE(NEW.data_inativacao, (now() AT TIME ZONE 'America/Sao_Paulo')::date);
+    NEW.inativado_em := now();
+  END IF;
+  RETURN NEW;
+END; $function$;

@@ -701,6 +701,13 @@ function nivelOptions(selected){return `<option value="">Selecione</option>`+NIV
 function level_badge(l){if(!l)return '—';const m={Básico:'badge-basico',Intermediário:'badge-intermediario',Avançado:'badge-avancado',STARTER:'badge-secondary','LEVEL 1':'badge-basico','LEVEL 2':'badge-basico','LEVEL 3':'badge-intermediario','LEVEL 4':'badge-intermediario','LEVEL 5':'badge-avancado','KIDS 4-5':'badge-purple','KIDS 6-7':'badge-purple','KIDS 8-9':'badge-purple'};return `<span class="badge ${m[l]||'badge-secondary'}">${l}</span>`;}
 const MODALIDADES=['KIDS','REGULAR','VIP','REGULAR ONLINE','BOLSA','ONLINE','CONVERSAÇÃO'];
 function modalidade_badge(m){if(!m)return '—';const c={KIDS:'badge-purple',REGULAR:'badge-secondary',VIP:'badge-vip','REGULAR ONLINE':'badge-info',BOLSA:'badge-gold',ONLINE:'badge-info',CONVERSAÇÃO:'badge-purple'};return `<span class="badge ${c[m]||'badge-secondary'}">${m}</span>`;}
+// Timestamp → "29/10/2026 às 10:00" no fuso de Brasília.
+function fdatetime(ts){
+  if(!ts)return '—';
+  const d=new Date(ts);
+  const opt={timeZone:'America/Sao_Paulo'};
+  return d.toLocaleDateString('pt-BR',opt)+' às '+d.toLocaleTimeString('pt-BR',{...opt,hour:'2-digit',minute:'2-digit'});
+}
 function fdate(d){
   if(!d)return '—';
   if(typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d)){
@@ -1513,7 +1520,7 @@ pages.inativos=async function({ano}={}){
   const[{data:legado=[]},{data:aniversariantes=[]},{data:alunosInativos}]=await Promise.all([
     sb.from('inactive_students').select('*').order('name'),
     sb.rpc('get_aniversariantes_inativos'),
-    sb.from('students').select('id,first_name,last_name,level,mobile_number,whatsapp,date_birth,data_inativacao,class:classes(name)').eq('status',false),
+    sb.from('students').select('id,first_name,last_name,level,mobile_number,whatsapp,date_birth,data_inativacao,inativado_em,class:classes(name)').eq('status',false),
   ]);
   // Inativos sem data (inativados antes da data existir) entram na aba do ano
   // corrente com o campo de data em aberto, pra não sumirem da lista.
@@ -1524,7 +1531,7 @@ pages.inativos=async function({ano}={}){
       name:(s.first_name+' '+s.last_name).toUpperCase(),
       course_level:s.level,class_day:s.class?.name,
       cancel_year:s.data_inativacao?parseInt(s.data_inativacao.slice(0,4)):anoCorrente,
-      data_inativacao:s.data_inativacao,
+      data_inativacao:s.data_inativacao,inativado_em:s.inativado_em,
       phone:s.whatsapp||s.mobile_number,date_birth:s.date_birth,
     })).sort((a,b)=>(b.data_inativacao||'9').localeCompare(a.data_inativacao||'9')),
     ...legado,
@@ -1594,7 +1601,7 @@ pages.inativos=async function({ano}={}){
             <td><strong>${esc(i.name)}</strong>${i.sistema?' <span class="badge badge-info" title="Inativado pelo cadastro de alunos">Cadastro</span>':''}</td>
             <td>${esc(i.course_level)||'—'}</td>
             <td>${esc(i.class_day)||'—'}</td>
-            <td>${i.sistema?(i.data_inativacao?`<span class="badge badge-warning">Inativado em ${fdate(i.data_inativacao)}</span>`:`<div style="font-size:11px;color:var(--warning);margin-bottom:2px">Sem data — informe:</div>${podeCadastrar?`<input type="date" max="${new Date().toISOString().slice(0,10)}" style="padding:4px 6px;border:1px solid var(--warning);border-radius:4px;font-size:12px" onchange="salvarDataInativacao('${i.id}',this.value,true)">`:''}`):(esc(i.cancel_month)||'—')}</td>
+            <td>${i.sistema?(i.data_inativacao?`<span class="badge badge-warning">Inativado em ${fdate(i.data_inativacao)}</span>${i.inativado_em?`<div style="font-size:11px;color:var(--gray-500);margin-top:3px"><i class="fa fa-clock"></i> Marcado em ${fdatetime(i.inativado_em)}</div>`:''}`:`<div style="font-size:11px;color:var(--warning);margin-bottom:2px">Sem data — informe:</div>${podeCadastrar?`<input type="date" max="${new Date().toISOString().slice(0,10)}" style="padding:4px 6px;border:1px solid var(--warning);border-radius:4px;font-size:12px" onchange="salvarDataInativacao('${i.id}',this.value,true)">`:''}`):(esc(i.cancel_month)||'—')}</td>
             <td>${i.sistema?fdate(i.date_birth):`<input type="date" value="${i.date_birth||''}" style="padding:4px 6px;border:1px solid var(--gray-300);border-radius:4px;font-size:12px" onchange="salvarNascimentoInativo('${i.id}',this.value)">`}</td>
             <td>${numFmt?`<a href="https://wa.me/${numFmt}" target="_blank" style="color:#25D366;font-weight:600"><i class="fab fa-whatsapp"></i> ${esc(i.phone)}</a>`:(esc(i.phone)||'Sem telefone')}</td>
             <td>${numFmt?`<button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarReengajamentoInativo('${esc(i.name)}','${numFmt}')" title="Tentar reengajar"><i class="fab fa-whatsapp"></i> Reengajar</button> <button class="btn btn-default btn-sm" style="color:#25D366" onclick="enviarPromoInativo('${numFmt}')" title="Enviar promoção de matrícula"><i class="fa fa-bullhorn"></i> Promoção</button>`:''}${i.sistema&&podeCadastrar?` <button class="btn btn-default btn-sm" style="color:var(--success)" data-nome="${esc(i.name)}" onclick="alterarStatusAluno('${i.id}',this.dataset.nome,true,${anoAtivo})" title="Reativar matrícula"><i class="fa fa-user-check"></i> Reativar</button>`:''}${!numFmt&&!(i.sistema&&podeCadastrar)?'—':''}</td>
@@ -2878,7 +2885,7 @@ async function salvarDataInativacao(id,valor,naPaginaInativos){
 
 // anoInativos: chamado da página Inativos — re-renderiza ela em vez da lista de alunos.
 async function alterarStatusAluno(id,nome,ativar,anoInativos){
-  if(!confirm(ativar?`Reativar ${nome}? O cadastro volta para a aba Ativos.`:`Inativar ${nome}? A data de hoje será registrada e o cadastro vai para a aba Inativos.`)) return;
+  if(!confirm(ativar?`Reativar ${nome}? O cadastro volta para a aba Ativos.`:`Inativar ${nome}? A data e o horário de agora serão registrados e o cadastro vai para a aba Inativos.`)) return;
   const{error}=await sb.from('students').update({status:ativar}).eq('id',id);
   if(error){showAlert('page-alert','Erro ao alterar status: '+error.message,'danger');return;}
   if(anoInativos) await pages.inativos({ano:anoInativos});
@@ -2940,7 +2947,7 @@ pages.students=async function({view,id,aba}={}){
               <td>${esc(s.mobile_number)||'—'}</td>
               <td>${esc(s.class?.name)||'—'}</td>
               <td>${level_badge(s.level)}</td>
-              <td>${abaInativos?`<input type="date" value="${s.data_inativacao||''}" max="${new Date().toISOString().slice(0,10)}" title="Data de inativação" style="padding:4px 6px;border:1px solid ${s.data_inativacao?'var(--gray-300)':'var(--warning)'};border-radius:4px;font-size:12px" onchange="salvarDataInativacao('${s.id}',this.value)">`:status_badge(s.status)}</td>
+              <td>${abaInativos?`<input type="date" value="${s.data_inativacao||''}" max="${new Date().toISOString().slice(0,10)}" title="Data de inativação" style="padding:4px 6px;border:1px solid ${s.data_inativacao?'var(--gray-300)':'var(--warning)'};border-radius:4px;font-size:12px" onchange="salvarDataInativacao('${s.id}',this.value)">${s.inativado_em?`<div style="font-size:11px;color:var(--gray-500);margin-top:3px"><i class="fa fa-clock"></i> Marcado em ${fdatetime(s.inativado_em)}</div>`:''}`:status_badge(s.status)}</td>
               <td>${fdate(s.date_joining)}</td>
               <td><button class="btn-icon" onclick="nav('students',{view:'frequencia',id:'${s.id}'})" title="Histórico de frequência"><i class="fa fa-calendar-check"></i></button></td>
               ${(canManageBilling()||isAdmin())?`<td><button class="btn-icon" onclick="nav('financeiro',{view:'aluno',studentId:'${s.id}'})" title="Financeiro do aluno"><i class="fa fa-file-invoice-dollar"></i></button></td>`:''}
@@ -3286,10 +3293,10 @@ async function saveStudent(id){
   // secretaria ver na hora que ele saiu de Ativos (ou voltou).
   const statusNovo=payload.status;
   if(statusNovo===false&&statusAnterior!==false){
-    const{data:salvo}=await sb.from('students').select('data_inativacao').eq('id',studentId).single();
+    const{data:salvo}=await sb.from('students').select('data_inativacao,inativado_em').eq('id',studentId).single();
     setActive('students');
     await pages.students({aba:'inativos'});
-    showAlert('page-alert',`${fn} ${ln} foi inativado(a)${salvo?.data_inativacao?' em '+fdate(salvo.data_inativacao):''} e movido(a) para Inativos.`,'success');
+    showAlert('page-alert',`${fn} ${ln} foi inativado(a)${salvo?.data_inativacao?' em '+fdate(salvo.data_inativacao):''}${salvo?.inativado_em?' (marcado em '+fdatetime(salvo.inativado_em)+')':''} e movido(a) para Inativos.`,'success');
     return;
   }
   if(statusNovo===true&&statusAnterior===false){
