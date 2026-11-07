@@ -3732,3 +3732,116 @@ AS $function$ BEGIN
   END IF;
   RETURN NEW;
 END; $function$;
+
+-- ============================================================
+-- Captação registra aulas das turmas (professor, data, status,
+-- conteúdo, horas de reposição e frequência). Sem criar/editar/excluir
+-- turma e sem ver valor_hora/PIN dos professores: os nomes vêm de
+-- get_professores_nomes(), não de SELECT direto em teachers.
+-- ============================================================
+ALTER POLICY "classes_select" ON classes
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']));
+ALTER POLICY "cl_select" ON class_lessons
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']));
+ALTER POLICY "attendance_select" ON attendance
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']));
+ALTER POLICY "schools_select" ON schools
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']));
+
+CREATE OR REPLACE FUNCTION public.get_professores_nomes()
+ RETURNS TABLE(id uuid, first_name text, last_name text, status boolean)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY SELECT t.id, t.first_name, t.last_name, t.status FROM teachers t ORDER BY t.first_name, t.last_name;
+END; $function$;
+GRANT EXECUTE ON FUNCTION public.get_professores_nomes() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.get_turma_alunos(p_class_id uuid)
+ RETURNS TABLE(id uuid, first_name text, last_name text, modalidade text, level text, mobile_number text, whatsapp text, is_principal boolean)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']) THEN
+    RAISE EXCEPTION 'Permissão negada';
+  END IF;
+  RETURN QUERY
+    SELECT s.id, s.first_name, s.last_name, s.modalidade, s.level, s.mobile_number, s.whatsapp, ce.is_principal
+    FROM students s
+    JOIN class_enrollments ce ON ce.student_id = s.id AND ce.class_id = p_class_id AND ce.status = 'ativa'
+    WHERE s.status = true
+    ORDER BY s.first_name;
+END; $function$;
+
+CREATE OR REPLACE FUNCTION public.get_contagem_encontros()
+ RETURNS TABLE(class_id uuid, total_encontros bigint)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT cl.class_id, count(*)::bigint
+    FROM class_lessons cl
+    WHERE cl.status = 'realizada'
+    GROUP BY cl.class_id;
+END; $function$;
+
+CREATE OR REPLACE FUNCTION public.registrar_aula_turma(p_class_id uuid, p_lesson_date date, p_teacher_id uuid DEFAULT NULL::uuid, p_status text DEFAULT 'realizada'::text, p_content text DEFAULT NULL::text, p_notes text DEFAULT NULL::text, p_lesson_id uuid DEFAULT NULL::uuid, p_reposicao_hours numeric DEFAULT NULL::numeric)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$ DECLARE v_id uuid; v_conflict uuid; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria','professor','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  IF p_status NOT IN ('realizada','cancelada','remarcada','reposicao') THEN RAISE EXCEPTION 'Status de aula inválido'; END IF;
+  IF p_status = 'reposicao' AND (p_reposicao_hours IS NULL OR p_reposicao_hours <= 0) THEN
+    RAISE EXCEPTION 'Informe o número de horas da reposição.';
+  END IF;
+
+  IF p_lesson_id IS NOT NULL THEN
+    SELECT id INTO v_conflict FROM class_lessons WHERE class_id=p_class_id AND lesson_date=p_lesson_date AND id<>p_lesson_id;
+    IF v_conflict IS NOT NULL THEN
+      RAISE EXCEPTION 'Já existe uma aula registrada nesta data para esta turma. Edite aquela aula ou escolha outra data.';
+    END IF;
+    UPDATE class_lessons SET
+      lesson_date=p_lesson_date, teacher_id=p_teacher_id, status=p_status,
+      content=p_content, notes=p_notes,
+      reposicao_hours=CASE WHEN p_status='reposicao' THEN p_reposicao_hours ELSE NULL END,
+      updated_at=now()
+    WHERE id=p_lesson_id
+    RETURNING id INTO v_id;
+    IF v_id IS NULL THEN RAISE EXCEPTION 'Aula não encontrada'; END IF;
+    DELETE FROM attendance WHERE lesson_id=p_lesson_id AND date<>p_lesson_date;
+  ELSE
+    INSERT INTO class_lessons (class_id, lesson_date, teacher_id, status, content, notes, reposicao_hours, created_by)
+    VALUES (p_class_id, p_lesson_date, p_teacher_id, p_status, p_content, p_notes, CASE WHEN p_status='reposicao' THEN p_reposicao_hours ELSE NULL END, auth.uid())
+    ON CONFLICT (class_id, lesson_date) DO UPDATE SET
+      teacher_id=EXCLUDED.teacher_id, status=EXCLUDED.status, content=EXCLUDED.content,
+      notes=EXCLUDED.notes, reposicao_hours=EXCLUDED.reposicao_hours, updated_at=now()
+    RETURNING id INTO v_id;
+  END IF;
+
+  PERFORM sync_pagamento_aula(v_id);
+  RETURN v_id;
+END; $function$;
+
+CREATE OR REPLACE FUNCTION public.salvar_frequencia_aula(p_lesson_id uuid, p_rows jsonb)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$ DECLARE v_lesson class_lessons%ROWTYPE; r jsonb; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','secretaria','professor','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  SELECT * INTO v_lesson FROM class_lessons WHERE id=p_lesson_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Aula não encontrada'; END IF;
+  FOR r IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
+    INSERT INTO attendance (class_id, student_id, date, status, lesson_id, confirmed, marked_by)
+    VALUES (v_lesson.class_id, (r->>'student_id')::uuid, v_lesson.lesson_date, r->>'status', p_lesson_id, true, auth.uid())
+    ON CONFLICT (class_id, student_id, date) DO UPDATE SET
+      status=EXCLUDED.status, lesson_id=EXCLUDED.lesson_id, confirmed=true, marked_by=auth.uid();
+  END LOOP;
+END; $function$;

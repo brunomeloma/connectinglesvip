@@ -639,7 +639,7 @@ let currentUser = null;
     <div class="sb-item admin-only no-captacao" data-page="admins" onclick="nav('admins')"><i class="fa fa-user-tie"></i> Administrador</div>
     <div class="sb-item no-captacao" data-page="teachers" onclick="nav('teachers')"><i class="fa fa-chalkboard-teacher"></i> Professor</div>
     <div class="sb-item no-professor" data-page="students" onclick="nav('students')"><i class="fa fa-user-graduate"></i> Aluno</div>
-    <div class="sb-item no-captacao" data-page="classes" onclick="nav('classes')"><i class="fa fa-layer-group"></i> Turmas</div>
+    <div class="sb-item" data-page="classes" onclick="nav('classes')"><i class="fa fa-layer-group"></i> Turmas</div>
     <div class="sb-item no-professor no-captacao" data-page="cobrancas" onclick="nav('cobrancas')"><i class="fa fa-calendar-check"></i> Cobranças</div>
     <div class="sb-item no-professor no-captacao" data-page="inadimplentes" onclick="nav('inadimplentes')"><i class="fa fa-exclamation-triangle"></i> Inadimplentes</div>
     <div class="sb-item no-professor no-captacao" data-page="professores" onclick="nav('professores')"><i class="fa fa-user-clock"></i> Horas dos professores</div>
@@ -816,6 +816,13 @@ function canManageBilling(){return isFinanceiro()||isSecretaria();}
 // Secretaria faz caixa/cobrança: vê os mesmos valores e totais que financeiro/direção.
 function canSeeFinanceiroGlobal(){return canManageBilling();}
 function canAccessVipFollowup(){return isAdmin()||isFinanceiro()||isSecretaria();}
+// Nomes dos professores via RPC (sem valor_hora/PIN), usados em Turmas:
+// a captação registra aulas mas não tem SELECT direto na tabela teachers.
+async function getProfessoresNomes(){const{data}=await sb.rpc('get_professores_nomes');return data||[];}
+async function anexarProfessor(turmas){
+  const profs=await getProfessoresNomes();const m={};profs.forEach(t=>m[t.id]=t);
+  return turmas.map(c=>({...c,teacher:c.teacher_id&&m[c.teacher_id]?{first_name:m[c.teacher_id].first_name,last_name:m[c.teacher_id].last_name}:null}));
+}
 function canAccessCaptacao(){return isAdmin()||currentUser?.role==='captacao';}
 function canImportCaixa(){return canManageBilling()||isAdmin()||currentUser?.role==='captacao';}
 function requireRole(allowed,msg){if(!allowed){showAlert('page-alert',msg||'Sem permissão para esta ação.','danger');return false;}return true;}
@@ -853,7 +860,9 @@ function setActive(page){
   if(el)el.classList.add('active');
 }
 function nav(page, params={}){
-  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='inativos'&&page!=='debitosLanche'&&page!=='avisarFalta'&&page!=='students'&&page!=='importarCaixa'&&page!=='financeiro'){page='captacao';params={};}
+  // Captação registra aulas em Turmas, mas não cria nem edita turma.
+  if(currentUser?.role==='captacao'&&page==='classes'&&params?.view==='form'){params={};}
+  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='classes'&&page!=='inativos'&&page!=='debitosLanche'&&page!=='avisarFalta'&&page!=='students'&&page!=='importarCaixa'&&page!=='financeiro'){page='captacao';params={};}
   setActive(page);
   pages[page]&&pages[page](params);
   closeSidebar();
@@ -3447,7 +3456,8 @@ pages.classes=async function({view,id,tab,date}={}){
   if(view==='form') return classForm(id);
   if(view==='detail') return classDetail(id,tab||'info',date);
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const{data=[]}=await sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').order('created_at',{ascending:false});
+  const{data:turmasRaw}=await sb.from('classes').select('*,school:schools(name)').order('created_at',{ascending:false});
+  const data=await anexarProfessor(turmasRaw||[]);
   // count students per class
   const counts={};
   for(const c of data){const{data:n}=await sb.rpc('count_students_in_class',{p_class_id:c.id});counts[c.id]=n||0;}
@@ -3458,7 +3468,7 @@ pages.classes=async function({view,id,tab,date}={}){
     <div class="page-title"><i class="fa fa-layer-group"></i> Turmas</div>
     <div id="page-alert" class="alert"></div>
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">Lista de turmas</span><button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'form'})"><i class="fa fa-plus"></i> Criar turma</button></div>
+      <div class="panel-head"><span class="panel-title">Lista de turmas</span>${isCaptacao()?'':`<button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'form'})"><i class="fa fa-plus"></i> Criar turma</button>`}</div>
       <div class="panel-body" style="padding-bottom:0">
         <div class="turmas-search-bar">
           <div class="turmas-search-input">
@@ -3514,8 +3524,8 @@ function renderTurmasTable(){
           <td>${status_badge(c.status)}</td>
           <td style="white-space:nowrap">
             <button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}'})"><i class="fa fa-eye"></i> Ver</button>
-            <button class="btn-icon" onclick="nav('classes',{view:'form',id:'${c.id}'})"><i class="fa fa-pencil-alt"></i></button>
-            <button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('classes','${c.id}','classes')"><i class="fa fa-trash"></i></button>
+            ${isCaptacao()?'':`<button class="btn-icon" onclick="nav('classes',{view:'form',id:'${c.id}'})"><i class="fa fa-pencil-alt"></i></button>
+            <button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('classes','${c.id}','classes')"><i class="fa fa-trash"></i></button>`}
           </td>
         </tr>`).join(''):`<tr><td colspan="9"><div class="empty-state"><i class="fa fa-${_clsCache.length?'search':'layer-group'}"></i>${_clsCache.length?'Nenhuma turma encontrada para essa busca.':'Nenhuma turma cadastrada'}</div></td></tr>`}
       </tbody>
@@ -3609,12 +3619,13 @@ async function saveClass(id){
 
 async function classDetail(classId,tab='info',date){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const[{data:c},{data:alunos=[]},{data:encontrosData=[]}]=await Promise.all([
-    sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('id',classId).single(),
+  const[{data:cRaw},{data:alunos=[]},{data:encontrosData=[]}]=await Promise.all([
+    sb.from('classes').select('*,school:schools(name)').eq('id',classId).single(),
     sb.rpc('get_turma_alunos',{p_class_id:classId}),
     sb.rpc('get_contagem_encontros'),
   ]);
-  if(!c){nav('classes');return;}
+  if(!cRaw){nav('classes');return;}
+  const[c]=await anexarProfessor([cRaw]);
   const totalEncontros=encontrosData.find(e=>e.class_id===classId)?.total_encontros||0;
 
   const diasMap={'Seg':'Segunda','Ter':'Terça','Qua':'Quarta','Qui':'Quinta','Sex':'Sexta','Sáb':'Sábado','Dom':'Domingo'};
@@ -3649,7 +3660,7 @@ async function classDetail(classId,tab='info',date){
 
   setContent(header+`
     <div class="panel">
-      <div class="panel-head"><span class="panel-title">Informações</span><button class="btn btn-default btn-sm" onclick="nav('classes',{view:'form',id:'${classId}'})"><i class="fa fa-pencil-alt"></i> Editar</button></div>
+      <div class="panel-head"><span class="panel-title">Informações</span>${isCaptacao()?'':`<button class="btn btn-default btn-sm" onclick="nav('classes',{view:'form',id:'${classId}'})"><i class="fa fa-pencil-alt"></i> Editar</button>`}</div>
       <div class="panel-body">
         <p><strong>Professor:</strong> ${c.teacher?esc(c.teacher.first_name)+' '+esc(c.teacher.last_name):'Não definido'}</p>
         <p style="margin-top:6px"><strong>Escola:</strong> ${esc(c.school?.name)||'Não definida'}</p>
@@ -3669,7 +3680,7 @@ async function classDetail(classId,tab='info',date){
           <td>${level_badge(a.level)}</td>
           <td>${a.is_principal?'<span class="badge badge-primary">Regular</span>':'<span class="badge badge-secondary">Extra</span>'}</td>
           <td style="white-space:nowrap">
-            <button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${a.id}'})"><i class="fa fa-pencil-alt"></i> Editar</button>
+            ${isCaptacao()?'—':`<button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${a.id}'})"><i class="fa fa-pencil-alt"></i> Editar</button>`}
             ${(isAdmin()||canManageBilling())?`<button class="btn-icon" style="color:var(--danger)" onclick="removerAlunoDaTurma('${a.id}','${classId}','${esc(a.first_name)} ${esc(a.last_name)}')" title="Remover desta turma"><i class="fa fa-user-minus"></i></button>`:''}
           </td>
         </tr>`).join(''):'<tr><td colspan="7"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno matriculado</div></td></tr>'}
@@ -3686,11 +3697,12 @@ const LESSON_STATUS_UI={realizada:'Realizada',cancelada:'Cancelada',remarcada:'R
 
 async function classTabAula(c,alunos,classId,date,header,totalEncontros=0){
   const selDate=date||new Date().toISOString().split('T')[0];
-  const[{data:lesson},{data:presencas=[]},{data:teachers=[]}]=await Promise.all([
+  const[{data:lesson},{data:presencas=[]},profsTodos]=await Promise.all([
     sb.from('class_lessons').select('*').eq('class_id',classId).eq('lesson_date',selDate).maybeSingle(),
     sb.from('attendance').select('*').eq('class_id',classId).eq('date',selDate),
-    sb.from('teachers').select('id,first_name,last_name').eq('status',true),
+    getProfessoresNomes(),
   ]);
+  const teachers=profsTodos.filter(t=>t.status===true);
   const presMap={};presencas.forEach(p=>presMap[p.student_id]=p);
   const teacherId=lesson?.teacher_id||c.teacher_id||'';
   const tOpts=teachers.map(t=>`<option value="${t.id}" ${teacherId===t.id?'selected':''}>${esc(t.first_name)} ${esc(t.last_name)}</option>`).join('');
@@ -3719,10 +3731,10 @@ async function classTabAula(c,alunos,classId,date,header,totalEncontros=0){
           </div>
           <div class="form-col"><label>Professor que ministrou</label><select id="aula-teacher"><option value="">Não definido</option>${tOpts}</select></div>
           <div class="form-col"><label>Status da aula</label><select id="aula-status" onchange="toggleReposicaoHoras('aula')">
-            ${Object.entries(LESSON_STATUS_UI).map(([k,l])=>`<option value="${k}" ${statusAula===k?'selected':''}>${l}</option>`).join('')}
+            ${Object.entries(LESSON_STATUS_UI).filter(([k])=>!(isCaptacao()&&k==='reposicao'&&statusAula!=='reposicao')).map(([k,l])=>`<option value="${k}" ${statusAula===k?'selected':''}>${l}</option>`).join('')}
           </select></div>
         </div>
-        <div class="field" id="aula-reposicao-wrap" style="display:${statusAula==='reposicao'?'':'none'}">
+        <div class="field" id="aula-reposicao-wrap" style="display:${statusAula==='reposicao'&&!isCaptacao()?'':'none'}">
           <label>Horas de aula <span class="required">*</span></label>
           <input id="aula-reposicao-horas" type="number" min="0.5" max="24" step="0.5" value="${lesson?.reposicao_hours??''}" placeholder="Ex: 1.5">
         </div>
@@ -3759,6 +3771,8 @@ async function classTabAula(c,alunos,classId,date,header,totalEncontros=0){
 // Mostra/esconde o campo de horas quando o status da aula é "Reposição".
 // prefix diferencia o formulário admin/secretaria ('aula') do portal do professor ('prof-aula').
 function toggleReposicaoHoras(prefix){
+  // Captação só lança a aula: não vê nem informa horas.
+  if(prefix==='aula'&&isCaptacao())return;
   const status=$(`${prefix}-status`).value;
   const wrap=$(`${prefix}-reposicao-wrap`);
   if(wrap)wrap.style.display=status==='reposicao'?'':'none';
