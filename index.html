@@ -639,7 +639,7 @@ let currentUser = null;
     <div class="sb-item admin-only no-captacao" data-page="admins" onclick="nav('admins')"><i class="fa fa-user-tie"></i> Administrador</div>
     <div class="sb-item no-captacao" data-page="teachers" onclick="nav('teachers')"><i class="fa fa-chalkboard-teacher"></i> Professor</div>
     <div class="sb-item no-professor" data-page="students" onclick="nav('students')"><i class="fa fa-user-graduate"></i> Aluno</div>
-    <div class="sb-item no-captacao" data-page="classes" onclick="nav('classes')"><i class="fa fa-layer-group"></i> Turmas</div>
+    <div class="sb-item" data-page="classes" onclick="nav('classes')"><i class="fa fa-layer-group"></i> Turmas</div>
     <div class="sb-item no-professor no-captacao" data-page="cobrancas" onclick="nav('cobrancas')"><i class="fa fa-calendar-check"></i> Cobranças</div>
     <div class="sb-item no-professor no-captacao" data-page="inadimplentes" onclick="nav('inadimplentes')"><i class="fa fa-exclamation-triangle"></i> Inadimplentes</div>
     <div class="sb-item no-professor no-captacao" data-page="professores" onclick="nav('professores')"><i class="fa fa-user-clock"></i> Horas dos professores</div>
@@ -817,6 +817,23 @@ function canManageBilling(){return isFinanceiro()||isSecretaria();}
 function canSeeFinanceiroGlobal(){return canManageBilling();}
 function canAccessVipFollowup(){return isAdmin()||isFinanceiro()||isSecretaria();}
 function canAccessCaptacao(){return isAdmin()||currentUser?.role==='captacao';}
+// Captação não lê a tabela teachers (tem valor_hora e hash do PIN): os
+// nomes dos professores vêm da RPC get_professores_nomes.
+async function professoresAtivos(){
+  if(!isCaptacao()){const{data}=await sb.from('teachers').select('id,first_name,last_name').eq('status',true);return{data:data||[]};}
+  const{data}=await sb.rpc('get_professores_nomes');
+  return{data:(data||[]).filter(t=>t.status)};
+}
+async function preencherProfessores(rows){
+  if(!isCaptacao()||!rows?.length)return rows;
+  const{data}=await sb.rpc('get_professores_nomes');
+  const m=Object.fromEntries((data||[]).map(t=>[t.id,t]));
+  rows.forEach(r=>{if(!r.teacher&&r.teacher_id)r.teacher=m[r.teacher_id]||null;});
+  return rows;
+}
+function canEditTurmas(){return isAdmin()||canManageBilling()||isCaptacao();}
+// Registrar aula gera as horas de pagamento do professor: captação fica de fora.
+function canRegistrarAula(){return !isCaptacao();}
 function canImportCaixa(){return canManageBilling()||isAdmin()||currentUser?.role==='captacao';}
 function requireRole(allowed,msg){if(!allowed){showAlert('page-alert',msg||'Sem permissão para esta ação.','danger');return false;}return true;}
 function status_badge(s){return s?'<span class="badge badge-success">Ativo</span>':'<span class="badge badge-warning">Inativo</span>';}
@@ -853,7 +870,7 @@ function setActive(page){
   if(el)el.classList.add('active');
 }
 function nav(page, params={}){
-  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='inativos'&&page!=='debitosLanche'&&page!=='avisarFalta'&&page!=='students'&&page!=='importarCaixa'&&page!=='financeiro'){page='captacao';params={};}
+  if(currentUser?.role==='captacao'&&page!=='captacao'&&page!=='classes'&&page!=='inativos'&&page!=='debitosLanche'&&page!=='avisarFalta'&&page!=='students'&&page!=='importarCaixa'&&page!=='financeiro'){page='captacao';params={};}
   setActive(page);
   pages[page]&&pages[page](params);
   closeSidebar();
@@ -3183,7 +3200,7 @@ function lerEndereco(prefix,rotulo){
 }
 
 async function studentForm(id){
-  const[{data:classes=[]},{data:schools=[]},{data:teachers=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true),sb.from('teachers').select('id,first_name,last_name').eq('status',true)]);
+  const[{data:classes=[]},{data:schools=[]},{data:teachers=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true),professoresAtivos()]);
   let s={};
   if(id){const{data}=await sb.from('students').select('*').eq('id',id).single();s=data||{};}
   const classOpts=classes.map(c=>`<option value="${c.id}" ${s.class_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
@@ -3447,7 +3464,8 @@ pages.classes=async function({view,id,tab,date}={}){
   if(view==='form') return classForm(id);
   if(view==='detail') return classDetail(id,tab||'info',date);
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
-  const{data=[]}=await sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').order('created_at',{ascending:false});
+  const{data:clsData}=await sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').order('created_at',{ascending:false});
+  const data=await preencherProfessores(clsData||[]);
   // count students per class
   const counts={};
   for(const c of data){const{data:n}=await sb.rpc('count_students_in_class',{p_class_id:c.id});counts[c.id]=n||0;}
@@ -3515,7 +3533,7 @@ function renderTurmasTable(){
           <td style="white-space:nowrap">
             <button class="btn btn-primary btn-sm" onclick="nav('classes',{view:'detail',id:'${c.id}'})"><i class="fa fa-eye"></i> Ver</button>
             <button class="btn-icon" onclick="nav('classes',{view:'form',id:'${c.id}'})"><i class="fa fa-pencil-alt"></i></button>
-            <button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('classes','${c.id}','classes')"><i class="fa fa-trash"></i></button>
+            ${isCaptacao()?'':`<button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('classes','${c.id}','classes')"><i class="fa fa-trash"></i></button>`}
           </td>
         </tr>`).join(''):`<tr><td colspan="9"><div class="empty-state"><i class="fa fa-${_clsCache.length?'search':'layer-group'}"></i>${_clsCache.length?'Nenhuma turma encontrada para essa busca.':'Nenhuma turma cadastrada'}</div></td></tr>`}
       </tbody>
@@ -3524,7 +3542,7 @@ function renderTurmasTable(){
 }
 
 async function classForm(id){
-  const[{data:teachers=[]},{data:schools=[]}]=await Promise.all([sb.from('teachers').select('id,first_name,last_name').eq('status',true),sb.from('schools').select('id,name').eq('status',true)]);
+  const[{data:teachers=[]},{data:schools=[]}]=await Promise.all([professoresAtivos(),sb.from('schools').select('id,name').eq('status',true)]);
   let c={};
   if(id){const{data}=await sb.from('classes').select('*').eq('id',id).single();c=data||{};}
   const tOpts=teachers.map(t=>`<option value="${t.id}" ${c.teacher_id===t.id?'selected':''}>${esc(t.first_name)} ${esc(t.last_name)}</option>`).join('');
@@ -3610,7 +3628,7 @@ async function saveClass(id){
 async function classDetail(classId,tab='info',date){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const[{data:c},{data:alunos=[]},{data:encontrosData=[]}]=await Promise.all([
-    sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('id',classId).single(),
+    sb.from('classes').select('*,teacher:teachers(first_name,last_name),school:schools(name)').eq('id',classId).single().then(async r=>{if(r.data)await preencherProfessores([r.data]);return r;}),
     sb.rpc('get_turma_alunos',{p_class_id:classId}),
     sb.rpc('get_contagem_encontros'),
   ]);
@@ -3623,11 +3641,12 @@ async function classDetail(classId,tab='info',date){
   const diasHoje=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][new Date().getDay()];
   const temAulaHoje=(c.class_days||'').includes(diasHoje);
 
+  if(tab==='aula'&&!canRegistrarAula()) tab='info';
   const tabs=[
     {id:'info',label:'Turma',icon:'fa-info-circle'},
     {id:'aula',label:'Registrar Aula',icon:'fa-clipboard-check'},
     {id:'historico',label:'Histórico de Aulas',icon:'fa-history'},
-  ];
+  ].filter(t=>t.id!=='aula'||canRegistrarAula());
   const tabBar=`<div class="tab-bar">${tabs.map(t=>`<button class="tab-btn${tab===t.id?' active':''}" onclick="nav('classes',{view:'detail',id:'${classId}',tab:'${t.id}'})"><i class="fa ${t.icon}"></i> ${t.label}</button>`).join('')}</div>`;
 
   const header=`
@@ -3670,12 +3689,12 @@ async function classDetail(classId,tab='info',date){
           <td>${a.is_principal?'<span class="badge badge-primary">Regular</span>':'<span class="badge badge-secondary">Extra</span>'}</td>
           <td style="white-space:nowrap">
             <button class="btn btn-default btn-sm" onclick="nav('students',{view:'form',id:'${a.id}'})"><i class="fa fa-pencil-alt"></i> Editar</button>
-            ${(isAdmin()||canManageBilling())?`<button class="btn-icon" style="color:var(--danger)" onclick="removerAlunoDaTurma('${a.id}','${classId}','${esc(a.first_name)} ${esc(a.last_name)}')" title="Remover desta turma"><i class="fa fa-user-minus"></i></button>`:''}
+            ${canEditTurmas()?`<button class="btn-icon" style="color:var(--danger)" onclick="removerAlunoDaTurma('${a.id}','${classId}','${esc(a.first_name)} ${esc(a.last_name)}')" title="Remover desta turma"><i class="fa fa-user-minus"></i></button>`:''}
           </td>
         </tr>`).join(''):'<tr><td colspan="7"><div class="empty-state"><i class="fa fa-user-graduate"></i>Nenhum aluno matriculado</div></td></tr>'}
         </tbody>
       </table></div>
-      ${(isAdmin()||canManageBilling())?`<div class="panel-footer">
+      ${canEditTurmas()?`<div class="panel-footer">
         <button class="btn btn-primary btn-sm" onclick="abrirModalAdicionarAluno('${classId}')"><i class="fa fa-plus"></i> Adicionar Aluno</button>
       </div>`:''}
     </div>
@@ -3818,7 +3837,7 @@ async function classTabHistorico(classId,header){
             <td style="max-width:280px;white-space:normal">${esc(l.content)||'—'}</td>
             <td style="white-space:nowrap">✅ ${l.total_presentes} &nbsp;❌ ${l.total_ausentes} &nbsp;📋 ${l.total_justificados} <span style="color:var(--gray-500)">/ ${l.total_alunos}</span></td>
             <td style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="btn btn-default btn-sm" onclick="nav('classes',{view:'detail',id:'${classId}',tab:'aula',date:'${l.lesson_date}'})"><i class="fa fa-pencil-alt"></i> Ver/Editar</button>
+              ${canRegistrarAula()?`<button class="btn btn-default btn-sm" onclick="nav('classes',{view:'detail',id:'${classId}',tab:'aula',date:'${l.lesson_date}'})"><i class="fa fa-pencil-alt"></i> Ver/Editar</button>`:''}
               ${(isAdmin()||isSecretaria())?`<button class="btn btn-danger btn-sm" onclick="excluirAulaTurma('${classId}','${l.id}','${l.lesson_date}')"><i class="fa fa-trash"></i></button>`:''}
             </td>
           </tr>`).join('')}

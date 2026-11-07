@@ -3732,3 +3732,134 @@ AS $function$ BEGIN
   END IF;
   RETURN NEW;
 END; $function$;
+
+-- #####################################################################
+-- LIBERA TURMAS PARA O PERFIL CAPTAÇÃO (ver/criar/editar e matricular,
+-- sem excluir turma e sem registrar aula/frequência)
+-- #####################################################################
+-- Captação ganhou a tela "Turmas" no front-end (menu + guarda de nav).
+-- Registrar aula fica de fora: ela gera as horas de pagamento dos
+-- professores. Excluir turma continua só para is_admin().
+
+DROP POLICY IF EXISTS "classes_select" ON classes;
+CREATE POLICY "classes_select" ON classes FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']));
+
+DROP POLICY IF EXISTS "classes_insert" ON classes;
+CREATE POLICY "classes_insert" ON classes FOR INSERT
+  WITH CHECK (has_role(ARRAY['super_admin','direcao','secretaria','captacao']));
+
+DROP POLICY IF EXISTS "classes_update" ON classes;
+CREATE POLICY "classes_update" ON classes FOR UPDATE
+  USING (has_role(ARRAY['super_admin','direcao','secretaria','captacao']));
+
+-- Escola: só nome/e-mail/endereço; leitura liberada pra mostrar a escola
+-- da turma e preencher o select do formulário.
+DROP POLICY IF EXISTS "schools_select" ON schools;
+CREATE POLICY "schools_select" ON schools FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']));
+
+-- Professor: a tabela teachers tem valor_hora e access_pin_hash, então
+-- captação NÃO ganha SELECT nela. Os nomes vêm desta RPC.
+CREATE OR REPLACE FUNCTION get_professores_nomes()
+RETURNS TABLE(id uuid, first_name text, last_name text, status boolean)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']) THEN
+    RAISE EXCEPTION 'Permissão negada';
+  END IF;
+  RETURN QUERY
+    SELECT t.id, t.first_name::text, t.last_name::text, t.status
+    FROM teachers t ORDER BY t.first_name, t.last_name;
+END; $$;
+REVOKE ALL ON FUNCTION get_professores_nomes() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION get_professores_nomes() TO authenticated;
+
+-- Matrícula N:N
+DROP POLICY IF EXISTS "ce_insert" ON class_enrollments;
+CREATE POLICY "ce_insert" ON class_enrollments FOR INSERT
+  WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+
+DROP POLICY IF EXISTS "ce_update" ON class_enrollments;
+CREATE POLICY "ce_update" ON class_enrollments FOR UPDATE
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+
+CREATE OR REPLACE FUNCTION matricular_aluno_turma(p_student_id uuid, p_class_id uuid, p_principal boolean DEFAULT NULL)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_id uuid; v_tem_principal boolean; v_faz_principal boolean; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+
+  SELECT EXISTS(SELECT 1 FROM class_enrollments WHERE student_id=p_student_id AND is_principal=true AND status='ativa')
+  INTO v_tem_principal;
+  v_faz_principal := COALESCE(p_principal, NOT v_tem_principal);
+
+  INSERT INTO class_enrollments (student_id, class_id, is_principal, status, created_by)
+  VALUES (p_student_id, p_class_id, v_faz_principal, 'ativa', auth.uid())
+  ON CONFLICT (student_id, class_id) WHERE status='ativa' DO UPDATE SET is_principal = v_faz_principal
+  RETURNING id INTO v_id;
+
+  IF v_faz_principal THEN
+    UPDATE class_enrollments SET is_principal=false WHERE student_id=p_student_id AND id<>v_id AND is_principal=true;
+    UPDATE students SET class_id=p_class_id WHERE id=p_student_id;
+  END IF;
+
+  RETURN v_id;
+END; $$;
+
+CREATE OR REPLACE FUNCTION desmatricular_aluno_turma(p_student_id uuid, p_class_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ DECLARE v_era_principal boolean; BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+
+  SELECT is_principal INTO v_era_principal FROM class_enrollments
+  WHERE student_id=p_student_id AND class_id=p_class_id AND status='ativa';
+  IF v_era_principal IS NULL THEN RETURN; END IF;
+
+  UPDATE class_enrollments SET status='encerrada', ended_at=CURRENT_DATE, is_principal=false
+  WHERE student_id=p_student_id AND class_id=p_class_id AND status='ativa';
+
+  IF v_era_principal THEN
+    UPDATE students SET class_id=NULL WHERE id=p_student_id;
+  END IF;
+END; $$;
+
+CREATE OR REPLACE FUNCTION get_turmas_aluno(p_student_id uuid)
+RETURNS TABLE(enrollment_id uuid, class_id uuid, class_name text, level text, modalidade text, is_principal boolean, enrolled_at date)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT ce.id, c.id, c.name::text, c.level, c.modalidade, ce.is_principal, ce.enrolled_at
+    FROM class_enrollments ce JOIN classes c ON c.id = ce.class_id
+    WHERE ce.student_id = p_student_id AND ce.status = 'ativa'
+    ORDER BY ce.is_principal DESC, c.name;
+END; $$;
+
+CREATE OR REPLACE FUNCTION get_turma_alunos(p_class_id uuid)
+RETURNS TABLE(
+  id uuid, first_name text, last_name text,
+  modalidade text, level text, mobile_number text, whatsapp text, is_principal boolean
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']) THEN
+    RAISE EXCEPTION 'Permissão negada';
+  END IF;
+  RETURN QUERY
+    SELECT s.id, s.first_name, s.last_name, s.modalidade, s.level, s.mobile_number, s.whatsapp, ce.is_principal
+    FROM students s
+    JOIN class_enrollments ce ON ce.student_id = s.id AND ce.class_id = p_class_id AND ce.status = 'ativa'
+    WHERE s.status = true
+    ORDER BY s.first_name;
+END; $$;
+
+CREATE OR REPLACE FUNCTION get_contagem_encontros()
+RETURNS TABLE(class_id uuid, total_encontros bigint)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','professor','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    SELECT cl.class_id, count(*)::bigint
+    FROM class_lessons cl
+    WHERE cl.status = 'realizada'
+    GROUP BY cl.class_id;
+END; $$;
