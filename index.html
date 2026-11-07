@@ -6322,7 +6322,7 @@ pages.frequencias=async function(params={}){
     sb.from('classes').select('id,name,teacher_id,class_days,start_time,end_time,level,categoria').eq('status',true).order('name'),
     getProfessoresNomes(),
     sb.from('feriados').select('data,nome,tipo').gte('data',mesIni).lte('data',mesFim).order('data'),
-    sb.from('frequencias').select('id,class_id,categoria,datas,feriados_excluidos,status,generated_at,updated_at').eq('mes',mesIni),
+    sb.from('frequencias').select('id,class_id,categoria,datas,feriados_excluidos,status,observacao,correcao_motivo,datas_manuais,generated_at,updated_at,aprovado_at,finalizado_at,impresso_at').eq('mes',mesIni),
   ]);
   const err=e1||e2||e3;
   if(err){setContent(`<div class="alert alert-danger" style="display:block">Erro ao carregar frequências: ${esc(err.message)}</div>`);return;}
@@ -6384,6 +6384,8 @@ pages.frequencias=async function(params={}){
     const profsCat=[...new Set(daCat.map(t=>t.teacher_id).filter(Boolean))].sort((a,b)=>profNome(a).localeCompare(profNome(b)));
     const geraveis=filtradas.filter(l=>!l.calc.semDias&&(!l.f||FREQ_REGERAVEL.includes(l.f.status)));
     _freqData.filtradas=filtradas;
+    const aprovadas=filtradas.filter(l=>l.f?.status==='aprovada');
+    const prontasPdf=filtradas.filter(l=>['finalizada','impressa'].includes(l.f?.status));
     corpo=`
       <div class="stat-grid" style="grid-template-columns:repeat(5,minmax(0,1fr))">
         <div class="stat-card c-dark"><i class="fa fa-layer-group stat-icon"></i><div><div class="stat-num">${linhas.length}</div><div class="stat-label">Turmas</div></div></div>
@@ -6407,6 +6409,12 @@ pages.frequencias=async function(params={}){
             <button class="btn btn-default" onclick="freqGerar('escola')"><i class="fa fa-school"></i> Gerar para toda a escola</button>
             <button class="btn btn-default" onclick="freqVisualizar(null)" ${filtradas.some(l=>l.f)?'':'disabled'}><i class="fa fa-eye"></i> Visualizar folhas geradas</button>
           </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn btn-default" onclick="freqFinalizarAprovadas()" ${aprovadas.length?'':'disabled'}><i class="fa fa-lock"></i> Finalizar aprovadas (${aprovadas.length})</button>
+            <button class="btn btn-primary" onclick="freqBaixarPdf()" ${prontasPdf.length?'':'disabled'}><i class="fa fa-file-pdf"></i> Baixar PDF ${FREQ_CAT_LABEL[_freq.cat]} (${prontasPdf.length})</button>
+            <button class="btn btn-default" onclick="freqFeriadosProfessores()"><i class="fa fa-user-clock"></i> Feriados nas horas dos professores</button>
+          </div>
+          <p class="help-text" style="margin:8px 0 0">Fluxo: Gerar → Conferir → Corrigir → Aprovar → Finalizar → Imprimir. O PDF traz só as frequências finalizadas dos filtros acima, por professor e turma.</p>
         </div>
       </div>
       <div class="panel">
@@ -6415,7 +6423,7 @@ pages.frequencias=async function(params={}){
           <thead><tr><th>Turma</th><th>Professor</th><th>Dias e horário</th><th>Datas da frequência</th><th>Feriados fora</th><th>Status</th><th></th></tr></thead>
           <tbody>${filtradas.length?filtradas.map(l=>{
             const datasMostrar=l.f?l.f.datas:l.calc.datas;
-            const mudou=l.f&&(l.f.datas.join()!==l.calc.datas.join());
+            const mudou=l.f&&!l.f.datas_manuais&&FREQ_REGERAVEL.includes(l.f.status)&&(l.f.datas.join()!==l.calc.datas.join());
             const st=l.f?FREQ_ST[l.f.status]:null;
             return `<tr>
               <td><strong>${esc(l.t.name)}</strong></td>
@@ -6423,11 +6431,10 @@ pages.frequencias=async function(params={}){
               <td>${esc(freqDiasTxt(l.t))}</td>
               <td>${l.calc.semDias?'<span class="badge badge-danger">Turma sem dias cadastrados</span>':datasMostrar.map(freqDdMm).join(', ')||'—'}${mudou?'<div class="help-text" style="color:var(--danger,#b00020)">O cadastro ou os feriados mudaram depois da geração. Gere de novo.</div>':''}</td>
               <td>${(l.f?l.f.feriados_excluidos:l.calc.excluidos).map(d=>`${freqDdMm(d)} <span class="help-text">${esc(ferMap[d]?.nome||'')}</span>`).join('<br>')||'—'}</td>
-              <td>${st?`<span class="badge ${st.b}">${st.l}</span>`:'<span class="badge badge-secondary">Não gerada</span>'}</td>
-              <td style="white-space:nowrap">
-                ${l.f?`<button class="btn-icon" title="Visualizar folha" onclick="freqVisualizar('${l.t.id}')"><i class="fa fa-eye"></i></button>`:''}
-                ${!l.calc.semDias&&(!l.f||FREQ_REGERAVEL.includes(l.f.status))?`<button class="btn-icon" title="${l.f?'Gerar de novo':'Gerar'}" onclick="freqGerar('turma','${l.t.id}')"><i class="fa fa-${l.f?'redo':'magic'}"></i></button>`:''}
-              </td></tr>`;}).join(''):`<tr><td colspan="7"><div class="empty-state">Nenhuma turma com esses filtros.</div></td></tr>`}
+              <td>${st?`<span class="badge ${st.b}">${st.l}</span>`:'<span class="badge badge-secondary">Não gerada</span>'}
+                ${l.f?.status==='correcao'&&l.f.correcao_motivo?`<div class="help-text" style="margin-top:4px">Corrigir: ${esc(l.f.correcao_motivo)}</div>`:''}
+                ${l.f?.datas_manuais?`<div class="help-text" style="margin-top:4px">Datas ajustadas à mão</div>`:''}</td>
+              <td style="white-space:nowrap">${freqAcoes(l)}</td></tr>`;}).join(''):`<tr><td colspan="7"><div class="empty-state">Nenhuma turma com esses filtros.</div></td></tr>`}
           </tbody>
         </table></div>
       </div>`;
@@ -6486,7 +6493,7 @@ async function freqGerar(modo,classId){
     if(f&&!FREQ_REGERAVEL.includes(f.status)){travadas.push(t.name);continue;}
     const calc=freqCalcDatas(t.class_days,_freq.mes,D.ferMap);
     if(calc.semDias){semDias.push(t.name);continue;}
-    rows.push({class_id:t.id,mes:_freq.mes+'-01',categoria:t.categoria,datas:calc.datas,feriados_excluidos:calc.excluidos,status:'gerada',generated_by:currentUser.id,generated_at:new Date().toISOString(),updated_at:new Date().toISOString()});
+    rows.push({class_id:t.id,mes:_freq.mes+'-01',categoria:t.categoria,datas:calc.datas,feriados_excluidos:calc.excluidos,status:'gerada',datas_manuais:false,generated_by:currentUser.id,generated_at:new Date().toISOString(),updated_at:new Date().toISOString()});
   }
   const executar=async()=>{
     if(rows.length){
@@ -6504,7 +6511,198 @@ async function freqGerar(modo,classId){
     const ok=window.confirm(`Gerar ${rows.length} frequência(s) de ${MESES_NOME[Number(_freq.mes.split('-')[1])-1].toLowerCase()}?`+(regerar?` ${regerar} já gerada(s) serão refeitas a partir do cadastro atual.`:''));
     if(!ok)return;
   }
-  executar();
+  await executar();
+}
+
+// ---- Etapa 2: conferir, corrigir, aprovar, finalizar e imprimir ----
+// As transições são checadas também no banco (trigger
+// frequencias_transicao), que registra quem fez cada passo e quando.
+function freqAcoes(l){
+  const id=l.t.id,f=l.f,b=(icon,title,fn,extra='')=>`<button class="btn-icon" title="${title}" onclick="${fn}" ${extra}><i class="fa fa-${icon}"></i></button>`;
+  if(!f)return l.calc.semDias?'':b('magic','Gerar',`freqGerar('turma','${id}')`);
+  const ver=b('eye','Visualizar folha',`freqVisualizar('${id}')`);
+  switch(f.status){
+    case 'gerada':return `<button class="btn btn-primary btn-sm" onclick="freqConferir('${id}')"><i class="fa fa-search"></i> Conferir</button> ${b('pen','Corrigir datas',`freqCorrigir('${id}')`)}${b('redo','Gerar de novo',`freqGerar('turma','${id}')`)}`;
+    case 'correcao':return `<button class="btn btn-primary btn-sm" onclick="freqCorrigir('${id}')"><i class="fa fa-pen"></i> Corrigir</button> ${ver}${b('redo','Gerar de novo a partir do cadastro',`freqGerar('turma','${id}')`)}`;
+    case 'aprovada':return `<button class="btn btn-primary btn-sm" onclick="freqFinalizar(['${f.id}'])"><i class="fa fa-lock"></i> Finalizar</button> ${ver}${b('undo','Voltar para conferência',`freqSetStatus(['${f.id}'],'gerada')`)}`;
+    default:return ver+(isAdmin()?b('lock-open','Reabrir (direção)',`freqReabrir('${f.id}')`):'');
+  }
+}
+
+function freqModal(titulo,corpoHtml,rodapeHtml){
+  let ov=$('freq-overlay');
+  if(!ov){ov=document.createElement('div');ov.id='freq-overlay';ov.className='pgto-overlay';ov.onclick=e=>{if(e.target===ov)freqFecharModal();};document.body.appendChild(ov);}
+  ov.innerHTML=`<div class="pgto-box" style="width:620px;max-height:92vh;display:flex;flex-direction:column">
+    <div class="pgto-header"><h4>${titulo}</h4><button class="pgto-close" onclick="freqFecharModal()">&#x2715;</button></div>
+    <div class="pgto-body" style="overflow:auto">${corpoHtml}</div>
+    <div class="pgto-footer">${rodapeHtml}</div></div>`;
+  ov.style.display='flex';
+}
+function freqFecharModal(){const ov=$('freq-overlay');if(ov)ov.style.display='none';}
+
+async function freqSetStatus(ids,status,extra={}){
+  const{error}=await sb.from('frequencias').update({status,...extra}).in('id',ids);
+  if(error){showAlert('page-alert','Não foi possível mudar o status: '+error.message,'danger');return false;}
+  return true;
+}
+
+async function freqConferir(classId){
+  const D=_freqData,t=D.turmas.find(x=>x.id===classId),f=D.freqMap[classId];
+  freqModal('<span class="fa fa-search" style="color:var(--brand)"></span> Conferir frequência','<div class="loading"><i class="fa fa-spinner"></i></div>','');
+  const{data:alunos=[]}=await sb.rpc('get_turma_alunos',{p_class_id:classId});
+  freqModal('<span class="fa fa-search" style="color:var(--brand)"></span> Conferir frequência',`
+    <p><strong>${esc(t.name)}</strong> · ${esc(FREQ_CAT_LABEL[t.categoria])}</p>
+    <p>Professor: ${esc(D.profNome(t.teacher_id))}<br>Dias: ${esc(freqDiasTxt(t))}</p>
+    <p><strong>Datas (${f.datas.length}):</strong> ${f.datas.map(freqDdMm).join(', ')||'nenhuma'}</p>
+    <p><strong>Feriados fora do papel:</strong> ${f.feriados_excluidos.map(d=>freqDdMm(d)+' '+esc(D.ferMap[d]?.nome||'')).join(', ')||'nenhum'}</p>
+    <p><strong>Alunos (${alunos.length}):</strong> ${alunos.map(a=>esc(`${a.first_name} ${a.last_name||''}`.trim())).join(', ')||'<span style="color:var(--danger)">nenhum aluno ativo na turma</span>'}</p>
+    <p><a href="#" onclick="freqVisualizar('${classId}');return false"><i class="fa fa-eye"></i> Ver a folha como vai ser impressa</a></p>
+    <div class="pgto-field"><label>Se algo estiver errado, descreva o que corrigir</label><textarea id="freq-motivo" rows="3" placeholder="Ex: faltou a reposição do dia 21/11"></textarea></div>`,
+    `<button class="btn btn-default" onclick="freqMarcarCorrecao('${f.id}')"><i class="fa fa-pen"></i> Precisa de correção</button>
+     <button class="btn btn-primary" onclick="freqAprovar('${f.id}')"><i class="fa fa-check"></i> Conferida, aprovar</button>`);
+}
+async function freqMarcarCorrecao(fid){
+  const motivo=$('freq-motivo').value.trim();
+  if(!motivo){$('freq-motivo').focus();$('freq-motivo').style.borderColor='var(--danger)';return;}
+  if(await freqSetStatus([fid],'correcao',{correcao_motivo:motivo})){freqFecharModal();await pages.frequencias({});showAlert('page-alert','Frequência marcada como pendente de correção.','warning');}
+}
+async function freqAprovar(fid){
+  if(await freqSetStatus([fid],'aprovada')){freqFecharModal();await pages.frequencias({});showAlert('page-alert','Frequência aprovada. Falta finalizar.','success');}
+}
+
+// Corrigir: escolher à mão os dias do mês que entram na folha (ex.: uma
+// reposição). Volta para "Aguardando conferência".
+function freqCorrigir(classId){
+  const D=_freqData,t=D.turmas.find(x=>x.id===classId),f=D.freqMap[classId];
+  const[y,m]=_freq.mes.split('-').map(Number),ultimo=new Date(y,m,0).getDate();
+  const dias=(t.class_days||'').split(',');
+  let html='';
+  for(let d=1;d<=ultimo;d++){
+    const iso=freqIso(y,m,d),abbr=FREQ_DIAS[new Date(y,m-1,d).getDay()],fer=D.ferMap[iso];
+    const marcado=f.datas.includes(iso),daTurma=dias.includes(abbr);
+    html+=`<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;border:1px solid var(--gray-200);border-radius:4px;${daTurma?'background:var(--gray-50)':''}${fer?';opacity:.7':''}">
+      <input type="checkbox" class="freq-dia" value="${iso}" ${marcado?'checked':''}> ${String(d).padStart(2,'0')} ${abbr}${fer?' <span title="'+esc(fer.nome)+'">· feriado</span>':''}</label>`;
+  }
+  freqModal('<span class="fa fa-pen" style="color:var(--brand)"></span> Corrigir datas',`
+    <p><strong>${esc(t.name)}</strong> · ${esc(freqDiasTxt(t))}</p>
+    ${f.correcao_motivo&&f.status==='correcao'?`<div class="alert alert-warning" style="display:block">O que corrigir: ${esc(f.correcao_motivo)}</div>`:''}
+    <p class="help-text">Em cinza, os dias da turma. Marque os dias que entram na folha.</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px">${html}</div>
+    <div class="pgto-field" style="margin-top:12px"><label>Observação (opcional)</label><textarea id="freq-obs" rows="2">${esc(f.observacao||'')}</textarea></div>`,
+    `<button class="btn btn-default" onclick="freqFecharModal()">Cancelar</button>
+     <button class="btn btn-primary" onclick="freqSalvarCorrecao('${classId}')"><i class="fa fa-save"></i> Salvar e mandar para conferência</button>`);
+}
+async function freqSalvarCorrecao(classId){
+  const D=_freqData,t=D.turmas.find(x=>x.id===classId),f=D.freqMap[classId];
+  const datas=[...document.querySelectorAll('.freq-dia:checked')].map(i=>i.value).sort();
+  if(!datas.length){alert('Marque pelo menos um dia.');return;}
+  const dias=(t.class_days||'').split(',');
+  const excluidos=Object.keys(D.ferMap).filter(iso=>iso.startsWith(_freq.mes)&&dias.includes(FREQ_DIAS[new Date(iso+'T12:00:00').getDay()])&&!datas.includes(iso)).sort();
+  const extra={datas,feriados_excluidos:excluidos,datas_manuais:true,observacao:$('freq-obs').value.trim()||null};
+  if(await freqSetStatus([f.id],'gerada',extra)){freqFecharModal();await pages.frequencias({});showAlert('page-alert','Datas corrigidas. A frequência voltou para conferência.','success');}
+}
+
+async function freqFinalizar(ids){
+  if(!window.confirm(ids.length===1?'Finalizar esta frequência? Depois disso as datas não mudam mais.':`Finalizar ${ids.length} frequências aprovadas? Depois disso as datas não mudam mais.`))return;
+  if(await freqSetStatus(ids,'finalizada')){await pages.frequencias({});showAlert('page-alert',`${ids.length} frequência(s) finalizada(s). Já podem ir para o PDF.`,'success');}
+}
+function freqFinalizarAprovadas(){
+  const ids=(_freqData.filtradas||[]).filter(l=>l.f?.status==='aprovada').map(l=>l.f.id);
+  if(ids.length)freqFinalizar(ids);
+}
+async function freqReabrir(fid){
+  if(!window.confirm('Reabrir esta frequência? Ela volta para "Aguardando conferência" e precisa ser aprovada e finalizada de novo.'))return;
+  if(await freqSetStatus([fid],'gerada')){await pages.frequencias({});showAlert('page-alert','Frequência reaberta.','success');}
+}
+
+// Dados de uma folha, usados pela visualização e pelo PDF.
+function freqFolha(t,alunos){
+  const D=_freqData,f=D.freqMap[t.id];
+  const nomes=alunos.map(a=>`${a.first_name} ${a.last_name||''}`.trim().toUpperCase());
+  const minLinhas=t.categoria==='vip'?4:Math.max(nomes.length+2,8);
+  while(nomes.length<minLinhas)nomes.push('');
+  return{vip:t.categoria==='vip',titulo:t.categoria==='vip'?'FREQUÊNCIA VIP':'FREQUÊNCIA TURMAS REGULARES E INFANTIL',
+    categoria:FREQ_CAT_LABEL[t.categoria].toUpperCase(),mes:MESES_NOME[Number(_freq.mes.split('-')[1])-1],
+    prof:D.profNome(t.teacher_id).toUpperCase(),turma:t.name.toUpperCase(),dias:freqDiasTxt(t).toUpperCase(),
+    datas:f.datas,nomes,obs:f.observacao||''};
+}
+
+let _jspdfPromise=null;
+function freqCarregarJsPdf(){
+  const load=src=>new Promise((ok,fail)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>fail(new Error('Não foi possível carregar '+src));document.head.appendChild(s);});
+  if(!_jspdfPromise)_jspdfPromise=load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+    .then(()=>load('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'))
+    .catch(e=>{_jspdfPromise=null;throw e;});
+  return _jspdfPromise;
+}
+
+// PDF da categoria: só as frequências finalizadas (ou já impressas) dos
+// filtros atuais, uma folha por página, ordenadas por professor e turma.
+async function freqBaixarPdf(){
+  const D=_freqData;
+  const lista=(D.filtradas||[]).filter(l=>['finalizada','impressa'].includes(l.f?.status)).map(l=>l.t)
+    .sort((a,b)=>D.profNome(a.teacher_id).localeCompare(D.profNome(b.teacher_id))||a.name.localeCompare(b.name));
+  if(!lista.length)return;
+  showAlert('page-alert','Montando o PDF...','warning');
+  try{await freqCarregarJsPdf();}catch(e){showAlert('page-alert',e.message,'danger');return;}
+  const alunosPor=await Promise.all(lista.map(t=>sb.rpc('get_turma_alunos',{p_class_id:t.id}).then(r=>r.data||[])));
+  const doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const W=doc.internal.pageSize.getWidth(),M=12;
+  const linha=(rot,y,curta)=>{doc.setFont('helvetica','normal');doc.text(rot,M,y);const x0=M+doc.getTextWidth(rot)+2;doc.line(x0,y+0.8,curta?x0+60:W-M,y+0.8);};
+  lista.forEach((t,i)=>{
+    if(i>0)doc.addPage();
+    const F=freqFolha(t,alunosPor[i]);
+    let y=M+4;
+    doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text(F.titulo,W/2,y,{align:'center'});
+    doc.setFontSize(10);
+    if(!F.vip){y+=6;doc.text('CATEGORIA: '+F.categoria,W/2,y,{align:'center'});}
+    y+=8;doc.text('MÊS: ',M,y);doc.setFont('helvetica','normal');doc.text(F.mes,M+doc.getTextWidth('MÊS: '),y);
+    y+=6;let x=M;
+    [['PROFESSOR: ',F.prof],['   TURMA: ',F.turma],['   DIA: ',F.dias]].forEach(([r,v])=>{doc.setFont('helvetica','bold');doc.text(r,x,y);x+=doc.getTextWidth(r);doc.setFont('helvetica','normal');doc.text(v,x,y);x+=doc.getTextWidth(v);});
+    const head=F.vip?['NOME',...F.datas.map(freqDdMm),'OBSERVAÇÕES']:['','NOME:',...F.datas.map(freqDdMm),'AULA REALIZADA PELO PROF DA TURMA (SIM OU NÃO)'];
+    const body=F.nomes.map((n,k)=>F.vip?[n,...F.datas.map(()=>''),'']:[String(k+1).padStart(2,'0'),n,...F.datas.map(()=>''),'']);
+    const colStyles=F.vip?{0:{cellWidth:85,halign:'left'},[F.datas.length+1]:{cellWidth:50}}:{0:{cellWidth:9},1:{cellWidth:85,halign:'left'},[F.datas.length+2]:{cellWidth:42}};
+    doc.autoTable({startY:y+4,head:[head],body,theme:'grid',margin:{left:M,right:M},
+      styles:{font:'helvetica',fontSize:8.5,halign:'center',valign:'middle',lineColor:[60,60,60],lineWidth:0.2,textColor:[17,17,17],minCellHeight:6.5},
+      headStyles:{fillColor:[255,255,255],textColor:[17,17,17],fontStyle:'bold',fontSize:8},columnStyles:colStyles});
+    y=doc.lastAutoTable.finalY+7;
+    const precisa=(F.datas.length||4)*6+(F.vip?20:6)+(F.obs?6:0);
+    if(y+precisa>doc.internal.pageSize.getHeight()-M){doc.addPage();y=M+4;}
+    doc.setFontSize(10);doc.setFont('helvetica','bold');doc.text('CONTEÚDO:',M,y);
+    (F.datas.length?F.datas:[1,2,3,4]).forEach((_,k)=>{y+=6;linha(`AULA ${k+1}:`,y);});
+    if(F.vip){y+=8;doc.setFont('helvetica','bold');doc.text('REPOSIÇÕES:',M,y);y+=6;linha('DATA:',y,true);doc.text('HORÁRIO:',M+80,y);doc.line(M+80+doc.getTextWidth('HORÁRIO: '),y+0.8,M+130,y+0.8);y+=6;linha('DATA:',y,true);doc.text('HORÁRIO:',M+80,y);doc.line(M+80+doc.getTextWidth('HORÁRIO: '),y+0.8,M+130,y+0.8);}
+    if(F.obs){y+=8;doc.setFont('helvetica','bold');doc.text('OBSERVAÇÃO: ',M,y);doc.setFont('helvetica','normal');doc.text(F.obs,M+doc.getTextWidth('OBSERVAÇÃO: '),y,{maxWidth:W-2*M-30});}
+  });
+  const nomeArq=`Frequencias-${FREQ_CAT_LABEL[_freq.cat].replace(/\s+/g,'-')}-${MESES_NOME[Number(_freq.mes.split('-')[1])-1].toLowerCase()}-${_freq.mes.split('-')[0]}.pdf`;
+  doc.save(nomeArq);
+  const ids=lista.map(t=>D.freqMap[t.id].id);
+  if(await freqSetStatus(ids,'impressa')){await pages.frequencias({});showAlert('page-alert',`PDF baixado: ${nomeArq} (${ids.length} folha${ids.length===1?'':'s'}).`,'success');}
+}
+
+// Feriado conta como aula normal para o professor: primeiro mostra o que
+// seria lançado (simulação), e só lança depois da confirmação.
+async function freqFeriadosProfessores(){
+  const titulo='<span class="fa fa-user-clock" style="color:var(--brand)"></span> Feriados nas horas dos professores';
+  freqModal(titulo,'<div class="loading"><i class="fa fa-spinner"></i></div>','');
+  const{data:rows=[],error}=await sb.rpc('lancar_feriados_professores',{p_mes:_freq.mes+'-01',p_simular:true});
+  if(error){freqModal(titulo,`<div class="alert alert-danger" style="display:block">${esc(error.message)}</div>`,'<button class="btn btn-default" onclick="freqFecharModal()">Fechar</button>');return;}
+  const aLancar=rows.filter(r=>r.situacao==='a lançar');
+  const tabela=rows.length?`<div class="table-wrap"><table><thead><tr><th>Data</th><th>Professor</th><th>Turma</th><th>Horas</th><th>Situação</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td>${freqDdMm(r.lesson_date)}<div class="help-text">${esc(r.feriado)}</div></td><td>${esc(r.professor)}</td><td>${esc(r.turma)}</td><td>${Number(r.hours).toString().replace('.',',')}h</td>
+      <td>${r.situacao==='a lançar'?'<span class="badge badge-warning">A lançar</span>':`<span class="badge badge-secondary">${esc(r.situacao[0].toUpperCase()+r.situacao.slice(1))}</span>`}</td></tr>`).join('')}
+    </tbody></table></div>`:'<div class="empty-state">Nenhuma turma tem aula em dia de feriado neste mês.</div>';
+  freqModal(titulo,`
+    <p class="help-text" style="margin-top:0">Cada turma com aula em dia de feriado recebe um lançamento de aula normal, realizada, com as horas da turma e a nota "FERIADO — nome". O que já tem lançamento ou aula registrada no dia fica como está.</p>
+    ${tabela}`,
+    `<button class="btn btn-default" onclick="freqFecharModal()">Fechar</button>
+     <button class="btn btn-primary" onclick="freqLancarFeriados()" ${aLancar.length?'':'disabled'}><i class="fa fa-check"></i> Lançar ${aLancar.length} aula(s)</button>`);
+}
+async function freqLancarFeriados(){
+  if(!window.confirm('Lançar as aulas de feriado nas horas dos professores? Elas passam a contar para o pagamento.'))return;
+  const{data:rows=[],error}=await sb.rpc('lancar_feriados_professores',{p_mes:_freq.mes+'-01',p_simular:false});
+  freqFecharModal();
+  if(error){showAlert('page-alert','Erro ao lançar feriados: '+error.message,'danger');return;}
+  showAlert('page-alert',`${rows.filter(r=>r.situacao==='lançado agora').length} aula(s) de feriado lançada(s) nas horas dos professores.`,'success');
 }
 
 // Folha no modelo do Word: VIP (com observações e reposições) ou

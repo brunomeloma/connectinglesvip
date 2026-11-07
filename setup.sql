@@ -3925,3 +3925,101 @@ DROP POLICY IF EXISTS frequencias_update ON frequencias;
 CREATE POLICY frequencias_update ON frequencias FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','secretaria']));
 DROP POLICY IF EXISTS frequencias_delete ON frequencias;
 CREATE POLICY frequencias_delete ON frequencias FOR DELETE USING (is_admin());
+
+-- ============================================================
+-- Gerador de Frequências (etapa 2): fluxo Gerar → Conferir →
+-- Corrigir → Aprovar → Finalizar → Imprimir, com registro de quem
+-- fez cada passo, e lançamento dos feriados nas horas do professor.
+-- ============================================================
+ALTER TABLE frequencias
+  ADD COLUMN IF NOT EXISTS correcao_motivo text,
+  ADD COLUMN IF NOT EXISTS conferido_by uuid,
+  ADD COLUMN IF NOT EXISTS conferido_at timestamptz,
+  ADD COLUMN IF NOT EXISTS aprovado_by uuid,
+  ADD COLUMN IF NOT EXISTS aprovado_at timestamptz,
+  ADD COLUMN IF NOT EXISTS finalizado_by uuid,
+  ADD COLUMN IF NOT EXISTS finalizado_at timestamptz,
+  ADD COLUMN IF NOT EXISTS impresso_by uuid,
+  ADD COLUMN IF NOT EXISTS impresso_at timestamptz;
+
+-- Transições permitidas (qualquer outra é recusada no banco):
+--   gerada → correcao | aprovada        correcao → gerada
+--   aprovada → finalizada | gerada      finalizada → impressa
+--   finalizada/impressa → gerada só para direção (reabrir)
+-- Aprovada em diante não aceita mudança de datas.
+CREATE OR REPLACE FUNCTION public.frequencias_transicao()
+ RETURNS trigger LANGUAGE plpgsql SET search_path TO 'public'
+AS $function$ BEGIN
+  NEW.updated_at := now();
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    IF NOT (
+      (OLD.status='gerada' AND NEW.status IN ('correcao','aprovada')) OR
+      (OLD.status='correcao' AND NEW.status='gerada') OR
+      (OLD.status='aprovada' AND NEW.status IN ('finalizada','gerada')) OR
+      (OLD.status='finalizada' AND NEW.status='impressa') OR
+      (OLD.status IN ('finalizada','impressa') AND NEW.status='gerada' AND is_admin())
+    ) THEN
+      RAISE EXCEPTION 'Mudança de status não permitida: % → %', OLD.status, NEW.status;
+    END IF;
+    IF NEW.status='correcao' THEN
+      IF coalesce(trim(NEW.correcao_motivo),'')='' THEN RAISE EXCEPTION 'Informe o que precisa ser corrigido.'; END IF;
+      NEW.conferido_by := auth.uid(); NEW.conferido_at := now();
+    ELSIF NEW.status='aprovada' THEN
+      NEW.conferido_by := auth.uid(); NEW.conferido_at := now();
+      NEW.aprovado_by := auth.uid(); NEW.aprovado_at := now();
+      NEW.correcao_motivo := NULL;
+    ELSIF NEW.status='finalizada' THEN
+      NEW.finalizado_by := auth.uid(); NEW.finalizado_at := now();
+    ELSIF NEW.status='impressa' THEN
+      NEW.impresso_by := auth.uid(); NEW.impresso_at := now();
+    ELSIF NEW.status='gerada' THEN
+      NEW.aprovado_by := NULL; NEW.aprovado_at := NULL;
+      NEW.finalizado_by := NULL; NEW.finalizado_at := NULL;
+      NEW.impresso_by := NULL; NEW.impresso_at := NULL;
+    END IF;
+  ELSIF OLD.status IN ('aprovada','finalizada','impressa')
+        AND (NEW.datas IS DISTINCT FROM OLD.datas OR NEW.feriados_excluidos IS DISTINCT FROM OLD.feriados_excluidos) THEN
+    RAISE EXCEPTION 'Frequência % não pode ter as datas alteradas. Volte para conferência primeiro.', OLD.status;
+  ELSIF OLD.status='impressa' THEN
+    NEW.impresso_by := auth.uid(); NEW.impresso_at := now();  -- reimpressão
+  END IF;
+  RETURN NEW;
+END; $function$;
+DROP TRIGGER IF EXISTS trg_frequencias_transicao ON frequencias;
+CREATE TRIGGER trg_frequencias_transicao BEFORE UPDATE ON frequencias
+  FOR EACH ROW EXECUTE FUNCTION frequencias_transicao();
+
+-- Feriado conta como aula normal para o professor: um lançamento
+-- realizado, com as horas da turma e a nota "FERIADO — nome", em cada
+-- turma ativa que teria aula no dia. Não mexe em nada que já exista no
+-- dia (lançamento manual, aula registrada ou pago). p_simular=true só
+-- lista o que seria lançado.
+CREATE OR REPLACE FUNCTION public.lancar_feriados_professores(p_mes date, p_simular boolean DEFAULT true)
+ RETURNS TABLE(lesson_date date, feriado text, class_id uuid, turma text, teacher_id uuid, professor text, hours numeric, situacao text)
+ LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
+AS $function$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  DROP TABLE IF EXISTS _fer;
+  CREATE TEMP TABLE _fer ON COMMIT DROP AS
+  SELECT f.data AS d, f.nome AS fnome, c.id AS cid, c.name AS cname, c.teacher_id AS tid,
+         trim(t.first_name||' '||coalesce(t.last_name,'')) AS tnome,
+         GREATEST(0.5, ROUND(EXTRACT(EPOCH FROM (c.end_time::time - c.start_time::time))/3600.0, 2))::numeric AS h,
+         CASE
+           WHEN EXISTS (SELECT 1 FROM teacher_lessons x WHERE x.class_id=c.id AND x.lesson_date=f.data) THEN 'já lançado'
+           WHEN EXISTS (SELECT 1 FROM class_lessons x WHERE x.class_id=c.id AND x.lesson_date=f.data) THEN 'aula registrada no dia'
+           ELSE 'a lançar' END AS sit
+  FROM feriados f
+  JOIN classes c ON c.status AND c.teacher_id IS NOT NULL AND c.start_time IS NOT NULL AND c.end_time IS NOT NULL
+   AND (','||coalesce(c.class_days,'')||',') LIKE '%,'||(ARRAY['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'])[EXTRACT(DOW FROM f.data)::int+1]||',%'
+  JOIN teachers t ON t.id=c.teacher_id
+  WHERE f.data >= date_trunc('month',p_mes)::date AND f.data < (date_trunc('month',p_mes)+interval '1 month')::date;
+  IF NOT p_simular THEN
+    INSERT INTO teacher_lessons (class_id, teacher_id, actual_teacher_id, lesson_date, lesson_type, status, hours, notes, counts_for_payment, created_by)
+    SELECT cid, tid, tid, d, 'aula_normal', 'realizada', h, 'FERIADO — '||upper(fnome), true, auth.uid() FROM _fer WHERE sit='a lançar';
+    UPDATE _fer SET sit='lançado agora' WHERE sit='a lançar';
+  END IF;
+  RETURN QUERY SELECT d, fnome, cid, cname, tid, tnome, h, sit FROM _fer ORDER BY d, tnome, cname;
+END; $function$;
+-- true quando a recepção corrigiu as datas à mão (Corrigir): a tela não
+-- acusa diferença com o cadastro; gerar de novo volta para false.
+ALTER TABLE frequencias ADD COLUMN IF NOT EXISTS datas_manuais boolean NOT NULL DEFAULT false;
