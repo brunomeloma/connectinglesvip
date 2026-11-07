@@ -649,6 +649,7 @@ let currentUser = null;
     <div class="sb-item no-professor no-captacao" data-page="documentos" onclick="nav('documentos')"><i class="fa fa-file-signature"></i> Documentos</div>
     <div class="sb-item no-professor no-captacao" data-page="nps" onclick="nav('nps')"><i class="fa fa-smile"></i> Pesquisa NPS</div>
     <div class="sb-item no-captacao" data-page="relatorios" onclick="nav('relatorios')"><i class="fa fa-chart-bar"></i> Relatórios</div>
+    <div class="sb-item freq-item" data-page="frequencias" onclick="nav('frequencias')"><i class="fa fa-clipboard-list"></i> Frequências</div>
     <div class="sb-item no-professor" data-page="inativos" onclick="nav('inativos')"><i class="fa fa-user-slash"></i> Inativos</div>
     <div class="sb-item no-professor" data-page="debitosLanche" onclick="nav('debitosLanche')"><i class="fa fa-utensils"></i> Débitos de Lanche</div>
     <div class="sb-item no-professor" data-page="avisarFalta" onclick="nav('avisarFalta')"><i class="fa fa-user-clock"></i> Aviso de Falta</div>
@@ -950,6 +951,7 @@ function startApp(){
   document.querySelectorAll('.no-professor').forEach(el=>el.style.display=currentUser?.role==='professor'?'none':'');
   document.querySelectorAll('.no-captacao').forEach(el=>el.style.display=currentUser?.role==='captacao'?'none':'');
   document.querySelectorAll('.captacao-item').forEach(el=>el.style.display=(currentUser?.role==='captacao'||isAdmin())?'':'none');
+  document.querySelectorAll('.freq-item').forEach(el=>el.style.display=(isAdmin()||isSecretaria())?'':'none');
   nav(currentUser?.role==='captacao'?'captacao':'dashboard');
 }
 
@@ -3552,6 +3554,7 @@ async function classForm(id){
             <div class="field"><label>Professor</label><select id="f-teacher"><option value="">Nenhum</option>${tOpts}</select></div>
             <div class="field"><label>Escola</label><select id="f-school"><option value="">Nenhuma</option>${sOpts}</select></div>
             <div class="field"><label>Nível</label><select id="f-level">${nivelOptions(c.level)}</select></div>
+            <div class="field"><label>Categoria da frequência</label><select id="f-categoria"><option value="">Pendente de classificação</option>${FREQ_CATS.map(k=>`<option value="${k.id}" ${c.categoria===k.id?'selected':''}>${k.label}</option>`).join('')}</select></div>
             <div class="field"><label>Status</label><select id="f-status"><option value="true" ${c.status!==false?'selected':''}>Ativo</option><option value="false" ${c.status===false?'selected':''}>Inativo</option></select></div>
           </div>
           <div>
@@ -3609,7 +3612,7 @@ async function saveClass(id){
   }
   let schedule=$('f-schedule').value.trim();
   if(!schedule) schedule=days.join('/')+' '+startTime+'–'+endTime;
-  const payload={name,teacher_id:teacherId,school_id:$('f-school').value||null,schedule,class_days:days.join(','),start_time:startTime,end_time:endTime,level:$('f-level').value||null,status:$('f-status').value==='true'};
+  const payload={name,teacher_id:teacherId,school_id:$('f-school').value||null,schedule,class_days:days.join(','),start_time:startTime,end_time:endTime,level:$('f-level').value||null,categoria:$('f-categoria').value||null,status:$('f-status').value==='true'};
   let err;
   if(id){const r=await sb.from('classes').update(payload).eq('id',id);err=r.error;}
   else{const r=await sb.from('classes').insert(payload);err=r.error;}
@@ -6253,6 +6256,328 @@ async function profSalvarAula(classId,className){
   if(error){showAlert('prof-content-alert',error.message||'Erro ao salvar aula.','danger');return;}
   showAlert('prof-content-alert','Aula e frequência salvas com sucesso!','success');
   setTimeout(()=>profAbrirTurma(classId,className,date),900);
+}
+
+// ============================
+// GERADOR DE FREQUÊNCIAS (etapa 1: categorias, feriados e geração)
+// ============================
+// Uma frequência por turma e mês (tabela frequencias). As datas saem dos
+// dias da semana cadastrados na turma, sem os feriados da tabela feriados:
+// a coluna do feriado não vai para o papel. Nada é finalizado sozinho:
+// gerar sempre deixa o status em "Aguardando conferência".
+const FREQ_CATS=[
+  {id:'vip',label:'VIP',icon:'fa-star'},
+  {id:'infantil',label:'Infantil',icon:'fa-child'},
+  {id:'regular',label:'Regular',icon:'fa-users'},
+  {id:'regular_online',label:'Regular Online',icon:'fa-laptop'},
+];
+const FREQ_CAT_LABEL={vip:'VIP',infantil:'Infantil',regular:'Regular',regular_online:'Regular Online'};
+const FREQ_ST={
+  gerada:{l:'Aguardando conferência',b:'badge-warning'},
+  correcao:{l:'Pendente de correção',b:'badge-danger'},
+  aprovada:{l:'Aprovada',b:'badge-info'},
+  finalizada:{l:'Finalizada',b:'badge-success'},
+  impressa:{l:'Impressa',b:'badge-success'},
+};
+// Status que a geração pode sobrescrever; aprovada em diante fica travada.
+const FREQ_REGERAVEL=['gerada','correcao'];
+const FREQ_DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const FREQ_DIAS_NOME={Dom:'Domingo',Seg:'Segunda',Ter:'Terça',Qua:'Quarta',Qui:'Quinta',Sex:'Sexta','Sáb':'Sábado'};
+const FREQ_FERIADO_TIPO={nacional:'Nacional',estadual:'Estadual',municipal:'Municipal',ponto_facultativo:'Ponto facultativo',recesso:'Recesso'};
+const MESES_NOME=['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+let _freq={cat:'vip',mes:null,prof:'',turma:'',dia:'',status:''};
+let _freqData=null;
+
+function freqMesAtual(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function freqIso(y,m,d){return y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');}
+function freqDdMm(iso){const[,m,d]=iso.split('-');return d+'/'+m;}
+// Datas de aula da turma no mês ("2026-11"), separando as que caem em feriado.
+function freqCalcDatas(classDays,mesStr,feriadosMap){
+  const dias=(classDays||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const[y,m]=mesStr.split('-').map(Number);
+  const ultimo=new Date(y,m,0).getDate();
+  const datas=[],excluidos=[];
+  for(let d=1;d<=ultimo;d++){
+    const abbr=FREQ_DIAS[new Date(y,m-1,d).getDay()];
+    if(!dias.includes(abbr))continue;
+    const iso=freqIso(y,m,d);
+    (feriadosMap[iso]?excluidos:datas).push(iso);
+  }
+  return{datas,excluidos,semDias:!dias.length};
+}
+function freqDiasTxt(c){
+  const dias=(c.class_days||'').split(',').filter(Boolean).map(d=>FREQ_DIAS_NOME[d]||d).join(' e ');
+  return (dias||'Sem dias')+(c.start_time&&c.end_time?` (${c.start_time} às ${c.end_time})`:'');
+}
+
+pages.frequencias=async function(params={}){
+  if(!(isAdmin()||isSecretaria())){nav('dashboard');return;}
+  _freq={..._freq,...params};
+  if(!_freq.mes)_freq.mes=freqMesAtual();
+  const mesIni=_freq.mes+'-01';
+  const[y,m]=_freq.mes.split('-').map(Number);
+  const mesFim=freqIso(y,m,new Date(y,m,0).getDate());
+  setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
+  const[{data:turmas=[],error:e1},profs,{data:feriados=[],error:e2},{data:freqs=[],error:e3}]=await Promise.all([
+    sb.from('classes').select('id,name,teacher_id,class_days,start_time,end_time,level,categoria').eq('status',true).order('name'),
+    getProfessoresNomes(),
+    sb.from('feriados').select('data,nome,tipo').gte('data',mesIni).lte('data',mesFim).order('data'),
+    sb.from('frequencias').select('id,class_id,categoria,datas,feriados_excluidos,status,generated_at,updated_at').eq('mes',mesIni),
+  ]);
+  const err=e1||e2||e3;
+  if(err){setContent(`<div class="alert alert-danger" style="display:block">Erro ao carregar frequências: ${esc(err.message)}</div>`);return;}
+  const profMap={};profs.forEach(p=>profMap[p.id]=p);
+  const ferMap={};feriados.forEach(f=>ferMap[f.data]=f);
+  const freqMap={};freqs.forEach(f=>freqMap[f.class_id]=f);
+  const profNome=id=>id&&profMap[id]?`${profMap[id].first_name} ${profMap[id].last_name||''}`.trim():'Sem professor';
+  _freqData={turmas,profMap,ferMap,freqMap,feriados,profNome};
+
+  const pendentes=turmas.filter(t=>!t.categoria);
+  const tabs=[...FREQ_CATS.map(c=>({...c,n:turmas.filter(t=>t.categoria===c.id).length})),{id:'pendente',label:'Pendente de classificação',icon:'fa-question-circle',n:pendentes.length}];
+  const tabBar=`<div class="tab-bar">${tabs.map(t=>`<button class="tab-btn${_freq.cat===t.id?' active':''}" onclick="nav('frequencias',{cat:'${t.id}',turma:''})"><i class="fa ${t.icon}"></i> ${t.label} (${t.n})</button>`).join('')}</div>`;
+
+  const feriadosHtml=`
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title"><i class="fa fa-umbrella-beach"></i> Feriados de ${MESES_NOME[m-1].toLowerCase()} de ${y}</span></div>
+      <div class="panel-body">
+        <p class="help-text" style="margin-top:0">O dia do feriado não entra na frequência impressa. Para o pagamento do professor, o feriado conta como aula normal.</p>
+        ${feriados.length?`<div class="table-wrap"><table><thead><tr><th>Data</th><th>Dia</th><th>Feriado</th><th>Tipo</th><th></th></tr></thead><tbody>
+          ${feriados.map(f=>`<tr><td>${fdate(f.data)}</td><td>${FREQ_DIAS_NOME[FREQ_DIAS[new Date(f.data+'T12:00:00').getDay()]]}</td><td>${esc(f.nome)}</td><td>${esc(FREQ_FERIADO_TIPO[f.tipo]||f.tipo)}</td>
+            <td><button class="btn-icon" title="Remover feriado" onclick="freqRemoverFeriado('${f.data}')"><i class="fa fa-trash"></i></button></td></tr>`).join('')}
+        </tbody></table></div>`:`<div class="empty-state" style="padding:12px">Nenhum feriado cadastrado neste mês.</div>`}
+        <div class="form-row" style="margin-top:12px;align-items:flex-end">
+          <div class="form-col"><label>Data</label><input id="fer-data" type="date" min="${mesIni}" max="${mesFim}"></div>
+          <div class="form-col"><label>Nome</label><input id="fer-nome" placeholder="Ex: Aniversário da cidade"></div>
+          <div class="form-col"><label>Tipo</label><select id="fer-tipo">${Object.entries(FREQ_FERIADO_TIPO).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+          <div class="form-col" style="flex:0 0 auto"><button class="btn btn-default" onclick="freqAddFeriado()"><i class="fa fa-plus"></i> Adicionar feriado</button></div>
+        </div>
+      </div>
+    </div>`;
+
+  let corpo;
+  if(_freq.cat==='pendente'){
+    corpo=`
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Turmas sem categoria</span></div>
+        <div class="panel-body">
+          <p class="help-text" style="margin-top:0">Estas turmas não entram em nenhuma categoria até você escolher. A frequência delas só pode ser gerada depois disso.</p>
+          ${pendentes.length?`<div class="table-wrap"><table><thead><tr><th>Turma</th><th>Professor</th><th>Nível</th><th>Dias</th><th>Categoria</th></tr></thead><tbody>
+            ${pendentes.map(t=>`<tr><td><strong>${esc(t.name)}</strong></td><td>${esc(profNome(t.teacher_id))}</td><td>${esc(t.level||'—')}</td><td>${esc(freqDiasTxt(t))}</td>
+              <td><select onchange="freqClassificar('${t.id}',this.value)"><option value="">Escolher...</option>${FREQ_CATS.map(c=>`<option value="${c.id}">${c.label}</option>`).join('')}</select></td></tr>`).join('')}
+          </tbody></table></div>`:`<div class="empty-state"><i class="fa fa-check-circle"></i>Todas as turmas ativas já têm categoria.</div>`}
+        </div>
+      </div>`;
+  }else{
+    const daCat=turmas.filter(t=>t.categoria===_freq.cat);
+    const linhas=daCat.map(t=>{
+      const calc=freqCalcDatas(t.class_days,_freq.mes,ferMap);
+      const f=freqMap[t.id];
+      return{t,calc,f,st:f?f.status:'sem'};
+    });
+    const filtradas=linhas.filter(l=>
+      (!_freq.prof||l.t.teacher_id===_freq.prof)&&
+      (!_freq.turma||l.t.id===_freq.turma)&&
+      (!_freq.dia||(l.t.class_days||'').split(',').includes(_freq.dia))&&
+      (!_freq.status||l.st===_freq.status));
+    const cnt=s=>linhas.filter(l=>l.st===s).length;
+    const geradas=linhas.filter(l=>l.f).length;
+    const profsCat=[...new Set(daCat.map(t=>t.teacher_id).filter(Boolean))].sort((a,b)=>profNome(a).localeCompare(profNome(b)));
+    const geraveis=filtradas.filter(l=>!l.calc.semDias&&(!l.f||FREQ_REGERAVEL.includes(l.f.status)));
+    _freqData.filtradas=filtradas;
+    corpo=`
+      <div class="stat-grid" style="grid-template-columns:repeat(5,minmax(0,1fr))">
+        <div class="stat-card c-dark"><i class="fa fa-layer-group stat-icon"></i><div><div class="stat-num">${linhas.length}</div><div class="stat-label">Turmas</div></div></div>
+        <div class="stat-card c-gold"><i class="fa fa-file-alt stat-icon"></i><div><div class="stat-num">${geradas}</div><div class="stat-label">Frequências geradas</div></div></div>
+        <div class="stat-card c-orange"><i class="fa fa-search stat-icon"></i><div><div class="stat-num">${cnt('gerada')}</div><div class="stat-label">Aguardando conferência</div></div></div>
+        <div class="stat-card c-brown"><i class="fa fa-check-double stat-icon"></i><div><div class="stat-num">${cnt('finalizada')+cnt('impressa')}</div><div class="stat-label">Finalizadas</div></div></div>
+        <div class="stat-card c-orange"><i class="fa fa-pen stat-icon"></i><div><div class="stat-num">${cnt('correcao')}</div><div class="stat-label">Pendentes de correção</div></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Filtros</span></div>
+        <div class="panel-body">
+          <div class="form-row">
+            <div class="form-col"><label>Mês e ano</label><input type="month" value="${_freq.mes}" onchange="if(this.value)nav('frequencias',{mes:this.value})"></div>
+            <div class="form-col"><label>Professor</label><select onchange="nav('frequencias',{prof:this.value,turma:''})"><option value="">Todos</option>${profsCat.map(id=>`<option value="${id}" ${_freq.prof===id?'selected':''}>${esc(profNome(id))}</option>`).join('')}</select></div>
+            <div class="form-col"><label>Turma</label><select onchange="nav('frequencias',{turma:this.value})"><option value="">Todas</option>${daCat.filter(t=>!_freq.prof||t.teacher_id===_freq.prof).map(t=>`<option value="${t.id}" ${_freq.turma===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div>
+            <div class="form-col"><label>Dia da semana</label><select onchange="nav('frequencias',{dia:this.value})"><option value="">Todos</option>${FREQ_DIAS.slice(1).concat('Dom').map(d=>`<option value="${d}" ${_freq.dia===d?'selected':''}>${FREQ_DIAS_NOME[d]}</option>`).join('')}</select></div>
+            <div class="form-col"><label>Status da frequência</label><select onchange="nav('frequencias',{status:this.value})"><option value="">Todos</option><option value="sem" ${_freq.status==='sem'?'selected':''}>Não gerada</option>${Object.entries(FREQ_ST).map(([k,v])=>`<option value="${k}" ${_freq.status===k?'selected':''}>${v.l}</option>`).join('')}</select></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="freqGerar('filtro')" ${geraveis.length?'':'disabled'}><i class="fa fa-magic"></i> Gerar frequências filtradas (${geraveis.length})</button>
+            <button class="btn btn-default" onclick="freqGerar('escola')"><i class="fa fa-school"></i> Gerar para toda a escola</button>
+            <button class="btn btn-default" onclick="freqVisualizar(null)" ${filtradas.some(l=>l.f)?'':'disabled'}><i class="fa fa-eye"></i> Visualizar folhas geradas</button>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">${FREQ_CAT_LABEL[_freq.cat]} — ${MESES_NOME[m-1].toLowerCase()} de ${y} (${filtradas.length} turma${filtradas.length===1?'':'s'})</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Turma</th><th>Professor</th><th>Dias e horário</th><th>Datas da frequência</th><th>Feriados fora</th><th>Status</th><th></th></tr></thead>
+          <tbody>${filtradas.length?filtradas.map(l=>{
+            const datasMostrar=l.f?l.f.datas:l.calc.datas;
+            const mudou=l.f&&(l.f.datas.join()!==l.calc.datas.join());
+            const st=l.f?FREQ_ST[l.f.status]:null;
+            return `<tr>
+              <td><strong>${esc(l.t.name)}</strong></td>
+              <td>${esc(profNome(l.t.teacher_id))}</td>
+              <td>${esc(freqDiasTxt(l.t))}</td>
+              <td>${l.calc.semDias?'<span class="badge badge-danger">Turma sem dias cadastrados</span>':datasMostrar.map(freqDdMm).join(', ')||'—'}${mudou?'<div class="help-text" style="color:var(--danger,#b00020)">O cadastro ou os feriados mudaram depois da geração. Gere de novo.</div>':''}</td>
+              <td>${(l.f?l.f.feriados_excluidos:l.calc.excluidos).map(d=>`${freqDdMm(d)} <span class="help-text">${esc(ferMap[d]?.nome||'')}</span>`).join('<br>')||'—'}</td>
+              <td>${st?`<span class="badge ${st.b}">${st.l}</span>`:'<span class="badge badge-secondary">Não gerada</span>'}</td>
+              <td style="white-space:nowrap">
+                ${l.f?`<button class="btn-icon" title="Visualizar folha" onclick="freqVisualizar('${l.t.id}')"><i class="fa fa-eye"></i></button>`:''}
+                ${!l.calc.semDias&&(!l.f||FREQ_REGERAVEL.includes(l.f.status))?`<button class="btn-icon" title="${l.f?'Gerar de novo':'Gerar'}" onclick="freqGerar('turma','${l.t.id}')"><i class="fa fa-${l.f?'redo':'magic'}"></i></button>`:''}
+              </td></tr>`;}).join(''):`<tr><td colspan="7"><div class="empty-state">Nenhuma turma com esses filtros.</div></td></tr>`}
+          </tbody>
+        </table></div>
+      </div>`;
+  }
+
+  setContent(`
+    <div class="breadcrumb"><span>Home</span> › <span>Frequências</span></div>
+    <div class="page-title"><i class="fa fa-clipboard-list"></i> Gerador de Frequências</div>
+    <div id="page-alert" class="alert"></div>
+    ${tabBar}
+    ${corpo}
+    ${feriadosHtml}
+  `);
+};
+
+async function freqClassificar(classId,cat){
+  if(!cat)return;
+  const{error}=await sb.from('classes').update({categoria:cat}).eq('id',classId);
+  if(error){
+    // classes_level_check: turmas antigas com nível "Básico"/"Intermediário"
+    // não podem ser regravadas até o nível ser trocado no cadastro.
+    const t=_freqData?.turmas.find(x=>x.id===classId);
+    showAlert('page-alert',error.code==='23514'?`A turma "${t?.name||''}" tem um nível antigo (${t?.level||'—'}) que o sistema não aceita mais. Abra a turma em Turmas, escolha o nível atual e salve. Depois volte aqui.`:'Erro ao salvar a categoria: '+error.message,'danger');
+    nav('frequencias',{});return;
+  }
+  nav('frequencias',{});
+}
+
+async function freqAddFeriado(){
+  const data=$('fer-data').value,nome=$('fer-nome').value.trim(),tipo=$('fer-tipo').value;
+  if(!data||!nome){showAlert('page-alert','Informe a data e o nome do feriado.','danger');return;}
+  const{error}=await sb.from('feriados').insert({data,nome,tipo});
+  if(error){showAlert('page-alert',error.code==='23505'?'Já existe um feriado nessa data.':'Erro ao salvar o feriado: '+error.message,'danger');return;}
+  nav('frequencias',{});
+}
+
+function freqRemoverFeriado(data){
+  showConfirm(async()=>{
+    const{error}=await sb.from('feriados').delete().eq('data',data);
+    if(error){showAlert('page-alert','Erro ao remover o feriado: '+error.message,'danger');return;}
+    nav('frequencias',{});
+  });
+}
+
+// modo: 'turma' (uma), 'filtro' (as turmas filtradas da categoria) ou
+// 'escola' (todas as turmas classificadas, nas quatro categorias).
+async function freqGerar(modo,classId){
+  const D=_freqData;if(!D)return;
+  let alvo;
+  if(modo==='turma')alvo=D.turmas.filter(t=>t.id===classId);
+  else if(modo==='filtro')alvo=(D.filtradas||[]).map(l=>l.t);
+  else alvo=D.turmas.filter(t=>t.categoria);
+  const rows=[],travadas=[],semDias=[];
+  for(const t of alvo){
+    const f=D.freqMap[t.id];
+    if(f&&!FREQ_REGERAVEL.includes(f.status)){travadas.push(t.name);continue;}
+    const calc=freqCalcDatas(t.class_days,_freq.mes,D.ferMap);
+    if(calc.semDias){semDias.push(t.name);continue;}
+    rows.push({class_id:t.id,mes:_freq.mes+'-01',categoria:t.categoria,datas:calc.datas,feriados_excluidos:calc.excluidos,status:'gerada',generated_by:currentUser.id,generated_at:new Date().toISOString(),updated_at:new Date().toISOString()});
+  }
+  const executar=async()=>{
+    if(rows.length){
+      const{error}=await sb.from('frequencias').upsert(rows,{onConflict:'class_id,mes'});
+      if(error){showAlert('page-alert','Erro ao gerar: '+error.message,'danger');return;}
+    }
+    await pages.frequencias({});
+    const partes=[`${rows.length} frequência(s) gerada(s), aguardando conferência.`];
+    if(travadas.length)partes.push(`${travadas.length} já aprovada(s) ou finalizada(s) ficaram como estavam.`);
+    if(semDias.length)partes.push(`${semDias.length} turma(s) sem dias cadastrados ficaram de fora: ${semDias.join(', ')}.`);
+    showAlert('page-alert',partes.join(' '),rows.length?'success':'warning');
+  };
+  const regerar=rows.filter(r=>D.freqMap[r.class_id]).length;
+  if(modo==='escola'||regerar>1){
+    const ok=window.confirm(`Gerar ${rows.length} frequência(s) de ${MESES_NOME[Number(_freq.mes.split('-')[1])-1].toLowerCase()}?`+(regerar?` ${regerar} já gerada(s) serão refeitas a partir do cadastro atual.`:''));
+    if(!ok)return;
+  }
+  executar();
+}
+
+// Folha no modelo do Word: VIP (com observações e reposições) ou
+// Regular/Infantil (também usada para Regular Online), com a categoria
+// no cabeçalho. classId null = todas as turmas filtradas já geradas.
+async function freqVisualizar(classId){
+  const D=_freqData;if(!D)return;
+  const lista=classId?D.turmas.filter(t=>t.id===classId):(D.filtradas||[]).filter(l=>l.f).map(l=>l.t);
+  const win=window.open('','_blank');
+  if(!win){alert('Não foi possível abrir a janela. Verifique se o navegador está bloqueando pop-ups.');return;}
+  win.document.write('<p style="font-family:sans-serif;padding:40px">Montando as folhas...</p>');
+  const alunosPor=await Promise.all(lista.map(t=>sb.rpc('get_turma_alunos',{p_class_id:t.id}).then(r=>r.data||[])));
+  const mesNome=MESES_NOME[Number(_freq.mes.split('-')[1])-1];
+  const linhaAula=n=>`<p class="linha">AULA ${n}: <span></span></p>`;
+  const folhas=lista.map((t,i)=>{
+    const f=D.freqMap[t.id];
+    const datas=f.datas;
+    const alunos=alunosPor[i];
+    const nomes=alunos.map(a=>`${a.first_name} ${a.last_name||''}`.trim().toUpperCase());
+    const minLinhas=t.categoria==='vip'?4:Math.max(nomes.length+2,8);
+    while(nomes.length<minLinhas)nomes.push('');
+    const prof=esc(D.profNome(t.teacher_id).toUpperCase());
+    const dias=esc(freqDiasTxt(t).toUpperCase());
+    const conteudo=`<p class="rot">CONTEÚDO:</p>${(datas.length?datas:[null,null,null,null]).map((_,k)=>linhaAula(k+1)).join('')}`;
+    if(t.categoria==='vip'){
+      return `<section class="folha">
+        <h1>FREQUÊNCIA VIP</h1>
+        <p><b>MÊS:</b> ${mesNome}</p>
+        <p><b>PROFESSOR:</b> ${prof} &nbsp; <b>TURMA:</b> ${esc(t.name.toUpperCase())} &nbsp; <b>DIA:</b> ${dias}</p>
+        <table><thead><tr><th class="nome">NOME</th>${datas.map(d=>`<th>${freqDdMm(d)}</th>`).join('')}<th class="obs">OBSERVAÇÕES</th></tr></thead>
+        <tbody>${nomes.map(n=>`<tr><td class="nome">${esc(n)}</td>${datas.map(()=>'<td></td>').join('')}<td></td></tr>`).join('')}</tbody></table>
+        ${conteudo}
+        <p class="rot">REPOSIÇÕES:</p>
+        <p class="linha">DATA: <span></span> HORÁRIO: <span class="curta"></span></p>
+        <p class="linha">DATA: <span></span> HORÁRIO: <span class="curta"></span></p>
+      </section>`;
+    }
+    return `<section class="folha">
+      <h1>FREQUÊNCIA TURMAS REGULARES E INFANTIL</h1>
+      <p class="cat">CATEGORIA: ${esc(FREQ_CAT_LABEL[t.categoria].toUpperCase())}</p>
+      <p><b>MÊS:</b> ${mesNome}</p>
+      <p><b>PROFESSOR:</b> ${prof} &nbsp; <b>TURMA:</b> ${esc(t.name.toUpperCase())} &nbsp; <b>DIA:</b> ${dias}</p>
+      <table><thead><tr><th class="num"></th><th class="nome">NOME:</th>${datas.map(d=>`<th>${freqDdMm(d)}</th>`).join('')}<th class="obs">AULA REALIZADA PELO PROF DA TURMA (SIM OU NÃO)</th></tr></thead>
+      <tbody>${nomes.map((n,k)=>`<tr><td class="num">${String(k+1).padStart(2,'0')}</td><td class="nome">${esc(n)}</td>${datas.map(()=>'<td></td>').join('')}<td></td></tr>`).join('')}</tbody></table>
+      ${conteudo}
+    </section>`;
+  }).join('');
+  win.document.open();
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Frequências — ${mesNome} ${_freq.mes.split('-')[0]}</title>
+  <style>
+    @page{size:A4 landscape;margin:12mm}
+    body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:12px;margin:0;padding:16px}
+    .folha{page-break-after:always;margin-bottom:32px}
+    .folha:last-child{page-break-after:auto}
+    h1{font-size:15px;text-align:center;margin:0 0 8px}
+    .cat{text-align:center;font-weight:bold;margin:0 0 8px;letter-spacing:.04em}
+    p{margin:0 0 6px}
+    table{width:100%;border-collapse:collapse;margin:10px 0 12px}
+    th,td{border:1px solid #444;padding:5px 6px;height:18px;text-align:center}
+    th.nome,td.nome{text-align:left;width:34%}
+    th.num,td.num{width:28px}
+    th.obs{width:18%;font-size:10px}
+    .rot{font-weight:bold;margin-top:8px}
+    .linha{display:flex;gap:6px;align-items:flex-end}
+    .linha span{flex:1;border-bottom:1px solid #444;height:14px}
+    .linha span.curta{flex:0 0 160px}
+    .no-print{text-align:center;margin:12px 0}
+    @media print{.no-print{display:none}body{padding:0}}
+  </style></head><body>
+  <div class="no-print"><button onclick="window.print()" style="padding:8px 18px;font-size:13px;cursor:pointer">Imprimir / Salvar PDF</button></div>
+  ${folhas||'<p>Nenhuma frequência gerada.</p>'}
+  </body></html>`);
+  win.document.close();
 }
 
 // ============================

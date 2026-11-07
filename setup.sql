@@ -3845,3 +3845,83 @@ AS $function$ DECLARE v_lesson class_lessons%ROWTYPE; r jsonb; BEGIN
       status=EXCLUDED.status, lesson_id=EXCLUDED.lesson_id, confirmed=true, marked_by=auth.uid();
   END LOOP;
 END; $function$;
+
+-- ============================================================
+-- Gerador de Frequências (etapa 1): categoria das turmas,
+-- feriados e frequências mensais geradas por turma.
+-- ============================================================
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS categoria text
+  CHECK (categoria IN ('vip','infantil','regular','regular_online'));
+-- NULL = "Pendente de classificação" (a recepção escolhe na tela).
+
+-- Classificação inicial só pelo que está no cadastro (nível KIDS, nome
+-- começando por "VIP ", nome com "ONLINE", nível STARTER/LEVEL em turma
+-- nomeada pelo nível). O resto fica pendente para a recepção decidir.
+-- Só toca nas turmas que recebem categoria: linhas antigas fora do
+-- classes_level_check (Básico/Intermediário) não podem ser regravadas.
+UPDATE classes c SET categoria = v.cat FROM (
+  SELECT id, CASE
+    WHEN level ILIKE 'KIDS%' THEN 'infantil'
+    WHEN name ILIKE 'VIP %' THEN 'vip'
+    WHEN name ILIKE '%ONLINE%' AND name NOT ILIKE '%CONVERSA%' THEN 'regular_online'
+    WHEN (name ILIKE 'LEVEL %' OR name ILIKE 'STARTER%') AND name NOT ILIKE '%ONG%' THEN 'regular'
+    ELSE NULL END AS cat FROM classes) v
+WHERE c.id=v.id AND c.categoria IS NULL AND v.cat IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS feriados (
+  data date PRIMARY KEY,
+  nome text NOT NULL,
+  tipo text NOT NULL DEFAULT 'nacional'
+    CHECK (tipo IN ('nacional','estadual','municipal','ponto_facultativo','recesso')),
+  created_by uuid DEFAULT auth.uid(),
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE feriados ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS feriados_select ON feriados;
+CREATE POLICY feriados_select ON feriados FOR SELECT USING (auth.uid() IS NOT NULL);
+DROP POLICY IF EXISTS feriados_write ON feriados;
+CREATE POLICY feriados_write ON feriados FOR ALL
+  USING (has_role(ARRAY['super_admin','direcao','secretaria']))
+  WITH CHECK (has_role(ARRAY['super_admin','direcao','secretaria']));
+
+INSERT INTO feriados (data,nome,tipo) VALUES
+  ('2026-01-01','Confraternização Universal','nacional'),
+  ('2026-04-03','Sexta-feira Santa','nacional'),
+  ('2026-04-21','Tiradentes','nacional'),
+  ('2026-05-01','Dia do Trabalho','nacional'),
+  ('2026-09-07','Independência do Brasil','nacional'),
+  ('2026-10-12','Nossa Senhora Aparecida','nacional'),
+  ('2026-10-15','Santa Teresa d''Ávila','municipal'),
+  ('2026-10-16','Ponto facultativo','ponto_facultativo'),
+  ('2026-10-17','Ponto facultativo','ponto_facultativo'),
+  ('2026-11-02','Finados','nacional'),
+  ('2026-11-15','Proclamação da República','nacional'),
+  ('2026-11-20','Dia da Consciência Negra','nacional'),
+  ('2026-12-25','Natal','nacional')
+ON CONFLICT (data) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS frequencias (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  class_id uuid NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  mes date NOT NULL CHECK (EXTRACT(DAY FROM mes) = 1),
+  categoria text NOT NULL CHECK (categoria IN ('vip','infantil','regular','regular_online')),
+  datas date[] NOT NULL DEFAULT '{}',
+  feriados_excluidos date[] NOT NULL DEFAULT '{}',
+  status text NOT NULL DEFAULT 'gerada'
+    CHECK (status IN ('gerada','correcao','aprovada','finalizada','impressa')),
+  observacao text,
+  generated_by uuid DEFAULT auth.uid(),
+  generated_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE (class_id, mes)
+);
+-- status: gerada = aguardando conferência; correcao = pendente de correção.
+ALTER TABLE frequencias ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS frequencias_select ON frequencias;
+CREATE POLICY frequencias_select ON frequencias FOR SELECT USING (has_role(ARRAY['super_admin','direcao','secretaria']));
+DROP POLICY IF EXISTS frequencias_insert ON frequencias;
+CREATE POLICY frequencias_insert ON frequencias FOR INSERT WITH CHECK (has_role(ARRAY['super_admin','direcao','secretaria']));
+DROP POLICY IF EXISTS frequencias_update ON frequencias;
+CREATE POLICY frequencias_update ON frequencias FOR UPDATE USING (has_role(ARRAY['super_admin','direcao','secretaria']));
+DROP POLICY IF EXISTS frequencias_delete ON frequencias;
+CREATE POLICY frequencias_delete ON frequencias FOR DELETE USING (is_admin());
