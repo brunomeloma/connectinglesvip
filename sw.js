@@ -28,6 +28,9 @@ self.addEventListener('fetch', (event) => {
   // /supabase/* é um rewrite pro backend (proxy same-origin) — nunca cachear,
   // a resposta varia por usuário autenticado e a cache key (URL) não sabe disso.
   if (url.pathname.startsWith('/supabase/')) return;
+  // Modelos de contrato (.docx): sempre da rede, pra troca anual do arquivo
+  // valer na hora em todos os computadores.
+  if (url.pathname.startsWith('/contratos/')) return;
 
   if (req.mode === 'navigate') {
     event.respondWith(

@@ -18,6 +18,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- ?v=: o service worker guarda arquivos do site pela URL; troque ao alterar o script -->
+<script src="contrato-docx.js?v=20261111"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 /* Hallmark · shape: app screen · genre: modern-minimal · theme: brand · redesign: restyle
@@ -3088,7 +3090,7 @@ pages.students=async function({view,id,aba}={}){
               ${(canManageBilling()||isAdmin())?`<td><button class="btn-icon" onclick="nav('financeiro',{view:'aluno',studentId:'${s.id}'})" title="Financeiro do aluno"><i class="fa fa-file-invoice-dollar"></i></button></td>`:''}
               <td><button class="btn-icon" onclick="nav('students',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
               <td><button class="btn-icon" onclick="imprimirRelatorioAluno('${s.id}')" title="Imprimir relatório"><i class="fa fa-file-pdf"></i></button></td>
-              <td><button class="btn-icon" onclick="imprimirContratoAluno('${s.id}')" title="Imprimir contrato"><i class="fa fa-file-contract"></i></button></td>
+              <td style="white-space:nowrap"><button class="btn-icon" onclick="imprimirContratoAluno('${s.id}')" title="Imprimir contrato (assinatura eletrônica)"><i class="fa fa-file-contract"></i></button><button class="btn-icon" onclick="abrirGerarContrato('${s.id}')" title="Contrato 2027 preenchido (Word)"><i class="fa fa-file-word"></i></button></td>
               <td><button class="btn-icon" onclick="imprimirFichaCadastro('${s.id}')" title="Imprimir ficha de cadastro"><i class="fa fa-id-card"></i></button></td>
               <td><button class="btn-icon" onclick="imprimirCapaDossie('${s.id}')" title="Imprimir capa do dossiê"><i class="fa fa-folder-open"></i></button></td>
               <td><button class="btn-icon" style="color:var(--brand)" onclick="gerarLinkPortal('${s.id}')" title="Link do portal do responsável"><i class="fa fa-user-shield"></i></button></td>
@@ -3303,6 +3305,7 @@ async function studentForm(id){
         <button class="btn btn-default" onclick="nav('students')">Cancelar</button>
         ${id?`<button class="btn btn-default" onclick="imprimirRelatorioAluno('${id}')"><i class="fa fa-file-pdf"></i> Imprimir Relatório</button>`:''}
         ${id?`<button class="btn btn-default" onclick="imprimirContratoAluno('${id}')"><i class="fa fa-file-contract"></i> Imprimir Contrato</button>`:''}
+        ${id?`<button class="btn btn-default" onclick="abrirGerarContrato('${id}')"><i class="fa fa-file-word"></i> Contrato 2027 (Word)</button>`:''}
         ${id?`<button class="btn btn-default" onclick="imprimirFichaCadastro('${id}')"><i class="fa fa-id-card"></i> Imprimir Ficha</button>`:''}
         ${id?`<button class="btn btn-default" onclick="imprimirCapaDossie('${id}')"><i class="fa fa-folder-open"></i> Imprimir Capa</button>`:''}
         <button class="btn btn-primary" onclick="saveStudent('${id||''}')"><i class="fa fa-save"></i> ${id?'Atualizar':'Adicionar'}</button>
@@ -3441,6 +3444,8 @@ async function saveStudent(id){
     return;
   }
   nav('financeiro',{view:'aluno',studentId});
+  // Matrícula nova: já abre o contrato preenchido pra imprimir e assinar.
+  if(!id&&studentId) abrirGerarContrato(studentId);
 }
 
 // Gera todas as mensalidades do contrato de uma vez (mesma tabela boletos
@@ -5322,10 +5327,10 @@ function contractHeader(studentName,docLabel){
   return `
     <p class="sign-doc-title">CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS DE ENSINO DE IDIOMAS</p>
     <p><strong>Aluno(a) beneficiário(a):</strong> ${esc(studentName)} &nbsp;•&nbsp; <strong>Módulo:</strong> ${esc(docLabel)}</p>
-    <p>Pelo presente instrumento particular de CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS – MÓDULO DO CURSO DE IDIOMA DA LÍNGUA INGLESA, A CONNECT INGLÊS VIP, inscrita sob o CNPJ nº 40.477.269/001-88, com sede na Rua Pernambuco, nº 978, Nova Imperatriz, Imperatriz – MA, representada neste ato pelo Diretor Executivo Nathan Barroso Pinheiro de Souza, portador da cédula de identidade nº 031072592006-2 SSP/MA, inscrito no CPF nº 017.459.223-00, neste ato denominada CONTRATADA, e o(a) CONTRATANTE, qualificado(a) no requerimento de matrícula, têm entre si, de livre e espontânea vontade, firmado o presente contrato de prestação de serviços, com as cláusulas e condições que seguem abaixo.</p>
+    <p>Pelo presente instrumento particular de CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS – MÓDULO DO CURSO DE IDIOMA DA LÍNGUA INGLESA, A CONNECT INGLÊS VIP, inscrita sob o CNPJ nº 40.477.269/0001-88, com sede na Rua Pernambuco, nº 978, Nova Imperatriz, Imperatriz – MA, representada neste ato pelo Diretor Executivo Nathan Barroso Pinheiro de Souza, portador da cédula de identidade nº 031072592006-2 SSP/MA, inscrito no CPF nº 017.459.223-00, neste ato denominada CONTRATADA, e o(a) CONTRATANTE, qualificado(a) no requerimento de matrícula, têm entre si, de livre e espontânea vontade, firmado o presente contrato de prestação de serviços, com as cláusulas e condições que seguem abaixo.</p>
     <p>Os dados pessoais do aluno, dos pais ou responsáveis serão sigilosos e estarão protegidos nos termos da Lei nº 13.709/2018 (Lei Geral de Proteção de Dados Pessoais – LGPD). Os dados coletados somente serão utilizados pela Connect Inglês Vip para fins educacionais ou para eventuais cobranças extrajudiciais e judiciais por inadimplemento, bem como para facilitar a comunicação entre a instituição e os responsáveis, sempre visando o desenvolvimento pedagógico do aluno. Para qualquer outra finalidade, a Connect Inglês Vip deverá obter autorização expressa e por escrito dos pais ou responsáveis.</p>
     <h4>Qualificação da empresa contratada</h4>
-    <p>CONNECT INGLÊS VIP — Rua Pernambuco, nº 978, Nova Imperatriz, Imperatriz – MA — Telefone (99) 99116-2110 e (99) 99184-5500 — CNPJ nº 40.477.269/001-88.</p>
+    <p>CONNECT INGLÊS VIP — Rua Pernambuco, nº 978, Nova Imperatriz, Imperatriz – MA — Telefone (99) 99116-2110 e (99) 99184-5500 — CNPJ nº 40.477.269/0001-88.</p>
     <p class="help-text">A qualificação completa do(a) CONTRATANTE e do(a) aluno(a) (dados pessoais, endereço, filiação etc.) consta no requerimento de matrícula preenchido na secretaria da escola, parte integrante deste contrato.</p>
   `;
 }
@@ -5333,8 +5338,8 @@ function contractHeader(studentName,docLabel){
 function distribuicaoTurmasHtml(){
   return `
     <ul style="margin:0 0 10px 18px;padding:0">
-      <li>Módulo Infantil (4 a 9 anos) — mensalidade R$ 130,00</li>
-      <li>Módulo Regular (a partir de 10 anos) — mensalidade R$ 150,00</li>
+      <li>Módulo Infantil (4 a 9 anos) — mensalidade R$ 140,00</li>
+      <li>Módulo Regular (a partir de 10 anos) — mensalidade R$ 160,00</li>
       <li>Módulo VIP individual — mensalidade R$ 350,00</li>
       <li>Módulo VIP Premium — mensalidade R$ 450,00</li>
     </ul>
@@ -5356,7 +5361,7 @@ function buildContractHtml(type,studentName){
 
   const blocks=[
     h4('1. Dos Serviços Prestados'),
-    cl('O presente contrato ANUAL tem por objeto a prestação de serviços educacionais, pela CONNECT INGLÊS VIP, no ano letivo de 2026.'),
+    cl('O presente contrato ANUAL tem por objeto a prestação de serviços educacionais, pela CONNECT INGLÊS VIP, no ano letivo de 2027.'),
     cl('Caso a matrícula seja realizada após o mês de janeiro, o presente contrato terá vigência a partir do mês da efetivação da matrícula até dezembro do mesmo ano letivo.'),
   ];
 
@@ -5378,9 +5383,9 @@ function buildContractHtml(type,studentName){
 
   blocks.push(
     cl('Na ocasião em que a contratação for efetuada após o início do primeiro mês (janeiro) que marca o início das aulas contratadas, o valor total do pacote será cobrado de modo proporcional ao ano vigente (entende-se como período anual o equivalente a 12 (doze) meses para cálculo do valor proporcional do pacote ora contratado).'),
-    cl('A vigência deste contrato inicia-se na data de sua assinatura e permanece válida até dezembro de 2026, período no qual a CONTRATADA deverá prestar os serviços contratados, observando a carga horária de 44 (quarenta e quatro) horas prevista para cada módulo.'),
+    cl('A vigência deste contrato inicia-se na data de sua assinatura e permanece válida até dezembro de 2027, período no qual a CONTRATADA deverá prestar os serviços contratados, observando a carga horária de 44 (quarenta e quatro) horas prevista para cada módulo.'),
     cl('FRISA-SE QUE O RECESSO NO MÊS DE JULHO NÃO ISENTA O(A) CONTRATANTE DO PAGAMENTO DA PARCELA DESTE MÊS, TENDO EM VISTA QUE A REFERIDA PARCELA FAZ PARTE DO PARCELAMENTO DO VALOR DO PACOTE, OU SEJA, TAL MÉTODO DE PAGAMENTO E QUANTIDADE DE PARCELAS FORAM ESCOLHIDOS EXCLUSIVAMENTE PELO(A) CONTRATANTE.'),
-    cl('As aulas do primeiro módulo (janeiro a junho) iniciaram entre os dias 12 e 17 de janeiro, variando conforme o dia de aula de cada turma — que possui um encontro semanal de duas horas, de segunda a sábado — e serão encerradas entre os dias 22 e 27 de junho. O segundo módulo (julho a dezembro) de 2026 retornará às atividades entre os dias 20 e 25 de julho de 2026, encerrando-se entre os dias 07 e 12 de dezembro, igualmente de acordo com o dia de aula de cada turma.'),
+    cl('As aulas do primeiro módulo (janeiro a junho) iniciaram entre os dias 12 e 17 de janeiro, variando conforme o dia de aula de cada turma — que possui um encontro semanal de duas horas, de segunda a sábado — e serão encerradas entre os dias 22 e 27 de junho. O segundo módulo (julho a dezembro) de 2027 retornará às atividades entre os dias 20 e 25 de julho de 2027, encerrando-se entre os dias 07 e 12 de dezembro, igualmente de acordo com o dia de aula de cada turma.'),
     cl('A CONTRATADA se obriga a prestar serviços educacionais de ensino de idiomas, presencialmente, nesta cidade, ou ainda online através de plataforma disponibilizada pela escola, para que as aulas sejam ministradas relativas ao curso e nível adequados ao aluno(a), baseados nos diversos cursos por ela adotados e no local e horários por ela definidos, e de acordo com o calendário escolar do período letivo contratado, sendo de inteira responsabilidade da CONTRATADA a orientação técnica sobre a prestação de serviços de ensino, inclusive quanto ao remanejamento de professores e à orientação didático-pedagógica, obedecendo a seu exclusivo critério, sem ingerência do CONTRATANTE.'),
     cl('A Connect Inglês Vip poderá prestar os serviços educacionais de forma presencial, não presencial ou híbrida, sempre de acordo com as normas regulatórias das autoridades educacionais da União, do Estado do Maranhão e do Município de Imperatriz, editadas em razão de qualquer fator externo que altere a normalidade do ensino. Quaisquer das formas acima adotadas serão consideradas como efetivo cumprimento do presente contrato.'),
 
@@ -5400,6 +5405,10 @@ function buildContractHtml(type,studentName){
     cl('Nos pagamentos parcelados, a forma de pagamento das parcelas mensais é exclusivamente por BOLETO BANCÁRIO, emitido somente pela CONTRATADA.'),
     cl('O pagamento das parcelas não será considerado quitado sem as devidas correções e atualizações de juros ou outros valores porventura acrescidos, como juros e multa por atraso, bem como sem a apresentação do comprovante de pagamento.'),
     cl('É de suma importância frisar que tais parcelas NÃO têm natureza de mensalidades convencionais, sendo parcelamentos do valor do MÓDULO escolhido exclusivamente pelo(a) CONTRATANTE, que tem a liberdade de escolher a quantidade de parcelas para quitação do pacote anual.'),
+    ...(type==='turma_infantil'?[
+      cl('Em caso de óbito do responsável financeiro, a família terá o prazo de 30 (trinta) dias para indicar um novo responsável, vindo a Connect Inglês Vip a assinar um novo contrato.'),
+      cl('Em caso de guarda compartilhada ou de guarda unilateral, mesmo que haja alterações em qualquer das hipóteses referentes à guarda legal da criança, o responsável que assina o contrato continua com a obrigação de efetuar os pagamentos do pacote semestral, seja na sua totalidade ou na forma parcelada.'),
+    ]:[]),
     cl('Em caso de inadimplência/falta de pagamento no vencimento, perder-se-á qualquer espécie de desconto, e o valor da parcela será corrigido, acrescido de multa moratória de 2,00% (dois por cento) ao mês e juros moratórios de 1,00% (um por cento) ao mês, aplicados à base de 0,033% ao dia.'),
     cl('Em caso de inadimplência, a CONTRATADA poderá rescindir o contrato, independentemente da exigibilidade do débito vencido ou vincendo, podendo recusar a efetivação de novo contrato caso o débito não seja integralmente quitado.'),
     cl('O CONTRATANTE tem ciência de que, em caso de inadimplência dos valores contratados por 30 (trinta) dias ou mais, a CONTRATADA poderá levar a protesto e incluir seu nome nos cadastros restritivos de crédito (SPC, SERASA etc.), com conhecimento e autorização, ficando a critério da CONTRATADA promover a cobrança judicial ou extrajudicial do débito.'),
@@ -5430,7 +5439,7 @@ function buildContractHtml(type,studentName){
 
     h4('9. Das Disposições Gerais'),
     cl('Quanto aos feriados nacionais, estaduais e municipais, a CONTRATADA acompanhará os dias fixados pela maioria das escolas privadas e públicas de Imperatriz (MA), não havendo reposição de aulas não ministradas em razão de feriados.'),
-    cl('Em caso de inadimplência ao final do ano letivo de 2026, a CONTRATADA poderá recusar a renovação de matrícula do aluno para o ano seguinte.'),
+    cl('Em caso de inadimplência ao final do ano letivo de 2027, a CONTRATADA poderá recusar a renovação de matrícula do aluno para o ano seguinte.'),
     cl('Em caso de emergência, o(a) aluno(a) será encaminhado ao hospital público da cidade-sede da CONTRATADA, salvo se possuir plano de saúde na mesma região.'),
     cl('Caso o aluno possua plano de saúde, os responsáveis deverão informar à CONTRATADA o hospital de referência, entregando cópia da certidão de nascimento e da carteirinha do plano junto à secretaria.')
   );
@@ -6989,6 +6998,206 @@ async function imprimirContratoAluno(id){
   win.document.open();
   win.document.write(html);
   win.document.close();
+}
+
+// ============================
+// CONTRATO 2027 EM WORD — preenche o .docx oficial (pasta /contratos) com
+// os dados do cadastro. O que o cadastro não guarda (parentesco, guarda,
+// filiação, parcelas...) é conferido numa janela antes de gerar.
+// ============================
+let _jszipPromise=null;
+function carregarJsZip(){
+  if(window.JSZip) return Promise.resolve();
+  if(!_jszipPromise)_jszipPromise=new Promise((ok,fail)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+    s.onload=ok;
+    s.onerror=()=>{_jszipPromise=null;fail(new Error('Não foi possível carregar o gerador de Word. Verifique a internet e tente de novo.'));};
+    document.head.appendChild(s);
+  });
+  return _jszipPromise;
+}
+let _ctrAluno=null;
+const CTR_PARENTESCOS=['Mãe','Pai','Avó','Avô','Tia','Tio','O(a) próprio(a) aluno(a)'];
+function ctrModeloPadrao(s){
+  const m=String(s.modalidade||'').toUpperCase(),l=String(s.level||'').toUpperCase();
+  if(m==='KIDS'||l.startsWith('KIDS')) return 'infantil';
+  if(m==='VIP') return 'vip';
+  return 'regular';
+}
+function ctrMoeda(n){return Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function ctrNum(v){v=String(v||'').trim();if(!v)return 0;if(v.includes(','))v=v.replace(/\./g,'').replace(',','.');return parseFloat(v)||0;}
+function ctrDataBR(iso){return iso?fdate(iso):'';}
+function ctrEndereco(rua,num,texto){if(rua)return num?`${rua}, ${num}`:rua;return texto||'';}
+function ctrMeses(ini,fim){
+  if(!ini||!fim) return {n:'',txt:''};
+  const[a1,m1]=ini.split('-').map(Number),[a2,m2]=fim.split('-').map(Number);
+  const n=(a2-a1)*12+(m2-m1)+1;
+  if(!(n>=1)) return {n:'',txt:''};
+  const nm=i=>MESES_NOME[i-1].toLowerCase();
+  return {n,txt:a1===a2?`${nm(m1)} a ${nm(m2)} de ${a2}`:`${nm(m1)} de ${a1} a ${nm(m2)} de ${a2}`};
+}
+function ctrDadosContratante(s,fonte){
+  const endAluno=ctrEndereco(s.logradouro,s.numero,s.address);
+  if(fonte==='aluno') return {nome:`${s.first_name||''} ${s.last_name||''}`.trim(),estado_civil:s.estado_civil||'',profissao:s.profissao||'',
+    nascimento:ctrDataBR(s.date_birth),rg:s.rg||'',cpf:s.cpf||'',parentesco:'O(a) próprio(a) aluno(a)',
+    endereco:endAluno,bairro:s.bairro||'',cep:s.cep||'',celular:s.mobile_number||s.whatsapp||'',email:s.email||''};
+  return {nome:s.parent_name||'',estado_civil:s.parent_estado_civil||'',profissao:s.parent_profissao||'',
+    nascimento:'',rg:s.parent_rg||'',cpf:s.parent_cpf||'',parentesco:'',
+    endereco:ctrEndereco(s.parent_logradouro,s.parent_numero,s.parent_address)||endAluno,
+    bairro:s.parent_bairro||s.bairro||'',cep:s.cep||'',celular:s.parent_mobile||'',email:s.parent_email||''};
+}
+
+async function abrirGerarContrato(id){
+  const{data:s,error}=await sb.from('students').select('*,class:classes(name)').eq('id',id).single();
+  if(error||!s){alert('Não foi possível carregar os dados do aluno.'+(error?' '+error.message:''));return;}
+  _ctrAluno=s;
+  const fonte=s.parent_name?'resp':'aluno';
+  const meses=ctrMeses(s.contrato_inicio,s.contrato_fim);
+  const parcela=s.mensalidade_valor!=null?ctrMoeda(s.mensalidade_valor):'';
+  const total=(meses.n&&s.mensalidade_valor!=null)?ctrMoeda(meses.n*s.mensalidade_valor):'';
+  const inp=(id,label,val,extra='')=>`<div class="form-col"><label>${label}</label><input id="${id}" value="${esc(val||'')}" ${extra}></div>`;
+  const hoje=new Date();const hojeIso=hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
+  const corpo=`
+    <div class="form-row">
+      <div class="form-col"><label>Contrato</label><select id="ctr-modelo" onchange="ctrAtualizarSecoes()">
+        ${Object.entries(ContratoDocx.MODELOS).map(([k,m])=>`<option value="${k}" ${k===ctrModeloPadrao(s)?'selected':''}>${m.label}</option>`).join('')}
+      </select></div>
+      <div class="form-col"><label>Quem assina (contratante)</label><select id="ctr-fonte" onchange="ctrPreencherContratante()">
+        <option value="resp" ${fonte==='resp'?'selected':''}>Responsável</option>
+        <option value="aluno" ${fonte==='aluno'?'selected':''}>O próprio aluno</option>
+      </select></div>
+      ${inp('ctr-data','Data do contrato',hojeIso,'type="date"')}
+    </div>
+    <h4 style="margin:14px 0 6px">Contratante</h4>
+    <div class="form-row">${inp('ctr-c-nome','Nome completo','')}</div>
+    <div class="form-row">
+      <div class="form-col"><label>Estado civil</label><select id="ctr-c-ec">${estadoCivilOptions('')}</select></div>
+      ${inp('ctr-c-prof','Profissão','')}
+      ${inp('ctr-c-nasc','Data de nascimento','','placeholder="dd/mm/aaaa"')}
+    </div>
+    <div class="form-row">
+      ${inp('ctr-c-rg','RG','')}
+      ${inp('ctr-c-cpf','CPF','')}
+      <div class="form-col"><label>Parentesco com o aluno</label><input id="ctr-c-par" list="ctr-par-list" onchange="ctrParentescoMudou()"><datalist id="ctr-par-list">${CTR_PARENTESCOS.map(p=>`<option value="${p}">`).join('')}</datalist></div>
+    </div>
+    <div class="form-row">
+      <div class="form-col"><label>Quem tem a guarda (aluno menor)</label><select id="ctr-c-guarda">
+        <option value="">Não se aplica</option><option value="pai">Pai</option><option value="mae">Mãe</option><option value="avos">Avós</option><option value="outros">Outros</option>
+      </select></div>
+      ${inp('ctr-c-cel','Celular','')}
+      ${inp('ctr-c-email','E-mail','')}
+    </div>
+    <div class="form-row">${inp('ctr-c-end','Endereço','')}${inp('ctr-c-bairro','Bairro','')}${inp('ctr-c-cep','CEP','')}</div>
+    <div id="ctr-sec-aluno">
+      <h4 style="margin:14px 0 6px">Aluno</h4>
+      <div class="form-row">
+        ${inp('ctr-a-nac','Nacionalidade','Brasileira')}
+        ${inp('ctr-a-doc','Certidão de nascimento ou CPF',s.cpf||'')}
+        ${inp('ctr-a-turma','Turma',s.class?.name||s.level||'')}
+      </div>
+      <div class="form-row">${inp('ctr-a-mae','Nome completo da mãe','')}${inp('ctr-a-pai','Nome completo do pai','')}</div>
+      <div class="form-row">${inp('ctr-a-nec','Necessidades educacionais especiais','Nenhuma')}${inp('ctr-a-escola','Escola regular de matrícula','')}</div>
+    </div>
+    <h4 style="margin:14px 0 6px">Pagamento</h4>
+    <div class="form-row">
+      <div class="form-col"><label>Forma</label><select id="ctr-pg-forma"><option value="parcelado">Parcelado</option><option value="vista">À vista</option></select></div>
+      ${inp('ctr-pg-n','Nº de parcelas',meses.n,'type="number" min="1" oninput="ctrRecalcularTotal()"')}
+      ${inp('ctr-pg-parcela','Valor da parcela (R$)',parcela,'oninput="ctrRecalcularTotal()"')}
+      ${inp('ctr-pg-total','Valor total (R$)',total)}
+    </div>
+    <div class="form-row">
+      ${inp('ctr-pg-meses','Pelos meses de',meses.txt,'placeholder="ex.: fevereiro a dezembro de 2027"')}
+      ${inp('ctr-pg-dia','Dia do vencimento',s.mensalidade_vencimento_dia||'','type="number" min="1" max="31"')}
+    </div>
+    <div id="ctr-sec-vip">
+      <h4 style="margin:14px 0 6px">Aulas VIP</h4>
+      <div class="form-row">${inp('ctr-v1-data','Data de ingresso (nov. a abr.)',s.date_joining||'','type="date"')}${inp('ctr-v1-enc','Encontros','','type="number" min="0"')}${inp('ctr-v1-h','Horas-aula','','type="number" min="0"')}</div>
+      <div class="form-row">${inp('ctr-v2-data','Data de retorno (jul. a dez.)','','type="date"')}${inp('ctr-v2-enc','Encontros','','type="number" min="0"')}${inp('ctr-v2-h','Horas-aula','','type="number" min="0"')}</div>
+    </div>
+    <div id="ctr-sec-premium">
+      <h4 style="margin:14px 0 6px">Aulas VIP Premium</h4>
+      <div class="form-row">${inp('ctr-p-ini','Data de ingresso',s.date_joining||'','type="date"')}${inp('ctr-p-fim','Data de término','','type="date"')}</div>
+      <div class="form-row">${inp('ctr-p-enc','Encontros','','type="number" min="0"')}${inp('ctr-p-h','Horas-aula','','type="number" min="0"')}</div>
+    </div>
+    <p class="help-text" style="margin-top:10px">Campo em branco sai em branco no contrato, para preencher à caneta. Nada aqui altera o cadastro do aluno.</p>
+    <div id="ctr-alert" class="alert"></div>`;
+  freqModal(`<i class="fa fa-file-word"></i> Contrato 2027 — ${esc(s.first_name)} ${esc(s.last_name)}`,corpo,
+    `<button class="btn btn-default" onclick="freqFecharModal()">Cancelar</button>
+     <button class="btn btn-primary" id="ctr-btn-gerar" onclick="gerarContratoWord()"><i class="fa fa-download"></i> Gerar contrato (Word)</button>`);
+  ctrPreencherContratante();
+  ctrAtualizarSecoes();
+}
+function ctrAtualizarSecoes(){
+  const m=$('ctr-modelo').value;
+  $('ctr-sec-aluno').style.display=(m==='infantil'||m==='regular')?'':'none';
+  $('ctr-sec-vip').style.display=m==='vip'?'':'none';
+  $('ctr-sec-premium').style.display=m==='vip_premium'?'':'none';
+}
+function ctrPreencherContratante(){
+  const c=ctrDadosContratante(_ctrAluno,$('ctr-fonte').value);
+  const set=(id,v)=>{$(id).value=v||'';};
+  set('ctr-c-nome',c.nome);set('ctr-c-ec',c.estado_civil);set('ctr-c-prof',c.profissao);set('ctr-c-nasc',c.nascimento);
+  set('ctr-c-rg',c.rg);set('ctr-c-cpf',c.cpf);set('ctr-c-par',c.parentesco);set('ctr-c-cel',c.celular);
+  set('ctr-c-email',c.email);set('ctr-c-end',c.endereco);set('ctr-c-bairro',c.bairro);set('ctr-c-cep',c.cep);
+  if($('ctr-fonte').value==='aluno') $('ctr-c-guarda').value='';
+}
+// Mãe/Pai assinando: já sugere a filiação e a guarda.
+function ctrParentescoMudou(){
+  const p=$('ctr-c-par').value.trim().toLowerCase(),nome=$('ctr-c-nome').value.trim();
+  if(p==='mãe'||p==='mae'){if(!$('ctr-a-mae').value)$('ctr-a-mae').value=nome;if(!$('ctr-c-guarda').value)$('ctr-c-guarda').value='mae';}
+  else if(p==='pai'){if(!$('ctr-a-pai').value)$('ctr-a-pai').value=nome;if(!$('ctr-c-guarda').value)$('ctr-c-guarda').value='pai';}
+  else if(p.startsWith('av')){if(!$('ctr-c-guarda').value)$('ctr-c-guarda').value='avos';}
+}
+function ctrRecalcularTotal(){
+  const n=parseInt($('ctr-pg-n').value)||0,v=ctrNum($('ctr-pg-parcela').value);
+  if(n&&v) $('ctr-pg-total').value=ctrMoeda(n*v);
+}
+
+async function gerarContratoWord(){
+  const s=_ctrAluno,val=id=>($(id)?.value||'').trim();
+  const modelo=val('ctr-modelo');
+  if(!val('ctr-c-nome')){showAlert('ctr-alert','Informe o nome do contratante.','danger');return;}
+  const ec=val('ctr-c-ec');
+  const n=parseInt(val('ctr-pg-n'))||0;
+  const forma=val('ctr-pg-forma');
+  const totalNum=ctrNum(val('ctr-pg-total')),parcelaNum=ctrNum(val('ctr-pg-parcela')),dia=parseInt(val('ctr-pg-dia'))||0;
+  const parcelasTxt=n?`${n} ${n===1?'parcela':'parcelas'}`:'';
+  const dados={
+    modelo,
+    data_contrato:val('ctr-data')?fdate(val('ctr-data')):'',
+    contratante:{nome:val('ctr-c-nome'),estado_civil:ec,
+      ec_casado:ec==='Casado(a)'||ec==='União estável',ec_solteiro:ec==='Solteiro(a)',ec_separado:ec==='Divorciado(a)'||ec==='Separado(a)',
+      guarda:val('ctr-c-guarda'),profissao:val('ctr-c-prof'),nascimento:val('ctr-c-nasc'),rg:val('ctr-c-rg'),cpf:val('ctr-c-cpf'),
+      parentesco:val('ctr-c-par'),endereco:val('ctr-c-end'),bairro:val('ctr-c-bairro'),cep:val('ctr-c-cep'),celular:val('ctr-c-cel'),email:val('ctr-c-email')},
+    pagamento:{forma,parcelas:forma==='parcelado'?parcelasTxt:''},
+    aluno:{nome:`${s.first_name||''} ${s.last_name||''}`.trim(),nascimento:ctrDataBR(s.date_birth),nacionalidade:val('ctr-a-nac'),
+      naturalidade:s.naturalidade||'',documento:val('ctr-a-doc'),sexo:s.gender==='female'?'f':(s.gender==='male'?'m':''),
+      mae:val('ctr-a-mae'),pai:val('ctr-a-pai'),modulo:modelo==='infantil'?'infantil':(modelo==='regular'?'regular':''),
+      turma:val('ctr-a-turma'),necessidades:val('ctr-a-nec'),escola:val('ctr-a-escola')},
+    valores:{total:totalNum?ctrMoeda(totalNum):'',total_extenso:totalNum?ContratoDocx.reaisPorExtenso(totalNum):'',
+      parcelas:forma==='vista'?'1 parcela (à vista)':parcelasTxt,meses:val('ctr-pg-meses'),parcela:parcelaNum?ctrMoeda(parcelaNum):'',
+      dia:dia?String(dia):'',dia_extenso:dia?ContratoDocx.inteiroPorExtenso(dia):''},
+    vip:{p1:{data:ctrDataBR(val('ctr-v1-data')),encontros:val('ctr-v1-enc'),horas:val('ctr-v1-h')},
+         p2:{data:ctrDataBR(val('ctr-v2-data')),encontros:val('ctr-v2-enc'),horas:val('ctr-v2-h')}},
+    premium:{ingresso:ctrDataBR(val('ctr-p-ini')),termino:ctrDataBR(val('ctr-p-fim')),encontros:val('ctr-p-enc'),horas:val('ctr-p-h')},
+  };
+  const btn=$('ctr-btn-gerar');btn.disabled=true;btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Gerando...';
+  try{
+    await carregarJsZip();
+    const resp=await fetch(ContratoDocx.MODELOS[modelo].arquivo,{cache:'no-store'});
+    if(!resp.ok) throw new Error('Modelo de contrato não encontrado ('+resp.status+').');
+    const blob=await ContratoDocx.preencher(window.JSZip,await resp.arrayBuffer(),dados,'blob');
+    const nomeArq=`Contrato ${ContratoDocx.MODELOS[modelo].label.replace(/[()]/g,'').trim()} 2027 - ${dados.aluno.nome}`.replace(/[\\/:*?"<>|]/g,'')+'.docx';
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nomeArq;document.body.appendChild(a);a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
+    freqFecharModal();
+    showAlert('page-alert',`Contrato baixado: ${nomeArq}. Abra no Word, confira e imprima.`,'success');
+  }catch(e){
+    showAlert('ctr-alert','Erro ao gerar o contrato: '+e.message,'danger');
+  }finally{
+    btn.disabled=false;btn.innerHTML='<i class="fa fa-download"></i> Gerar contrato (Word)';
+  }
 }
 
 // Ficha de Cadastro — réplica do formulário de matrícula em papel (nome,
