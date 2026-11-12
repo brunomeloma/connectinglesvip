@@ -7111,7 +7111,7 @@ async function abrirGerarContrato(id){
       ${inp('ctr-pg-dia','Dia do vencimento',s.mensalidade_vencimento_dia||'','type="number" min="1" max="31"')}
     </div>
     <div class="form-row">
-      <div class="form-col"><label>Black Connect (50% em uma parcela)</label><select id="ctr-black" onchange="$('ctr-black-mes-col').style.display=this.value==='sim'?'':'none'">
+      <div class="form-col"><label>Black Connect (50% em uma parcela)</label><select id="ctr-black" onchange="$('ctr-black-mes-col').style.display=this.value==='sim'?'':'none';ctrRecalcularTotal()">
         <option value="nao">Não</option><option value="sim">Sim</option>
       </select></div>
       <div class="form-col" id="ctr-black-mes-col" style="display:none"><label>Qual mês terá 50%? <span class="required">*</span></label><select id="ctr-black-mes">
@@ -7158,9 +7158,12 @@ function ctrParentescoMudou(){
   else if(p==='pai'){if(!$('ctr-a-pai').value)$('ctr-a-pai').value=nome;if(!$('ctr-c-guarda').value)$('ctr-c-guarda').value='pai';}
   else if(p.startsWith('av')){if(!$('ctr-c-guarda').value)$('ctr-c-guarda').value='avos';}
 }
+// Black Connect: uma das parcelas (fevereiro ou novembro) sai com 50%,
+// então o total desconta meia parcela.
 function ctrRecalcularTotal(){
   const n=parseInt($('ctr-pg-n').value)||0,v=ctrNum($('ctr-pg-parcela').value);
-  if(n&&v) $('ctr-pg-total').value=ctrMoeda(n*v);
+  const desconto=$('ctr-black')?.value==='sim'?v/2:0;
+  if(n&&v) $('ctr-pg-total').value=ctrMoeda(n*v-desconto);
 }
 
 async function gerarContratoWord(){
@@ -7187,7 +7190,9 @@ async function gerarContratoWord(){
       mae:val('ctr-a-mae'),pai:val('ctr-a-pai'),modulo:modelo==='infantil'?'infantil':(modelo==='regular'?'regular':''),
       turma:val('ctr-a-turma'),necessidades:val('ctr-a-nec'),escola:val('ctr-a-escola')},
     valores:{total:totalNum?ctrMoeda(totalNum):'',total_extenso:totalNum?ContratoDocx.reaisPorExtenso(totalNum):'',
-      parcelas:forma==='vista'?'1 parcela (à vista)':parcelasTxt,meses:val('ctr-pg-meses'),parcela:parcelaNum?ctrMoeda(parcelaNum):'',
+      parcelas:forma==='vista'?'1 parcela (à vista)':parcelasTxt,meses:val('ctr-pg-meses'),
+      // com Black Connect a cláusula diz qual parcela sai pela metade
+      parcela:!parcelaNum?'':ctrMoeda(parcelaNum)+(black==='sim'&&forma==='parcelado'?`, exceto a parcela de ${blackMes}, de R$ ${ctrMoeda(parcelaNum/2)} (50% de desconto Black Connect),`:''),
       dia:dia?String(dia):'',dia_extenso:dia?ContratoDocx.inteiroPorExtenso(dia):''},
     vip:{p1:{data:ctrDataBR(val('ctr-v1-data')),encontros:val('ctr-v1-enc'),horas:val('ctr-v1-h')},
          p2:{data:ctrDataBR(val('ctr-v2-data')),encontros:val('ctr-v2-enc'),horas:val('ctr-v2-h')}},
