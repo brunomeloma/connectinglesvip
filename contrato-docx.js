@@ -171,7 +171,7 @@
           p=marcar(p,[pg.forma==='vista',pg.forma==='parcelado']);
           if(pg.forma==='parcelado') p=acrescentar(p,pg.parcelas);
         }
-        else if(comeca('CORRESPONDENTE NOVEMBRO')) periodoVip=1;
+        else if(comeca('CORRESPONDENTE JANEIRO')||comeca('CORRESPONDENTE NOVEMBRO')) periodoVip=1;
         else if(comeca('CORRESPONDENTE JULHO')) periodoVip=2;
         else if(comeca('DATA DE INGRESSO DO ALUNO')) p=preencherTracos(p,[d.modelo==='vip_premium'?pr.ingresso:(vip.p1||{}).data],/_+\s*\/\s*_+\s*\/\s*_+/g);
         else if(comeca('DATA DE RETORNO DAS AULAS')) p=preencherTracos(p,[(vip.p2||{}).data],/_+\s*\/\s*_+\s*\/\s*_+/g);
