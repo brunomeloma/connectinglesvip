@@ -19,7 +19,7 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <!-- ?v=: o service worker guarda arquivos do site pela URL; troque ao alterar o script -->
-<script src="contrato-docx.js?v=20261111b"></script>
+<script src="contrato-docx.js?v=20261112"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 /* Hallmark · shape: app screen · genre: modern-minimal · theme: brand · redesign: restyle
@@ -7110,6 +7110,14 @@ async function abrirGerarContrato(id){
       ${inp('ctr-pg-meses','Pelos meses de',meses.txt,'placeholder="ex.: fevereiro a dezembro de 2027"')}
       ${inp('ctr-pg-dia','Dia do vencimento',s.mensalidade_vencimento_dia||'','type="number" min="1" max="31"')}
     </div>
+    <div class="form-row">
+      <div class="form-col"><label>Black Connect (50% em uma parcela)</label><select id="ctr-black" onchange="$('ctr-black-mes-col').style.display=this.value==='sim'?'':'none'">
+        <option value="nao">Não</option><option value="sim">Sim</option>
+      </select></div>
+      <div class="form-col" id="ctr-black-mes-col" style="display:none"><label>Qual mês terá 50%? <span class="required">*</span></label><select id="ctr-black-mes">
+        <option value="">Selecione</option><option value="fevereiro">Fevereiro</option><option value="novembro">Novembro</option>
+      </select></div>
+    </div>
     <div id="ctr-sec-vip">
       <h4 style="margin:14px 0 6px">Aulas VIP</h4>
       <div class="form-row">${inp('ctr-v1-data','Data de ingresso (jan. a jun.)',s.date_joining||'','type="date"')}${inp('ctr-v1-enc','Encontros','','type="number" min="0"')}${inp('ctr-v1-h','Horas-aula','','type="number" min="0"')}</div>
@@ -7159,6 +7167,8 @@ async function gerarContratoWord(){
   const s=_ctrAluno,val=id=>($(id)?.value||'').trim();
   const modelo=val('ctr-modelo');
   if(!val('ctr-c-nome')){showAlert('ctr-alert','Informe o nome do contratante.','danger');return;}
+  const black=val('ctr-black'),blackMes=val('ctr-black-mes');
+  if(black==='sim'&&!blackMes){showAlert('ctr-alert','Black Connect: escolha o mês que terá 50% de desconto (fevereiro ou novembro).','danger');$('ctr-black-mes').focus();return;}
   const ec=val('ctr-c-ec');
   const n=parseInt(val('ctr-pg-n'))||0;
   const forma=val('ctr-pg-forma');
@@ -7171,7 +7181,7 @@ async function gerarContratoWord(){
       ec_casado:ec==='Casado(a)'||ec==='União estável',ec_solteiro:ec==='Solteiro(a)',ec_separado:ec==='Divorciado(a)'||ec==='Separado(a)',
       guarda:val('ctr-c-guarda'),profissao:val('ctr-c-prof'),nascimento:val('ctr-c-nasc'),rg:val('ctr-c-rg'),cpf:val('ctr-c-cpf'),
       parentesco:val('ctr-c-par'),endereco:val('ctr-c-end'),bairro:val('ctr-c-bairro'),cep:val('ctr-c-cep'),celular:val('ctr-c-cel'),email:val('ctr-c-email')},
-    pagamento:{forma,parcelas:forma==='parcelado'?parcelasTxt:''},
+    pagamento:{forma,parcelas:forma==='parcelado'?parcelasTxt:'',black,black_mes:black==='sim'?blackMes:''},
     aluno:{nome:`${s.first_name||''} ${s.last_name||''}`.trim(),nascimento:ctrDataBR(s.date_birth),nacionalidade:val('ctr-a-nac'),
       naturalidade:s.naturalidade||'',documento:val('ctr-a-doc'),sexo:s.gender==='female'?'f':(s.gender==='male'?'m':''),
       mae:val('ctr-a-mae'),pai:val('ctr-a-pai'),modulo:modelo==='infantil'?'infantil':(modelo==='regular'?'regular':''),
