@@ -4023,3 +4023,112 @@ END; $function$;
 -- true quando a recepção corrigiu as datas à mão (Corrigir): a tela não
 -- acusa diferença com o cadastro; gerar de novo volta para false.
 ALTER TABLE frequencias ADD COLUMN IF NOT EXISTS datas_manuais boolean NOT NULL DEFAULT false;
+
+-- #####################################################################
+-- 46. MATRÍCULA / REMATRÍCULA POR ANO LETIVO
+-- #####################################################################
+-- Cada ano letivo do aluno vira uma linha: a primeira é a MATRÍCULA e as
+-- seguintes são REMATRÍCULAS (ex: matrícula 2026 em 16/01/2026,
+-- rematrícula 2027 em 17/11/2026). students.date_joining continua sendo
+-- a data da primeira matrícula e NÃO deve ser alterada para rematricular
+-- — assim o aluno continua contando em 2026 e passa a contar também em
+-- 2027. Só existe uma linha por (aluno, ano letivo).
+CREATE TABLE IF NOT EXISTS student_matriculas (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id uuid NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  ano_letivo int NOT NULL CHECK (ano_letivo BETWEEN 2000 AND 2100),
+  tipo text NOT NULL DEFAULT 'rematricula' CHECK (tipo IN ('matricula','rematricula')),
+  data date NOT NULL DEFAULT CURRENT_DATE,
+  class_id uuid REFERENCES classes(id) ON DELETE SET NULL,
+  modalidade text,
+  level text,
+  mensalidade_valor numeric(10,2),
+  observacao text,
+  created_by uuid REFERENCES profiles(id) ON DELETE SET NULL DEFAULT auth.uid(),
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (student_id, ano_letivo)
+);
+CREATE INDEX IF NOT EXISTS idx_sm_ano ON student_matriculas(ano_letivo);
+
+ALTER TABLE student_matriculas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "sm_select" ON student_matriculas;
+DROP POLICY IF EXISTS "sm_insert" ON student_matriculas;
+DROP POLICY IF EXISTS "sm_update" ON student_matriculas;
+DROP POLICY IF EXISTS "sm_delete" ON student_matriculas;
+CREATE POLICY "sm_select" ON student_matriculas FOR SELECT
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+CREATE POLICY "sm_insert" ON student_matriculas FOR INSERT
+  WITH CHECK (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+CREATE POLICY "sm_update" ON student_matriculas FOR UPDATE
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']));
+CREATE POLICY "sm_delete" ON student_matriculas FOR DELETE
+  USING (has_role(ARRAY['super_admin','direcao','financeiro','secretaria']));
+
+-- Backfill: todo aluno com data de matrícula ganha a linha da matrícula
+-- original no ano dela (reexecutável).
+INSERT INTO student_matriculas (student_id, ano_letivo, tipo, data, class_id, modalidade, level, mensalidade_valor, created_by)
+SELECT s.id, EXTRACT(year FROM s.date_joining)::int, 'matricula', s.date_joining,
+       s.class_id, s.modalidade, s.level, s.mensalidade_valor, NULL
+FROM students s
+WHERE s.date_joining IS NOT NULL
+ON CONFLICT (student_id, ano_letivo) DO NOTHING;
+
+-- Aluno novo: cria a linha da matrícula. Data da matrícula editada no
+-- cadastro: acompanha na linha da matrícula (se o ano novo já tiver uma
+-- rematrícula, só a data muda de lugar quando não houver conflito).
+CREATE OR REPLACE FUNCTION students_sync_matricula()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NEW.date_joining IS NULL THEN RETURN NEW; END IF;
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO student_matriculas (student_id, ano_letivo, tipo, data, class_id, modalidade, level, mensalidade_valor)
+    VALUES (NEW.id, EXTRACT(year FROM NEW.date_joining)::int, 'matricula', NEW.date_joining,
+            NEW.class_id, NEW.modalidade, NEW.level, NEW.mensalidade_valor)
+    ON CONFLICT (student_id, ano_letivo) DO NOTHING;
+  ELSIF NEW.date_joining IS DISTINCT FROM OLD.date_joining THEN
+    BEGIN
+      UPDATE student_matriculas
+         SET data = NEW.date_joining, ano_letivo = EXTRACT(year FROM NEW.date_joining)::int
+       WHERE student_id = NEW.id AND tipo = 'matricula';
+      IF NOT FOUND THEN
+        INSERT INTO student_matriculas (student_id, ano_letivo, tipo, data, class_id, modalidade, level, mensalidade_valor)
+        VALUES (NEW.id, EXTRACT(year FROM NEW.date_joining)::int, 'matricula', NEW.date_joining,
+                NEW.class_id, NEW.modalidade, NEW.level, NEW.mensalidade_valor)
+        ON CONFLICT (student_id, ano_letivo) DO NOTHING;
+      END IF;
+    EXCEPTION WHEN unique_violation THEN
+      NULL; -- já existe linha nesse ano (rematrícula): não sobrescreve
+    END;
+  END IF;
+  RETURN NEW;
+END; $$;
+DROP TRIGGER IF EXISTS trg_students_sync_matricula ON students;
+CREATE TRIGGER trg_students_sync_matricula
+  AFTER INSERT OR UPDATE OF date_joining ON students
+  FOR EACH ROW EXECUTE FUNCTION students_sync_matricula();
+
+-- Risco de evasão passa a olhar a ÚLTIMA matrícula/rematrícula, não só a
+-- primeira (a coluna date_joining do retorno traz essa última data).
+CREATE OR REPLACE FUNCTION get_alunos_risco_evasao(p_meses int DEFAULT 6)
+RETURNS TABLE(
+  id uuid, first_name text, last_name text, whatsapp text, mobile_number text,
+  date_joining date, meses_sem_rematricula int, class_name text, modalidade text
+) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$ BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  RETURN QUERY
+    WITH ult AS (
+      SELECT s.id AS sid, GREATEST(s.date_joining, (SELECT max(m.data) FROM student_matriculas m WHERE m.student_id = s.id)) AS d
+      FROM students s
+      WHERE s.status = true
+    )
+    SELECT s.id, s.first_name, s.last_name, s.whatsapp, s.mobile_number, ult.d,
+      (EXTRACT(year FROM age(CURRENT_DATE, ult.d))*12 + EXTRACT(month FROM age(CURRENT_DATE, ult.d)))::int,
+      c.name, s.modalidade
+    FROM students s
+    JOIN ult ON ult.sid = s.id
+    LEFT JOIN classes c ON c.id = s.class_id
+    WHERE ult.d IS NOT NULL
+      AND ult.d <= CURRENT_DATE - (p_meses || ' months')::interval
+    ORDER BY ult.d;
+END; $$;
