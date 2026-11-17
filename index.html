@@ -3052,6 +3052,7 @@ pages.students=async function({view,id,aba}={}){
   const anoAtual=new Date().getFullYear(),anoRematricula=anoAtual+1;
   const anosDisponiveis=[...new Set([anoAtual,anoRematricula,...Object.values(matriculasPorAluno).flat().map(m=>m.ano_letivo)])].sort((a,b)=>b-a);
   const temAno=(s,ano)=>(matriculasPorAluno[s.id]||[]).some(m=>m.ano_letivo===ano);
+  const nomesIrmaos=s=>todosBrutos.filter(x=>x.irmaos_grupo&&x.irmaos_grupo===s.irmaos_grupo&&x.id!==s.id).map(x=>x.first_name+' '+x.last_name);
   let todos=todosBrutos;
   if(/^\d{4}$/.test(anoFiltro)) todos=todos.filter(s=>temAno(s,parseInt(anoFiltro)));
   else if(/^pend-\d{4}$/.test(anoFiltro)) todos=todos.filter(s=>!temAno(s,parseInt(anoFiltro.slice(5))));
@@ -3090,7 +3091,7 @@ pages.students=async function({view,id,aba}={}){
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
-              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(s.first_name)}</div><strong>${esc(s.first_name)} ${esc(s.last_name)}</strong></div></td>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="t-avatar">${avatar(s.first_name)}</div><strong>${esc(s.first_name)} ${esc(s.last_name)}</strong>${s.irmaos_grupo?`<span class="badge badge-info" title="${esc('Irmão(s): '+(nomesIrmaos(s).join(', ')||'—'))}"><i class="fa fa-users"></i> Irmãos</span>`:''}</div></td>
               <td>${modalidade_badge(s.modalidade)}</td>
               <td>${esc(s.mobile_number)||'—'}</td>
               <td>${esc(s.class?.name)||'—'}</td>
@@ -3353,9 +3354,16 @@ function lerEndereco(prefix,rotulo){
 }
 
 async function studentForm(id){
-  const[{data:classes=[]},{data:schools=[]},{data:teachers=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true),sb.from('teachers').select('id,first_name,last_name').eq('status',true)]);
+  const[{data:classes=[]},{data:schools=[]},{data:teachers=[]},{data:todosAlunos=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true),sb.from('teachers').select('id,first_name,last_name').eq('status',true),sb.from('students').select('id,first_name,last_name,status').order('first_name')]);
   let s={};
   if(id){const{data}=await sb.from('students').select('*').eq('id',id).single();s=data||{};}
+  _formIrmaosOpcoes=(todosAlunos||[]).filter(a=>a.id!==id);
+  _formIrmaos=[];
+  if(s.irmaos_grupo){
+    const{data:irm=[]}=await sb.from('students').select('id,first_name,last_name,status').eq('irmaos_grupo',s.irmaos_grupo).neq('id',id);
+    _formIrmaos=irm||[];
+  }
+  _formIrmaosOriginal=_formIrmaos.map(a=>a.id).sort().join(',');
   const classOpts=classes.map(c=>`<option value="${c.id}" ${s.class_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   const schoolOpts=schools.map(c=>`<option value="${c.id}" ${s.school_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   const modalidadeOpts=MODALIDADES.map(m=>`<option value="${m}" ${s.modalidade===m?'selected':''}>${m}</option>`).join('');
@@ -3445,6 +3453,21 @@ async function studentForm(id){
             <div class="field"><label>Data da Matrícula <span class="required">*</span></label><input id="f-doj" type="date" value="${s.date_joining||''}">
               <div class="help-text">Data da primeira matrícula.${id?' Para rematricular não altere esta data: use "Matrículas e rematrículas" abaixo.':''}</div>
             </div>
+            <div class="field"><label>Tem irmão(s) matriculado(s)? <span class="required">*</span></label>
+              <select id="f-tem-irmao" onchange="$('f-irmaos-wrap').style.display=this.value==='sim'?'':'none'">
+                ${id?'':'<option value="">Selecione</option>'}
+                <option value="nao" ${id&&!_formIrmaos.length?'selected':''}>Não</option>
+                <option value="sim" ${_formIrmaos.length?'selected':''}>Sim</option>
+              </select>
+              <div id="f-irmaos-wrap" style="${_formIrmaos.length?'':'display:none'};margin-top:8px">
+                <div style="display:flex;gap:6px">
+                  <select id="f-irmao-add" style="flex:1"><option value="">Escolha o irmão...</option>${_formIrmaosOpcoes.map(a=>`<option value="${a.id}">${esc(a.first_name)} ${esc(a.last_name)}${a.status===false?' (inativo)':''}</option>`).join('')}</select>
+                  <button type="button" class="btn btn-default btn-sm" onclick="formIrmaoAdicionar()"><i class="fa fa-plus"></i> Adicionar</button>
+                </div>
+                <div id="f-irmaos-lista" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
+                <div class="help-text">Irmão ainda não cadastrado? Salve este aluno, cadastre o irmão e marque o vínculo no cadastro dele. Os irmãos saem juntos no mesmo Contrato 2027, com a soma das mensalidades.</div>
+              </div>
+            </div>
             <div class="field"><label>Início do Contrato</label><input id="f-contrato-inicio" type="month" value="${(s.contrato_inicio||'').slice(0,7)}"></div>
             <div class="field"><label>Fim do Contrato</label><input id="f-contrato-fim" type="month" value="${(s.contrato_fim||'').slice(0,7)}"></div>
           </div>
@@ -3472,8 +3495,24 @@ async function studentForm(id){
       </div>
     </div>
   `);
+  formIrmaosRender();
   if(id) renderMatriculasAluno(id);
 }
+let _formIrmaos=[],_formIrmaosOpcoes=[],_formIrmaosOriginal='';
+function formIrmaosRender(){
+  const el=$('f-irmaos-lista');
+  if(!el) return;
+  el.innerHTML=_formIrmaos.length?_formIrmaos.map(a=>`<span class="badge badge-info" style="display:inline-flex;align-items:center;gap:6px;padding:5px 8px">${esc(a.first_name)} ${esc(a.last_name)}<a href="#" onclick="formIrmaoRemover('${a.id}');return false" title="Remover" style="color:inherit"><i class="fa fa-times"></i></a></span>`).join(''):'<span class="help-text">Nenhum irmão escolhido.</span>';
+}
+function formIrmaoAdicionar(){
+  const sel=$('f-irmao-add'),idIrmao=sel.value;
+  if(!idIrmao||_formIrmaos.some(a=>a.id===idIrmao)) return;
+  const a=_formIrmaosOpcoes.find(x=>x.id===idIrmao);
+  if(a) _formIrmaos.push(a);
+  sel.value='';
+  formIrmaosRender();
+}
+function formIrmaoRemover(idIrmao){_formIrmaos=_formIrmaos.filter(a=>a.id!==idIrmao);formIrmaosRender();}
 
 async function saveStudent(id){
   const fn=$('f-fn').value.trim();
@@ -3481,6 +3520,9 @@ async function saveStudent(id){
   const doj=$('f-doj').value;
   const mobile=$('f-mobile').value.trim();
   if(!fn||!ln||!doj||!mobile){showAlert('page-alert','Preencha os campos obrigatórios.','danger');return;}
+  const temIrmao=$('f-tem-irmao')?.value;
+  if(temIrmao===''){showAlert('page-alert','Informe se o aluno tem irmão(s) matriculado(s) (seção 4).','danger');$('f-tem-irmao').focus();return;}
+  if(temIrmao==='sim'&&!_formIrmaos.length){showAlert('page-alert','Você marcou que o aluno tem irmão: escolha o(s) irmão(s) na seção 4 e clique em Adicionar.','danger');$('f-irmao-add').focus();return;}
   const dob=$('f-dob').value;
   const parentName=$('f-parent-name').value.trim();
   const parentCpf=$('f-parent-cpf').value.trim();
@@ -3558,6 +3600,13 @@ async function saveStudent(id){
     studentId=r.data?.id;
   }
   if(err){showAlert('page-alert','Erro: '+err.message,'danger');return;}
+
+  // Irmãos: grava o vínculo (lista completa) só se mudou.
+  const irmaosIds=temIrmao==='sim'?_formIrmaos.map(a=>a.id):[];
+  if(temIrmao&&irmaosIds.slice().sort().join(',')!==_formIrmaosOriginal){
+    const{error:eIrm}=await sb.rpc('definir_irmaos',{p_student_id:studentId,p_irmaos:irmaosIds});
+    if(eIrm){showAlert('page-alert','Aluno salvo, mas não foi possível gravar os irmãos: '+eIrm.message,'danger');return;}
+  }
 
   // Turma regular (principal) é gerenciada via matrícula, não escrita direto
   // — assim uma troca aqui encerra a matrícula antiga em vez de deixar duas
@@ -7213,10 +7262,18 @@ async function abrirGerarContrato(id){
   const{data:s,error}=await sb.from('students').select('*,class:classes(name)').eq('id',id).single();
   if(error||!s){alert('Não foi possível carregar os dados do aluno.'+(error?' '+error.message:''));return;}
   _ctrAluno=s;
+  // Irmãos (mesmo irmaos_grupo) entram no mesmo contrato.
+  let irmaos=[];
+  if(s.irmaos_grupo){
+    const{data:irm=[]}=await sb.from('students').select('*,class:classes(name)').eq('irmaos_grupo',s.irmaos_grupo).neq('id',s.id).order('first_name');
+    irmaos=irm||[];
+  }
+  _ctrAlunos=[s,...irmaos];
   const fonte=s.parent_name?'resp':'aluno';
   const meses=ctrMeses(s.contrato_inicio,s.contrato_fim);
-  const parcela=s.mensalidade_valor!=null?ctrMoeda(s.mensalidade_valor):'';
-  const total=(meses.n&&s.mensalidade_valor!=null)?ctrMoeda(meses.n*s.mensalidade_valor):'';
+  const somaMens=_ctrAlunos.filter(a=>a.status!==false).reduce((t,a)=>t+(Number(a.mensalidade_valor)||0),0);
+  const parcela=somaMens?ctrMoeda(somaMens):'';
+  const total=(meses.n&&somaMens)?ctrMoeda(meses.n*somaMens):'';
   const inp=(id,label,val,extra='')=>`<div class="form-col"><label>${label}</label><input id="${id}" value="${esc(val||'')}" ${extra}></div>`;
   const hoje=new Date();const hojeIso=hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
   const corpo=`
@@ -7250,16 +7307,24 @@ async function abrirGerarContrato(id){
       ${inp('ctr-c-email','E-mail','')}
     </div>
     <div class="form-row">${inp('ctr-c-end','Endereço','')}${inp('ctr-c-bairro','Bairro','')}${inp('ctr-c-cep','CEP','')}</div>
-    <div id="ctr-sec-aluno">
-      <h4 style="margin:14px 0 6px">Aluno</h4>
+    ${irmaos.length?`<div style="margin:14px 0 6px;padding:10px 12px;border:1px solid var(--gray-300);border-radius:var(--radius);background:var(--gray-50)">
+      <strong><i class="fa fa-users" style="color:var(--brand)"></i> Irmãos no mesmo contrato</strong>
+      ${_ctrAlunos.map((a,i)=>`<label style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:13px;cursor:pointer">
+        <input type="checkbox" class="ctr-incluir" data-i="${i}" style="width:auto" ${i===0?'checked disabled':(a.status!==false?'checked':'')} onchange="ctrIrmaosMudou()">
+        ${esc(a.first_name)} ${esc(a.last_name)} — mensalidade ${a.mensalidade_valor!=null?'R$ '+ctrMoeda(a.mensalidade_valor):'<span style="color:var(--danger)">não cadastrada</span>'}${a.status===false?' <span class="badge badge-secondary">inativo</span>':''}
+      </label>`).join('')}
+      <div class="help-text" id="ctr-irmaos-soma" style="margin-top:6px"></div>
+    </div>`:''}
+    ${_ctrAlunos.map((a,i)=>`<div class="ctr-sec-aluno" id="ctr-sec-aluno-${i}" style="${i===0||a.status!==false?'':'display:none'}">
+      <h4 style="margin:14px 0 6px">Aluno${_ctrAlunos.length>1?` ${i+1} — ${esc(a.first_name)} ${esc(a.last_name)}`:''}</h4>
       <div class="form-row">
-        ${inp('ctr-a-nac','Nacionalidade','Brasileira')}
-        ${inp('ctr-a-doc','Certidão de nascimento ou CPF',s.cpf||'')}
-        ${inp('ctr-a-turma','Turma',s.class?.name||s.level||'')}
+        ${inp(`ctr-a${i}-nac`,'Nacionalidade','Brasileira')}
+        ${inp(`ctr-a${i}-doc`,'Certidão de nascimento ou CPF',a.cpf||'')}
+        <div class="form-col ctr-col-turma"><label>Turma</label><input id="ctr-a${i}-turma" value="${esc(a.class?.name||a.level||'')}"></div>
       </div>
-      <div class="form-row">${inp('ctr-a-mae','Nome completo da mãe','')}${inp('ctr-a-pai','Nome completo do pai','')}</div>
-      <div class="form-row">${inp('ctr-a-nec','Necessidades educacionais especiais','Nenhuma')}${inp('ctr-a-escola','Escola regular de matrícula','')}</div>
-    </div>
+      <div class="form-row">${inp(`ctr-a${i}-mae`,'Nome completo da mãe','')}${inp(`ctr-a${i}-pai`,'Nome completo do pai','')}</div>
+      <div class="form-row">${inp(`ctr-a${i}-nec`,'Necessidades educacionais especiais','Nenhuma')}${inp(`ctr-a${i}-escola`,'Escola regular de matrícula','')}</div>
+    </div>`).join('')}
     <h4 style="margin:14px 0 6px">Pagamento</h4>
     <div class="form-row">
       <div class="form-col"><label>Forma</label><select id="ctr-pg-forma"><option value="parcelado">Parcelado</option><option value="vista">À vista</option></select></div>
@@ -7291,16 +7356,36 @@ async function abrirGerarContrato(id){
     </div>
     <p class="help-text" style="margin-top:10px">Campo em branco sai em branco no contrato, para preencher à caneta. Nada aqui altera o cadastro do aluno.</p>
     <div id="ctr-alert" class="alert"></div>`;
-  freqModal(`<i class="fa fa-file-word"></i> Contrato 2027 — ${esc(s.first_name)} ${esc(s.last_name)}`,corpo,
+  freqModal(`<i class="fa fa-file-word"></i> Contrato 2027 — ${esc(s.first_name)} ${esc(s.last_name)}${irmaos.length?' e irmão(s)':''}`,corpo,
     `<button class="btn btn-default" onclick="freqFecharModal()">Cancelar</button>
      <button class="btn btn-primary" id="ctr-btn-gerar" onclick="gerarContratoWord()"><i class="fa fa-download"></i> Gerar contrato (Word)</button>`);
   ctrPreencherContratante();
   ctrAtualizarSecoes();
+  if(irmaos.length) ctrIrmaosMudou(false);
+}
+let _ctrAlunos=[];
+function ctrAlunosIncluidos(){
+  if(_ctrAlunos.length<2) return _ctrAlunos.slice(0,1);
+  return _ctrAlunos.filter((a,i)=>i===0||document.querySelector(`.ctr-incluir[data-i="${i}"]`)?.checked);
+}
+// Marcou/desmarcou irmão: mostra/esconde o bloco dele e a parcela vira a
+// soma das mensalidades de quem está no contrato.
+function ctrIrmaosMudou(recalcular=true){
+  _ctrAlunos.forEach((a,i)=>{const el=$('ctr-sec-aluno-'+i);if(el)el.style.display=(i===0||document.querySelector(`.ctr-incluir[data-i="${i}"]`)?.checked)?'':'none';});
+  const inc=ctrAlunosIncluidos(),soma=inc.reduce((t,a)=>t+(Number(a.mensalidade_valor)||0),0);
+  const semValor=inc.filter(a=>a.mensalidade_valor==null);
+  const el=$('ctr-irmaos-soma');
+  if(el) el.innerHTML=`Parcela = ${inc.map(a=>`${esc(a.first_name)} R$ ${ctrMoeda(a.mensalidade_valor||0)}`).join(' + ')} = <strong>R$ ${ctrMoeda(soma)}</strong>${semValor.length?` <span style="color:var(--danger)">(sem mensalidade cadastrada: ${semValor.map(a=>esc(a.first_name)).join(', ')})</span>`:''}`;
+  if(recalcular){
+    $('ctr-pg-parcela').value=soma?ctrMoeda(soma):'';
+    if(!soma) $('ctr-pg-total').value='';
+    ctrRecalcularTotal();
+  }
 }
 function ctrAtualizarSecoes(){
   const m=$('ctr-modelo').value;
   // a ficha do aluno existe nos quatro contratos; turma só no Infantil/Regular
-  $('ctr-a-turma').closest('.form-col').style.display=(m==='infantil'||m==='regular')?'':'none';
+  document.querySelectorAll('.ctr-col-turma').forEach(el=>{el.style.display=(m==='infantil'||m==='regular')?'':'none';});
   $('ctr-sec-vip').style.display=m==='vip'?'':'none';
   $('ctr-sec-premium').style.display=m==='vip_premium'?'':'none';
 }
@@ -7315,8 +7400,9 @@ function ctrPreencherContratante(){
 // Mãe/Pai assinando: já sugere a filiação e a guarda.
 function ctrParentescoMudou(){
   const p=$('ctr-c-par').value.trim().toLowerCase(),nome=$('ctr-c-nome').value.trim();
-  if(p==='mãe'||p==='mae'){if(!$('ctr-a-mae').value)$('ctr-a-mae').value=nome;if(!$('ctr-c-guarda').value)$('ctr-c-guarda').value='mae';}
-  else if(p==='pai'){if(!$('ctr-a-pai').value)$('ctr-a-pai').value=nome;if(!$('ctr-c-guarda').value)$('ctr-c-guarda').value='pai';}
+  const preencheTodos=campo=>_ctrAlunos.forEach((a,i)=>{const el=$(`ctr-a${i}-${campo}`);if(el&&!el.value)el.value=nome;});
+  if(p==='mãe'||p==='mae'){preencheTodos('mae');if(!$('ctr-c-guarda').value)$('ctr-c-guarda').value='mae';}
+  else if(p==='pai'){preencheTodos('pai');if(!$('ctr-c-guarda').value)$('ctr-c-guarda').value='pai';}
   else if(p.startsWith('av')){if(!$('ctr-c-guarda').value)$('ctr-c-guarda').value='avos';}
 }
 // Black Connect: uma das parcelas (fevereiro ou novembro) sai com 50%,
@@ -7346,10 +7432,13 @@ async function gerarContratoWord(){
       guarda:val('ctr-c-guarda'),profissao:val('ctr-c-prof'),nascimento:val('ctr-c-nasc'),rg:val('ctr-c-rg'),cpf:val('ctr-c-cpf'),
       parentesco:val('ctr-c-par'),endereco:val('ctr-c-end'),bairro:val('ctr-c-bairro'),cep:val('ctr-c-cep'),celular:val('ctr-c-cel'),email:val('ctr-c-email')},
     pagamento:{forma,parcelas:forma==='parcelado'?parcelasTxt:'',black,black_mes:black==='sim'?blackMes:''},
-    aluno:{nome:`${s.first_name||''} ${s.last_name||''}`.trim(),nascimento:ctrDataBR(s.date_birth),nacionalidade:val('ctr-a-nac'),
-      naturalidade:s.naturalidade||'',documento:val('ctr-a-doc'),sexo:s.gender==='female'?'f':(s.gender==='male'?'m':''),
-      mae:val('ctr-a-mae'),pai:val('ctr-a-pai'),modulo:modelo==='infantil'?'infantil':(modelo==='regular'?'regular':''),
-      turma:val('ctr-a-turma'),necessidades:val('ctr-a-nec'),escola:val('ctr-a-escola')},
+    alunos:ctrAlunosIncluidos().map(a=>{
+      const i=_ctrAlunos.indexOf(a);
+      return {nome:`${a.first_name||''} ${a.last_name||''}`.trim(),nascimento:ctrDataBR(a.date_birth),nacionalidade:val(`ctr-a${i}-nac`),
+        naturalidade:a.naturalidade||'',documento:val(`ctr-a${i}-doc`),sexo:a.gender==='female'?'f':(a.gender==='male'?'m':''),
+        mae:val(`ctr-a${i}-mae`),pai:val(`ctr-a${i}-pai`),modulo:modelo==='infantil'?'infantil':(modelo==='regular'?'regular':''),
+        turma:val(`ctr-a${i}-turma`),necessidades:val(`ctr-a${i}-nec`),escola:val(`ctr-a${i}-escola`)};
+    }),
     valores:{total:totalNum?ctrMoeda(totalNum):'',total_extenso:totalNum?ContratoDocx.reaisPorExtenso(totalNum):'',
       parcelas:forma==='vista'?'1 parcela (à vista)':parcelasTxt,meses:val('ctr-pg-meses'),
       // com Black Connect a cláusula diz qual parcela sai pela metade
@@ -7365,7 +7454,7 @@ async function gerarContratoWord(){
     const resp=await fetch(ContratoDocx.MODELOS[modelo].arquivo,{cache:'no-store'});
     if(!resp.ok) throw new Error('Modelo de contrato não encontrado ('+resp.status+').');
     const blob=await ContratoDocx.preencher(window.JSZip,await resp.arrayBuffer(),dados,'blob');
-    const nomeArq=`Contrato ${ContratoDocx.MODELOS[modelo].label.replace(/[()]/g,'').trim()} 2027 - ${dados.aluno.nome}`.replace(/[\\/:*?"<>|]/g,'')+'.docx';
+    const nomeArq=`Contrato ${ContratoDocx.MODELOS[modelo].label.replace(/[()]/g,'').trim()} 2027 - ${dados.alunos.map(a=>a.nome).join(' e ')}`.replace(/[\\/:*?"<>|]/g,'')+'.docx';
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nomeArq;document.body.appendChild(a);a.click();
     setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
     freqFecharModal();

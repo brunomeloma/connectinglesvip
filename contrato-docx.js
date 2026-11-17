@@ -128,9 +128,43 @@
     });
   }
 
+  // ---------- irmãos no mesmo contrato ----------
+  // Início (offset do "<w:p") de cada parágrafo, com o texto dele.
+  function paragrafos(xml){
+    const lista=[],re=/<w:p[ >][\s\S]*?<\/w:p>/g;
+    let m;
+    while((m=re.exec(xml))){
+      // "<w:p " pode ser só o "<w:pPr" de outro parágrafo já aberto: o regex
+      // não-guloso pega do "<w:p" mais externo, então basta seguir em ordem.
+      lista.push({ini:m.index,txt:norm(textoParagrafo(m[0]))});
+    }
+    return lista;
+  }
+  // Repete o bloco "QUALIFICAÇÃO DO(A) ALUNO(A)" (título + tabela de dados)
+  // para cada aluno a mais, logo antes de "DA FUNDAMENTAÇÃO LEGAL".
+  function duplicarBlocoAluno(xml,qtd){
+    if(qtd<2) return xml;
+    const ps=paragrafos(xml);
+    const h=ps.find(p=>p.txt.includes('QUALIFICAÇÃO DO(A) ALUNO'));
+    const f=ps.find(p=>h&&p.ini>h.ini&&p.txt.includes('DA FUNDAMENTAÇÃO LEGAL'));
+    if(!h||!f) throw new Error('Este modelo de contrato não tem o bloco do aluno no formato esperado; não dá para incluir irmãos.');
+    const bloco=xml.slice(h.ini,f.ini);
+    const conta=t=>(bloco.match(new RegExp('<'+t+'[ >]','g'))||[]).length;
+    const fecha=t=>(bloco.match(new RegExp('</'+t+'>','g'))||[]).length;
+    if(conta('w:tbl')!==fecha('w:tbl')||conta('w:tc')!==fecha('w:tc')) throw new Error('Bloco do aluno do modelo não pode ser repetido (tabela incompleta).');
+    // cópias sem ids que o Word exige únicos
+    const copia=bloco.replace(/\s(?:w14:paraId|w14:textId)="[^"]*"/g,'').replace(/<w:bookmark(?:Start|End)\b[^>]*\/>/g,'');
+    return xml.slice(0,f.ini)+copia.repeat(qtd-1)+xml.slice(f.ini);
+  }
+
   // ---------- preenchimento ----------
+  // d.alunos (lista) gera um bloco de aluno para cada irmão no mesmo
+  // contrato; sem ela, usa d.aluno.
   function preencherDocumentXml(xml,d){
-    const c=d.contratante||{},a=d.aluno||{},pg=d.pagamento||{},v=d.valores||{},vip=d.vip||{},pr=d.premium||{};
+    const alunos=(d.alunos&&d.alunos.length)?d.alunos:[d.aluno||{}];
+    xml=duplicarBlocoAluno(xml,alunos.length);
+    const c=d.contratante||{},pg=d.pagamento||{},v=d.valores||{},vip=d.vip||{},pr=d.premium||{};
+    let a=alunos[0],idxAluno=-1;
     const partes=xml.split('</w:p>');
     let secao=null,periodoVip=1;
     for(let i=0;i<partes.length-1;i++){
@@ -144,7 +178,11 @@
       if(N.includes('DENOMINADA00')) p=substituir(p,/denominada00/gi,t=>t.slice(0,-2));
 
       if(N.includes('QUALIFICAÇÃO DO CONTRATANTE')){secao='c';continue;}
-      if(N.includes('QUALIFICAÇÃO DO(A) ALUNO')){secao='a';continue;}
+      if(N.includes('QUALIFICAÇÃO DO(A) ALUNO')){
+        secao='a';idxAluno++;a=alunos[idxAluno]||{};
+        if(alunos.length>1) partes[i]=substituir(p,/BENEFICIÁRIO\(A\)\s*:/i,()=>`BENEFICIÁRIO(A) — ${idxAluno+1}º ALUNO:`);
+        continue;
+      }
       if(N.includes('PESSOAS AUTORIZADAS')){secao='p';continue;}
       if(N.includes('DA FUNDAMENTAÇÃO LEGAL')){secao=null;continue;}
 
@@ -218,7 +256,7 @@
       mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
   }
 
-  const api={MODELOS,preencher,preencherDocumentXml,textoParagrafo,inteiroPorExtenso,reaisPorExtenso};
+  const api={MODELOS,preencher,preencherDocumentXml,duplicarBlocoAluno,textoParagrafo,inteiroPorExtenso,reaisPorExtenso};
   if(typeof module!=='undefined'&&module.exports) module.exports=api;
   else root.ContratoDocx=api;
 })(typeof window!=='undefined'?window:this);

@@ -4133,3 +4133,43 @@ AS $$ BEGIN
       AND ult.d <= CURRENT_DATE - (p_meses || ' months')::interval
     ORDER BY ult.d;
 END; $$;
+
+-- #####################################################################
+-- 47. IRMÃOS — um contrato só para os irmãos
+-- #####################################################################
+-- Irmãos compartilham o mesmo students.irmaos_grupo. Na matrícula a
+-- secretaria responde "tem irmão?" e escolhe os irmãos; o Contrato 2027
+-- (Word) sai com um bloco de aluno para cada irmão e o valor da parcela
+-- é a soma das mensalidades deles (ex: 150 + 100 = 250).
+ALTER TABLE students ADD COLUMN IF NOT EXISTS irmaos_grupo uuid;
+CREATE INDEX IF NOT EXISTS idx_students_irmaos_grupo ON students(irmaos_grupo) WHERE irmaos_grupo IS NOT NULL;
+
+-- Define a lista COMPLETA de irmãos do aluno: quem sai da lista deixa o
+-- grupo; quem entra traz junto os próprios irmãos; grupo que fica com um
+-- aluno só deixa de existir. Lista vazia = "não tem irmão".
+CREATE OR REPLACE FUNCTION definir_irmaos(p_student_id uuid, p_irmaos uuid[])
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE g uuid; ant uuid; lista uuid[];
+BEGIN
+  IF NOT has_role(ARRAY['super_admin','direcao','financeiro','secretaria','captacao']) THEN RAISE EXCEPTION 'Permissão negada'; END IF;
+  lista := ARRAY(SELECT DISTINCT x FROM unnest(COALESCE(p_irmaos,'{}'::uuid[])) x WHERE x IS NOT NULL AND x <> p_student_id);
+  SELECT irmaos_grupo INTO ant FROM students WHERE id = p_student_id;
+  IF ant IS NOT NULL THEN
+    UPDATE students SET irmaos_grupo = NULL
+     WHERE irmaos_grupo = ant AND id <> p_student_id AND NOT (id = ANY(lista));
+  END IF;
+  IF cardinality(lista) = 0 THEN
+    UPDATE students SET irmaos_grupo = NULL WHERE id = p_student_id;
+    g := NULL;
+  ELSE
+    g := COALESCE(ant, (SELECT irmaos_grupo FROM students WHERE id = ANY(lista) AND irmaos_grupo IS NOT NULL LIMIT 1), gen_random_uuid());
+    UPDATE students SET irmaos_grupo = g
+     WHERE id = p_student_id OR id = ANY(lista)
+        OR irmaos_grupo IN (SELECT irmaos_grupo FROM students WHERE id = ANY(lista) AND irmaos_grupo IS NOT NULL);
+  END IF;
+  UPDATE students s SET irmaos_grupo = NULL
+   WHERE s.irmaos_grupo IS NOT NULL AND s.irmaos_grupo IN (ant, g)
+     AND (SELECT count(*) FROM students t WHERE t.irmaos_grupo = s.irmaos_grupo) < 2;
+  RETURN g;
+END; $$;
