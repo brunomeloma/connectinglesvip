@@ -4071,6 +4071,7 @@ SELECT s.id, EXTRACT(year FROM s.date_joining)::int, 'matricula', s.date_joining
        s.class_id, s.modalidade, s.level, s.mensalidade_valor, NULL
 FROM students s
 WHERE s.date_joining IS NOT NULL
+  AND EXTRACT(year FROM s.date_joining) BETWEEN 2000 AND 2100  -- pula data digitada errada (ex: ano 22025)
 ON CONFLICT (student_id, ano_letivo) DO NOTHING;
 
 -- Aluno novo: cria a linha da matrícula. Data da matrícula editada no
@@ -4079,7 +4080,7 @@ ON CONFLICT (student_id, ano_letivo) DO NOTHING;
 CREATE OR REPLACE FUNCTION students_sync_matricula()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$ BEGIN
-  IF NEW.date_joining IS NULL THEN RETURN NEW; END IF;
+  IF NEW.date_joining IS NULL OR EXTRACT(year FROM NEW.date_joining) NOT BETWEEN 2000 AND 2100 THEN RETURN NEW; END IF;
   IF TG_OP = 'INSERT' THEN
     INSERT INTO student_matriculas (student_id, ano_letivo, tipo, data, class_id, modalidade, level, mensalidade_valor)
     VALUES (NEW.id, EXTRACT(year FROM NEW.date_joining)::int, 'matricula', NEW.date_joining,
