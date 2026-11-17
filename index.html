@@ -1092,7 +1092,7 @@ async function carregarRiscoEvasaoDash(){
   el.innerHTML=`<div class="panel" style="margin-bottom:18px">
     <div class="panel-head"><span class="panel-title"><i class="fa fa-exclamation-triangle" style="color:var(--danger)"></i> Alunos em risco de evasão</span><span style="font-size:12px;color:var(--gray-500)">${lista.length} aluno(s) sem rematrícula há 6+ meses</span></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Aluno</th><th>WhatsApp</th><th>Turma</th><th>Matriculado em</th><th>Sem rematrícula</th><th>Ações</th></tr></thead>
+      <thead><tr><th>Aluno</th><th>WhatsApp</th><th>Turma</th><th>Última (re)matrícula</th><th>Sem rematrícula</th><th>Ações</th></tr></thead>
       <tbody>${lista.map(a=>{
         const numero=(a.whatsapp||a.mobile_number||'').replace(/\D/g,'');
         const numFmt=numero&&!numero.startsWith('55')?'55'+numero:numero;
@@ -3037,6 +3037,7 @@ pages.students=async function({view,id,aba}={}){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
   const name=getFilter('st-name')||'';
   const classId=getFilter('st-class')||'';
+  const anoFiltro=getFilter('st-ano')||'';
   const abaInativos=aba==='inativos';
   const[{data:classes=[]},{data:schools=[]}]=await Promise.all([sb.from('classes').select('id,name').eq('status',true),sb.from('schools').select('id,name').eq('status',true)]);
   let q=sb.from('students').select('*,class:classes(name)').order('created_at',{ascending:false});
@@ -3047,7 +3048,13 @@ pages.students=async function({view,id,aba}={}){
     const{data:matriculados=[]}=await sb.rpc('get_turma_alunos',{p_class_id:classId});
     q=q.in('id',matriculados.map(a=>a.id).length?matriculados.map(a=>a.id):['00000000-0000-0000-0000-000000000000']);
   }
-  const{data:todos=[]}=await q;
+  const[{data:todosBrutos=[]},matriculasPorAluno]=await Promise.all([q,carregarMatriculasPorAluno()]);
+  const anoAtual=new Date().getFullYear(),anoRematricula=anoAtual+1;
+  const anosDisponiveis=[...new Set([anoAtual,anoRematricula,...Object.values(matriculasPorAluno).flat().map(m=>m.ano_letivo)])].sort((a,b)=>b-a);
+  const temAno=(s,ano)=>(matriculasPorAluno[s.id]||[]).some(m=>m.ano_letivo===ano);
+  let todos=todosBrutos;
+  if(/^\d{4}$/.test(anoFiltro)) todos=todos.filter(s=>temAno(s,parseInt(anoFiltro)));
+  else if(/^pend-\d{4}$/.test(anoFiltro)) todos=todos.filter(s=>!temAno(s,parseInt(anoFiltro.slice(5))));
   const ativos=todos.filter(s=>s.status!==false);
   const inativos=todos.filter(s=>s.status===false)
     .sort((a,b)=>(b.data_inativacao||'').localeCompare(a.data_inativacao||''));
@@ -3063,8 +3070,12 @@ pages.students=async function({view,id,aba}={}){
         <div class="form-row">
           <div class="form-col"><label>Nome</label><input id="st-name" placeholder="Nome" value="${esc(name)}"></div>
           <div class="form-col"><label>Turma</label><select id="st-class"><option value="">Todas</option>${classes.map(c=>`<option value="${c.id}" ${classId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+          <div class="form-col"><label>Matrícula / rematrícula</label><select id="st-ano"><option value="">Todos os anos</option>
+            ${anosDisponiveis.map(a=>`<option value="${a}" ${anoFiltro===String(a)?'selected':''}>Matriculados/rematriculados em ${a}</option>`).join('')}
+            <option value="pend-${anoRematricula}" ${anoFiltro==='pend-'+anoRematricula?'selected':''}>Falta rematricular para ${anoRematricula}</option>
+          </select></div>
         </div>
-        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="saveFilters(['st-name','st-class']);nav('students',{aba:'${abaParam}'})"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['st-name','st-class']);nav('students',{aba:'${abaParam}'})">Limpa</button></div>
+        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="saveFilters(['st-name','st-class','st-ano']);nav('students',{aba:'${abaParam}'})"><i class="fa fa-search"></i> Busca</button><button class="btn btn-danger" onclick="clearFilters(['st-name','st-class','st-ano']);nav('students',{aba:'${abaParam}'})">Limpa</button></div>
       </div>
     </div>
     <div class="tab-bar">
@@ -3075,7 +3086,7 @@ pages.students=async function({view,id,aba}={}){
       <div class="panel-head"><span class="panel-title">${abaInativos?'Alunos inativos':'Alunos ativos'}</span><button class="btn btn-primary btn-sm" onclick="nav('students',{view:'form'})"><i class="fa fa-plus"></i> Adicionar aluno</button></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>${abaInativos?'Inativado em':'Status'}</th><th>Matrícula</th><th colspan="${(canManageBilling()||isAdmin())?10:9}">Ações</th></tr></thead>
+          <thead><tr><th>ID</th><th>Nome</th><th>Modalidade</th><th>Celular</th><th>Turma</th><th>Nível</th><th>${abaInativos?'Inativado em':'Status'}</th><th>Matrícula</th><th colspan="${(canManageBilling()||isAdmin())?11:10}">Ações</th></tr></thead>
           <tbody>${data.length?data.map((s,i)=>`
             <tr>
               <td>${i+1}</td>
@@ -3085,7 +3096,8 @@ pages.students=async function({view,id,aba}={}){
               <td>${esc(s.class?.name)||'—'}</td>
               <td>${level_badge(s.level)}</td>
               <td>${abaInativos?`<input type="date" value="${s.data_inativacao||''}" max="${new Date().toISOString().slice(0,10)}" title="Data de inativação" style="padding:4px 6px;border:1px solid ${s.data_inativacao?'var(--gray-300)':'var(--warning)'};border-radius:4px;font-size:12px" onchange="salvarDataInativacao('${s.id}',this.value)">${s.inativado_em?`<div style="font-size:11px;color:var(--gray-500);margin-top:3px"><i class="fa fa-clock"></i> Marcado em ${fdatetime(s.inativado_em)}</div>`:''}`:status_badge(s.status)}</td>
-              <td>${fdate(s.date_joining)}</td>
+              <td>${fdate(s.date_joining)}${matriculaAnosBadges(matriculasPorAluno[s.id])}</td>
+              <td><button class="btn-icon" style="color:var(--success)" onclick="abrirRematricula('${s.id}','','lista')" title="Rematricular"><i class="fa fa-redo"></i></button></td>
               <td><button class="btn-icon" onclick="nav('students',{view:'frequencia',id:'${s.id}'})" title="Histórico de frequência"><i class="fa fa-calendar-check"></i></button></td>
               ${(canManageBilling()||isAdmin())?`<td><button class="btn-icon" onclick="nav('financeiro',{view:'aluno',studentId:'${s.id}'})" title="Financeiro do aluno"><i class="fa fa-file-invoice-dollar"></i></button></td>`:''}
               <td><button class="btn-icon" onclick="nav('students',{view:'form',id:'${s.id}'})"><i class="fa fa-pencil-alt"></i></button></td>
@@ -3098,13 +3110,158 @@ pages.students=async function({view,id,aba}={}){
                 ?`<button class="btn-icon" style="color:var(--success)" data-nome="${esc(s.first_name+' '+s.last_name)}" onclick="alterarStatusAluno('${s.id}',this.dataset.nome,true)" title="Reativar aluno"><i class="fa fa-user-check"></i></button>`
                 :`<button class="btn-icon" style="color:var(--warning)" data-nome="${esc(s.first_name+' '+s.last_name)}" onclick="alterarStatusAluno('${s.id}',this.dataset.nome,false)" title="Inativar aluno"><i class="fa fa-user-slash"></i></button>`}</td>
               <td><button class="btn-icon" style="color:var(--danger)" onclick="deleteRecord('students','${s.id}','students')"><i class="fa fa-trash"></i></button></td>
-            </tr>`).join(''):`<tr><td colspan="18"><div class="empty-state"><i class="fa fa-user-graduate"></i>${abaInativos?'Nenhum aluno inativo':'Nenhum aluno ativo'}</div></td></tr>`}
+            </tr>`).join(''):`<tr><td colspan="19"><div class="empty-state"><i class="fa fa-user-graduate"></i>${abaInativos?'Nenhum aluno inativo':'Nenhum aluno ativo'}</div></td></tr>`}
           </tbody>
         </table>
       </div>
     </div>
   `);
 };
+
+// ============================
+// MATRÍCULA / REMATRÍCULA POR ANO LETIVO (tabela student_matriculas)
+// A data da matrícula do cadastro (date_joining) fica sempre como a
+// primeira matrícula; cada ano seguinte vira uma linha de rematrícula.
+// Se a tabela ainda não existir no banco, tudo aqui degrada para vazio.
+async function carregarMatriculasPorAluno(){
+  const porAluno={},passo=1000;
+  for(let de=0;;de+=passo){
+    const{data,error}=await sb.from('student_matriculas').select('student_id,ano_letivo,tipo,data').order('ano_letivo').range(de,de+passo-1);
+    if(error||!data) break;
+    data.forEach(m=>{(porAluno[m.student_id]=porAluno[m.student_id]||[]).push(m);});
+    if(data.length<passo) break;
+  }
+  return porAluno;
+}
+function matriculaTipoLabel(t){return t==='matricula'?'Matrícula':'Rematrícula';}
+function matriculaAnosBadges(lista){
+  if(!lista||!lista.length) return '';
+  return `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${lista.map(m=>
+    `<span class="badge ${m.tipo==='matricula'?'badge-secondary':'badge-success'}" title="${matriculaTipoLabel(m.tipo)} ${m.ano_letivo} em ${fdate(m.data)}">${m.ano_letivo}${m.tipo==='rematricula'?' · R':''}</span>`).join('')}</div>`;
+}
+let _matriculasAluno=[];
+async function renderMatriculasAluno(studentId){
+  const el=$('f-matriculas');
+  if(!el) return;
+  const{data:lista,error}=await sb.from('student_matriculas').select('*,class:classes(name)').eq('student_id',studentId).order('ano_letivo');
+  if(error){el.innerHTML=`<div class="help-text" style="color:var(--danger)">Histórico de matrículas indisponível: ${esc(error.message)}</div>`;return;}
+  _matriculasAluno=lista||[];
+  const podeExcluir=['super_admin','direcao','financeiro','secretaria'].includes(currentUser?.role);
+  el.innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <strong><i class="fa fa-history" style="color:var(--brand)"></i> Matrículas e rematrículas</strong>
+      <button class="btn btn-success btn-sm" onclick="abrirRematricula('${studentId}','','form')"><i class="fa fa-redo"></i> Nova rematrícula</button>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Ano letivo</th><th>Tipo</th><th>Data</th><th>Turma</th><th>Modalidade</th><th>Nível</th><th>Mensalidade</th><th>Observação</th><th colspan="2"></th></tr></thead>
+      <tbody>${_matriculasAluno.length?_matriculasAluno.map(m=>`<tr>
+        <td><strong>${m.ano_letivo}</strong></td>
+        <td><span class="badge ${m.tipo==='matricula'?'badge-secondary':'badge-success'}">${matriculaTipoLabel(m.tipo)}</span></td>
+        <td>${fdate(m.data)}</td>
+        <td>${esc(m.class?.name)||'—'}</td>
+        <td>${m.modalidade?modalidade_badge(m.modalidade):'—'}</td>
+        <td>${esc(m.level)||'—'}</td>
+        <td>${m.mensalidade_valor!=null?'R$ '+Number(m.mensalidade_valor).toFixed(2).replace('.',','):'—'}</td>
+        <td>${esc(m.observacao)||'—'}</td>
+        <td><button class="btn-icon" onclick="abrirRematricula('${studentId}','${m.id}','form')" title="Editar"><i class="fa fa-pencil-alt"></i></button></td>
+        <td>${podeExcluir?`<button class="btn-icon" style="color:var(--danger)" onclick="excluirMatriculaAno('${studentId}','${m.id}')" title="Excluir"><i class="fa fa-trash"></i></button>`:''}</td>
+      </tr>`).join(''):'<tr><td colspan="10"><div class="empty-state" style="padding:14px">Nenhuma matrícula registrada</div></td></tr>'}</tbody>
+    </table></div>
+    <div class="help-text" style="margin-top:6px">Cada ano letivo fica registrado separadamente: o aluno continua aparecendo no ano da matrícula e passa a aparecer também nos anos das rematrículas.</div>`;
+}
+async function abrirRematricula(studentId,matriculaId,origem){
+  const[{data:s},{data:lista=[]},{data:classes=[]}]=await Promise.all([
+    sb.from('students').select('id,first_name,last_name,date_joining,class_id,modalidade,level,mensalidade_valor').eq('id',studentId).single(),
+    sb.from('student_matriculas').select('*').eq('student_id',studentId).order('ano_letivo'),
+    sb.from('classes').select('id,name').eq('status',true).order('name'),
+  ]);
+  if(!s){alert('Não foi possível carregar o aluno.');return;}
+  const m=matriculaId?(lista||[]).find(x=>x.id===matriculaId):null;
+  if(matriculaId&&!m){alert('Registro de matrícula não encontrado.');return;}
+  const hoje=new Date().toISOString().slice(0,10);
+  const anos=(lista||[]).map(x=>x.ano_letivo);
+  const anoSugerido=anos.length?Math.max(...anos)+1:new Date().getFullYear()+1;
+  const v=m||{ano_letivo:anoSugerido,tipo:anos.length?'rematricula':'matricula',data:hoje,class_id:s.class_id,modalidade:s.modalidade,level:s.level,mensalidade_valor:s.mensalidade_valor,observacao:''};
+  const corpo=`
+    <p style="margin:0 0 10px;color:var(--gray-600)">Aluno: <strong>${esc(s.first_name)} ${esc(s.last_name)}</strong>${anos.length?` · já registrado em ${anos.join(', ')}`:''}</p>
+    <div class="form-row">
+      <div class="form-col"><label>Ano letivo <span class="required">*</span></label><input id="rm-ano" type="number" min="2000" max="2100" value="${v.ano_letivo}"></div>
+      <div class="form-col"><label>Tipo</label><select id="rm-tipo"><option value="rematricula" ${v.tipo==='rematricula'?'selected':''}>Rematrícula</option><option value="matricula" ${v.tipo==='matricula'?'selected':''}>Matrícula</option></select></div>
+      <div class="form-col"><label>Data <span class="required">*</span></label><input id="rm-data" type="date" value="${v.data||hoje}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-col"><label>Turma</label><select id="rm-turma"><option value="">Nenhuma</option>${(classes||[]).map(c=>`<option value="${c.id}" ${v.class_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="form-col"><label>Modalidade</label><select id="rm-modalidade"><option value="">Selecione</option>${MODALIDADES.map(x=>`<option value="${x}" ${v.modalidade===x?'selected':''}>${x}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-col"><label>Nível</label><select id="rm-level">${nivelOptions(v.level)}</select></div>
+      <div class="form-col"><label>Mensalidade (R$)</label><input id="rm-mensalidade" type="number" step="0.01" min="0" value="${v.mensalidade_valor??''}"></div>
+    </div>
+    <div class="form-row"><div class="form-col"><label>Observação</label><input id="rm-obs" maxlength="300" value="${esc(v.observacao||'')}"></div></div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="rm-atualiza" ${m?'':'checked'} style="width:auto"> Atualizar turma, modalidade, nível e mensalidade no cadastro do aluno</label>
+    <p class="help-text" style="margin-top:8px">A data da matrícula original (${fdate(s.date_joining)}) não muda: o aluno continua registrado nos anos anteriores.</p>
+    <div id="rm-alert" class="alert"></div>`;
+  freqModal(`<i class="fa fa-redo"></i> ${m?'Editar '+matriculaTipoLabel(m.tipo).toLowerCase()+' '+m.ano_letivo:'Nova rematrícula'}`,corpo,
+    `<button class="btn btn-default" onclick="freqFecharModal()">Cancelar</button>
+     <button class="btn btn-success" id="rm-salvar" onclick="salvarRematricula('${studentId}','${matriculaId||''}','${origem||''}')"><i class="fa fa-save"></i> Salvar</button>`);
+}
+async function salvarRematricula(studentId,matriculaId,origem){
+  const ano=parseInt($('rm-ano').value),data=$('rm-data').value,atualizaCadastro=$('rm-atualiza').checked;
+  if(!ano||ano<2000||ano>2100){showAlert('rm-alert','Informe o ano letivo.','danger');return;}
+  if(!data){showAlert('rm-alert','Informe a data.','danger');return;}
+  const payload={
+    student_id:studentId,ano_letivo:ano,tipo:$('rm-tipo').value,data,
+    class_id:$('rm-turma').value||null,modalidade:$('rm-modalidade').value||null,level:$('rm-level').value||null,
+    mensalidade_valor:$('rm-mensalidade').value?parseFloat($('rm-mensalidade').value):null,
+    observacao:$('rm-obs').value.trim()||null,
+  };
+  const btn=$('rm-salvar');btn.disabled=true;
+  const r=matriculaId
+    ?await sb.from('student_matriculas').update(payload).eq('id',matriculaId)
+    :await sb.from('student_matriculas').insert(payload);
+  if(r.error){
+    btn.disabled=false;
+    const dup=r.error.code==='23505'||/duplicate|unique/i.test(r.error.message);
+    showAlert('rm-alert',dup?`Este aluno já tem matrícula/rematrícula registrada em ${ano}. Edite o registro existente.`:'Erro: '+r.error.message,'danger');
+    return;
+  }
+  let aviso='';
+  if(atualizaCadastro){
+    const{data:atual}=await sb.from('students').select('class_id').eq('id',studentId).single();
+    const{error:eUp}=await sb.from('students').update({modalidade:payload.modalidade,level:payload.level,mensalidade_valor:payload.mensalidade_valor}).eq('id',studentId);
+    if(eUp) aviso=' Mas não foi possível atualizar o cadastro: '+eUp.message;
+    const turmaAnterior=atual?.class_id||null;
+    if(!eUp&&payload.class_id!==turmaAnterior){
+      if(turmaAnterior) await sb.rpc('desmatricular_aluno_turma',{p_student_id:studentId,p_class_id:turmaAnterior});
+      if(payload.class_id){
+        const{error:eMat}=await sb.rpc('matricular_aluno_turma',{p_student_id:studentId,p_class_id:payload.class_id,p_principal:true});
+        if(eMat) aviso=' Mas houve erro ao trocar a turma: '+eMat.message;
+      }
+    }
+  }
+  freqFecharModal();
+  const msg=`${matriculaTipoLabel(payload.tipo)} ${ano} salva.${aviso}`;
+  if(origem==='form'){
+    // Reflete no formulário aberto sem recarregar (não perde o que já foi digitado).
+    if(atualizaCadastro&&!aviso){
+      const set=(id,val)=>{if($(id))$(id).value=val??'';};
+      set('f-class',payload.class_id);set('f-modalidade',payload.modalidade);set('f-level',payload.level);set('f-mensalidade-valor',payload.mensalidade_valor);
+    }
+    renderMatriculasAluno(studentId);
+    showAlert('page-alert',msg,aviso?'danger':'success');
+  } else {
+    await pages.students({aba:'ativos'});
+    showAlert('page-alert',msg,aviso?'danger':'success');
+  }
+}
+function excluirMatriculaAno(studentId,matriculaId){
+  showConfirm(async()=>{
+    const{error}=await sb.from('student_matriculas').delete().eq('id',matriculaId);
+    if(error){showAlert('page-alert','Erro ao excluir: '+error.message,'danger');return;}
+    renderMatriculasAluno(studentId);
+    showAlert('page-alert','Registro excluído.','success');
+  });
+}
 
 async function studentFrequencia(id){
   setContent(`<div class="loading"><i class="fa fa-spinner"></i></div>`);
@@ -3285,7 +3442,9 @@ async function studentForm(id){
       <div class="panel-body">
         <div class="form-grid">
           <div>
-            <div class="field"><label>Data da Matrícula <span class="required">*</span></label><input id="f-doj" type="date" value="${s.date_joining||''}"></div>
+            <div class="field"><label>Data da Matrícula <span class="required">*</span></label><input id="f-doj" type="date" value="${s.date_joining||''}">
+              <div class="help-text">Data da primeira matrícula.${id?' Para rematricular não altere esta data: use "Matrículas e rematrículas" abaixo.':''}</div>
+            </div>
             <div class="field"><label>Início do Contrato</label><input id="f-contrato-inicio" type="month" value="${(s.contrato_inicio||'').slice(0,7)}"></div>
             <div class="field"><label>Fim do Contrato</label><input id="f-contrato-fim" type="month" value="${(s.contrato_fim||'').slice(0,7)}"></div>
           </div>
@@ -3299,6 +3458,7 @@ async function studentForm(id){
           <div class="help-text" style="margin-top:10px">Salve o cadastro com início, fim, valor e dia de vencimento preenchidos e depois clique abaixo — o sistema gera sozinho uma mensalidade por mês do período inteiro, sem sobrescrever nenhum mês que já esteja pago.</div>
           <button class="btn btn-default btn-sm" style="margin-top:8px" onclick="gerarRecorrenciaBoletos('${id}')"><i class="fa fa-repeat"></i> Gerar parcelas do contrato</button>
           ${(canManageBilling()||isAdmin())?`<button class="btn btn-default btn-sm" style="margin-top:8px;margin-left:8px" onclick="nav('financeiro',{view:'aluno',studentId:'${id}'})"><i class="fa fa-file-invoice-dollar"></i> Ver histórico financeiro completo</button>`:''}
+          <div id="f-matriculas" style="margin-top:18px"></div>
         `:''}
       </div>
       <div class="panel-footer">
@@ -3312,6 +3472,7 @@ async function studentForm(id){
       </div>
     </div>
   `);
+  if(id) renderMatriculasAluno(id);
 }
 
 async function saveStudent(id){
@@ -7314,11 +7475,13 @@ async function imprimirRelatorioAluno(id){
   if(!win){alert('Não foi possível abrir a janela de impressão. Verifique se o navegador está bloqueando pop-ups.');return;}
   win.document.write('<p style="font-family:sans-serif;padding:40px">Gerando relatório...</p>');
 
-  const[{data:s,error:e1},{data:boletos=[],error:e2}]=await Promise.all([
+  const[{data:s,error:e1},{data:boletos=[],error:e2},{data:matriculas}]=await Promise.all([
     sb.from('students').select('*,school:schools(name),class:classes(name,schedule,start_time,end_time,class_days,teacher:teachers(first_name,last_name))').eq('id',id).single(),
     sb.rpc('get_boletos_aluno_secretaria',{p_student_id:id,p_ano:new Date().getFullYear()}),
+    sb.from('student_matriculas').select('ano_letivo,tipo,data').eq('student_id',id).order('ano_letivo'),
   ]);
   if(e1||!s){win.close();alert('Não foi possível carregar os dados do aluno.'+(e1?' '+e1.message:''));return;}
+  s._matriculas=matriculas||[];
 
   const html=buildRelatorioAlunoHtml(s,e2?[]:boletos);
   win.document.open();
@@ -7420,6 +7583,7 @@ function buildRelatorioAlunoHtml(s,boletos){
       row('Modalidade',esc(s.modalidade))+
       row('Nível',esc(s.level))+
       row('Data de matrícula',s.date_joining?new Date(s.date_joining+'T00:00:00').toLocaleDateString('pt-BR'):null)+
+      row('Matrículas / rematrículas',(s._matriculas||[]).length?s._matriculas.map(m=>`${m.ano_letivo}: ${matriculaTipoLabel(m.tipo).toLowerCase()} em ${fdate(m.data)}`).join('<br>'):null)+
       row('Status da matrícula',s.status!==false?'Ativo':'Inativo'+(s.data_inativacao?' desde '+new Date(s.data_inativacao+'T00:00:00').toLocaleDateString('pt-BR'):''))+
       row('Professor responsável',s.class?.teacher?esc(s.class.teacher.first_name)+' '+esc(s.class.teacher.last_name):null)+
       row('Dias de aula',diasTxt)+
