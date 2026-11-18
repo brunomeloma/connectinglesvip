@@ -1,4 +1,4 @@
-const CACHE_NAME = 'connect-vip-v2';
+const CACHE_NAME = 'connect-vip-v3';
 const APP_SHELL = ['/', '/index.html', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -32,7 +32,10 @@ self.addEventListener('fetch', (event) => {
   // valer na hora em todos os computadores.
   if (url.pathname.startsWith('/contratos/')) return;
 
-  if (req.mode === 'navigate') {
+  // Página e scripts (.js): rede primeiro, cache só se estiver offline. Com
+  // cache primeiro, um script antigo (ex: gerador de contrato) continuava
+  // rodando com a página nova e o contrato saía sem os dados do aluno.
+  if (req.mode === 'navigate' || url.pathname.endsWith('.js')) {
     event.respondWith(
       fetch(req)
         .then((res) => {
@@ -40,7 +43,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
           return res;
         })
-        .catch(() => caches.match(req).then((cached) => cached || caches.match('/index.html')))
+        .catch(() => caches.match(req).then((cached) => cached || (req.mode === 'navigate' ? caches.match('/index.html') : Response.error())))
     );
     return;
   }

@@ -19,7 +19,7 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <!-- ?v=: o service worker guarda arquivos do site pela URL; troque ao alterar o script -->
-<script src="contrato-docx.js?v=20261112"></script>
+<script src="contrato-docx.js?v=20261118"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
 /* Hallmark · shape: app screen · genre: modern-minimal · theme: brand · redesign: restyle
@@ -7448,6 +7448,12 @@ async function gerarContratoWord(){
          p2:{data:ctrDataBR(val('ctr-v2-data')),encontros:val('ctr-v2-enc'),horas:val('ctr-v2-h')}},
     premium:{ingresso:ctrDataBR(val('ctr-p-ini')),termino:ctrDataBR(val('ctr-p-fim')),encontros:val('ctr-p-enc'),horas:val('ctr-p-h')},
   };
+  // "aluno" também vai preenchido (1º aluno) para nunca sair em branco.
+  dados.aluno=dados.alunos[0];
+  if(dados.alunos.length>1&&!ContratoDocx.duplicarBlocoAluno){
+    showAlert('ctr-alert','O sistema está com uma versão antiga do gerador de contrato. Atualize a página (Ctrl+F5) e gere de novo.','danger');
+    return;
+  }
   const btn=$('ctr-btn-gerar');btn.disabled=true;btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> Gerando...';
   try{
     await carregarJsZip();
